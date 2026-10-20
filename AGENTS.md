@@ -74,6 +74,10 @@ Dokumentáld az eltéréseket.
 
 ## 4. Adatforrások és korlátaik
 
+Az egyes források tényleges hozzáférési lehetőségeit, exportútjait és
+igazoltsági állapotát a `docs/adatforrasok.md` rögzíti; változás esetén azt
+frissítsd.
+
 ### 4.1 TMDB
 
 A TMDB elsődleges katalógusforrásként szolgálhat:
