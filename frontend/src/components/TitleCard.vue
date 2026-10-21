@@ -4,11 +4,11 @@ import { useI18n } from 'vue-i18n'
 import { api, type ReasonCode, type TitleCard, type UserState } from '../api/client'
 import { confidenceLabel, fmtDateTime, fmtInt, mediaTypeLabel, sourceLabel } from '../format'
 import { reasonTexts } from '../reasons'
+import DescriptionToggle from './DescriptionToggle.vue'
 import FeedbackPanel from './FeedbackPanel.vue'
+import PosterWithOverview from './PosterWithOverview.vue'
 import ProviderBadge from './ProviderBadge.vue'
 import { displayTitle, secondaryTitle } from '../titles'
-
-const IMG_BASE = 'https://image.tmdb.org/t/p/w342'
 
 const props = defineProps<{
   title: TitleCard
@@ -19,7 +19,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ 'user-change': [user: UserState] }>()
 
-const { t: tr, locale } = useI18n()
+const { t: tr } = useI18n()
 const user = ref<UserState>(props.title.user)
 watch(
   () => props.title.user,
@@ -43,32 +43,12 @@ const mainTitle = computed(() => displayTitle(t.value))
 const secondary = computed(() => secondaryTitle(t.value))
 const reasonList = computed(() => reasonTexts(props.reasonCodes, props.reasons))
 const c = computed(() => t.value.community)
-const overview = computed(() => t.value.overview_hu?.trim() || '')
-const descOpen = ref(false)
-const tapOpen = ref(false)
-function onPosterTap() {
-  if (typeof window !== 'undefined' && window.matchMedia?.('(hover: none)').matches) tapOpen.value = !tapOpen.value
-}
 </script>
 
 <template>
   <article class="card title-card" :class="{ dimmed: user.not_interested }">
     <div class="top">
-      <div class="poster-wrap" :class="{ 'tap-open': tapOpen }" @click="onPosterTap">
-        <img v-if="t.poster_path" class="poster" :src="IMG_BASE + t.poster_path" :alt="tr('card.poster', { title: mainTitle })" loading="lazy" />
-        <div v-else class="poster placeholder" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="32" height="32">
-            <path d="M4 5h16v14H4zM4 9h16M8 5v4M12 5v4M16 5v4" fill="none" stroke="currentColor" stroke-width="1.5" />
-          </svg>
-        </div>
-        <div class="poster-overlay small" aria-hidden="true">
-          <template v-if="overview">
-            {{ overview }}
-            <span v-if="locale === 'en'" class="muted note">{{ tr('card.huDescNote') }}</span>
-          </template>
-          <template v-else>{{ tr('card.noDescription') }}</template>
-        </div>
-      </div>
+      <PosterWithOverview :title="t" />
       <div class="meta">
         <h3>{{ mainTitle }}</h3>
         <p v-if="secondary" class="original">{{ secondary }}</p>
@@ -121,16 +101,7 @@ function onPosterTap() {
       <li v-for="r in reasonList" :key="r">{{ r }}</li>
     </ul>
 
-    <button type="button" class="link small desc-toggle" :aria-expanded="descOpen" @click="descOpen = !descOpen">
-      {{ descOpen ? '▾' : '▸' }} {{ tr('card.descToggle') }}
-    </button>
-    <p v-if="descOpen" class="small desc-text">
-      <template v-if="overview">
-        {{ overview }}
-        <span v-if="locale === 'en'" class="muted note">{{ tr('card.huDescNote') }}</span>
-      </template>
-      <span v-else class="muted">{{ tr('card.noDescription') }}</span>
-    </p>
+    <DescriptionToggle :overview="t.overview_hu" />
 
     <FeedbackPanel :title-id="t.id" :user="user" @update:user="onUser" />
   </article>
@@ -150,62 +121,6 @@ function onPosterTap() {
 .top {
   display: flex;
   gap: 12px;
-}
-.poster {
-  width: 92px;
-  aspect-ratio: 2 / 3;
-  flex-shrink: 0;
-  object-fit: cover;
-  border-radius: 6px;
-  background: var(--surface-2);
-}
-.poster-wrap {
-  position: relative;
-  flex-shrink: 0;
-  width: 92px;
-  align-self: flex-start;
-}
-.poster-overlay {
-  position: absolute;
-  inset: 0;
-  overflow-y: auto;
-  padding: 6px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--surface-2) 94%, transparent);
-  color: var(--text);
-  font-size: 0.7rem;
-  line-height: 1.35;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s ease;
-}
-.poster-wrap.tap-open .poster-overlay {
-  opacity: 1;
-  pointer-events: auto;
-}
-@media (hover: hover) {
-  .poster-wrap:hover .poster-overlay {
-    opacity: 1;
-    pointer-events: auto;
-  }
-}
-.note {
-  display: block;
-  margin-top: 4px;
-  font-size: 0.7rem;
-}
-.desc-toggle {
-  align-self: flex-start;
-}
-.desc-text {
-  margin: 0;
-  white-space: pre-line;
-}
-.placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-muted);
 }
 .meta {
   min-width: 0;

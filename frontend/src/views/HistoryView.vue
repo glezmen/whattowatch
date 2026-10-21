@@ -2,8 +2,10 @@
 import { onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api, type HistoryItem, type UserState } from '../api/client'
+import DescriptionToggle from '../components/DescriptionToggle.vue'
 import FeedbackPanel from '../components/FeedbackPanel.vue'
 import Pagination from '../components/Pagination.vue'
+import PosterWithOverview from '../components/PosterWithOverview.vue'
 import { fmtDateTime, mediaTypeLabel, sourceLabel } from '../format'
 import { displayTitle, secondaryTitle } from '../titles'
 
@@ -15,6 +17,15 @@ const total = ref(0)
 const offset = ref(0)
 const loading = ref(false)
 const expanded = ref<number | null>(null)
+const HIDE_KEY = 'history_hide_rated'
+function readHide(): boolean {
+  try {
+    return localStorage.getItem(HIDE_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+const hideRated = ref(readHide())
 
 const STATUSES = ['watched', 'in_progress', 'abandoned']
 const { t, te } = useI18n()
@@ -26,7 +37,7 @@ function statusLabel(s: string): string {
 async function load() {
   loading.value = true
   try {
-    const page = await api.getHistory({ q: q.value.trim(), status: status.value, limit: LIMIT, offset: offset.value })
+    const page = await api.getHistory({ q: q.value.trim(), status: status.value, exclude_rated: hideRated.value, limit: LIMIT, offset: offset.value })
     items.value = page.items
     total.value = page.total
   } catch {
@@ -41,6 +52,16 @@ function onUser(item: HistoryItem, u: UserState) {
 }
 
 let timer: ReturnType<typeof setTimeout> | undefined
+watch(hideRated, (v) => {
+  try {
+    localStorage.setItem(HIDE_KEY, v ? '1' : '0')
+  } catch {
+    // storage unavailable
+  }
+  clearTimeout(timer)
+  offset.value = 0
+  load()
+})
 watch([q, status], () => {
   clearTimeout(timer)
   timer = setTimeout(() => {
@@ -73,6 +94,7 @@ function statusOf(it: HistoryItem): string {
       <option value="">{{ t('history.allStatuses') }}</option>
       <option v-for="s in STATUSES" :key="s" :value="s">{{ statusLabel(s) }}</option>
     </select>
+    <label class="hide-rated"><input v-model="hideRated" type="checkbox" /> {{ t('history.hideRated') }}</label>
   </div>
   <p v-if="loading && !items.length" class="empty"><span class="spinner"></span> {{ t('common.loading') }}</p>
   <p v-else-if="!items.length" class="empty">{{ t('history.empty') }}</p>
@@ -96,7 +118,11 @@ function statusOf(it: HistoryItem): string {
         </span>
       </button>
       <div v-if="expanded === it.title.id" class="panel">
-        <FeedbackPanel :title-id="it.title.id" :user="it.title.user" start-open @update:user="(u) => onUser(it, u)" />
+        <PosterWithOverview :title="it.title" class="panel-poster" />
+        <div class="panel-main">
+          <FeedbackPanel :title-id="it.title.id" :user="it.title.user" start-open @update:user="(u) => onUser(it, u)" />
+          <DescriptionToggle :overview="it.title.overview_hu" />
+        </div>
       </div>
     </li>
   </ul>
@@ -133,5 +159,29 @@ function statusOf(it: HistoryItem): string {
 }
 .panel {
   padding: 0 12px 12px;
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+.panel-poster {
+  --poster-width: 140px;
+}
+.panel-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.hide-rated {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+@media (max-width: 600px) {
+  .panel {
+    flex-direction: column;
+  }
 }
 </style>

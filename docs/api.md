@@ -68,7 +68,7 @@ Settings { tmdb_api_key_set: bool, netflix_profile_name?, lm_studio_base_url, re
 | `PUT /titles/{id}/not-interested` `{value: bool}` | |
 | `POST /titles/{id}/watchlist` / `DELETE` | app-watchlist (a DELETE csak az `app` forrású tételt veszi le) |
 | `GET /watchlist?source=&available=&limit=100&offset=0` | `Page<WatchlistEntry>`, legutóbb hozzáadott elöl; `source` pl. `app`, `netflix_mylist`, `imdb_watchlist` (ismeretlen = üres); `available` = van friss verified flatrate |
-| `GET /history?q=&status=&source=&limit=50&offset=0` | `Page<HistoryEntry>`: címek nézési eseménnyel vagy személyes értékeléssel, `last_watched_at` (különben `rated_at`) desc, dátum nélküliek a végén; `status` (watched/in_progress/abandoned) és `source` a címeket szűri, a sor a cím összes eseményét adja |
+| `GET /history?q=&status=&source=&exclude_rated=false&limit=50&offset=0` | `Page<HistoryEntry>`: címek nézési eseménnyel vagy személyes értékeléssel, `last_watched_at` (különben `rated_at`) desc, dátum nélküliek a végén; `status` (watched/in_progress/abandoned) és `source` a címeket szűri, a sor a cím összes eseményét adja; `exclude_rated=true` kihagyja a személyesen értékelt címeket (a `total` is ezt tükrözi) |
 | `GET /search/tmdb?q=&media_type=` | `SearchHit[]` (TMDB, hu-HU) |
 | `POST /titles/ensure` `{media_type, tmdb_id}` | cím beemelése TMDB-ből (details), válasz `TitleCard` |
 | `GET /resolutions?status=ambiguous|unresolved&source=&limit=50&offset=0` | `Page<ResolutionItem>`; status nélkül mindkettő |

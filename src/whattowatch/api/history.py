@@ -31,6 +31,7 @@ def get_history(
     q: str | None = None,
     status: WatchStatus | None = None,
     source: str | None = None,
+    exclude_rated: bool = False,
     limit: Annotated[int, Query(ge=1, le=500)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> Page[HistoryEntry]:
@@ -38,7 +39,7 @@ def get_history(
 
     `status` keeps titles with an event of that status; `source` keeps titles with an
     event or personal rating from that source. Each row lists all of the title's events.
-    Titles without any date sort last.
+    `exclude_rated` drops titles with any personal rating. Titles without any date sort last.
     """
     events: dict[int, list[WatchEvent]] = {}
     for ev in session.scalars(select(WatchEvent).order_by(WatchEvent.source)):
@@ -62,7 +63,8 @@ def get_history(
             return any(e.source == source for e in evs) or source in rating_sources.get(tid, ())
         return True
 
-    ids = {tid for tid in set(events) | set(rated_at) if matches(tid)}
+    candidates = set(events) if exclude_rated else set(events) | set(rated_at)
+    ids = {tid for tid in candidates if matches(tid) and not (exclude_rated and tid in rated_at)}
     if q and q.strip() and ids:
         needle = q.strip()
         ids = set(

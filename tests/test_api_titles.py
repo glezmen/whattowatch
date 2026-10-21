@@ -285,6 +285,15 @@ def test_history(api: ApiEnv) -> None:
     assert {inv[i["title"]["id"]] for i in page["items"]} == {112, 104, 113}
     assert api.client.get("/api/history", params={"status": "bogus"}).status_code == 422
 
+    page = api.client.get("/api/history", params={"exclude_rated": True}).json()
+    unrated = {inv[i["title"]["id"]] for i in page["items"]}
+    assert unrated == {101, 112, 104, 113} and page["total"] == 4
+    page = api.client.get("/api/history", params={"exclude_rated": True, "limit": 2}).json()
+    assert page["total"] == 4 and len(page["items"]) == 2
+    api.client.put(f"/api/titles/{api.ids[112]}/rating", json={"stars": 3})
+    page = api.client.get("/api/history", params={"exclude_rated": True}).json()
+    assert {inv[i["title"]["id"]] for i in page["items"]} == {101, 104, 113}
+
 
 def test_watchlist(api: ApiEnv) -> None:
     inv = {v: k for k, v in api.ids.items()}

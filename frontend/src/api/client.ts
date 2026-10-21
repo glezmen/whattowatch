@@ -498,7 +498,7 @@ export const api = {
 
   getWatchlist: (p: { source?: string; available?: boolean; limit?: number; offset?: number }) =>
     request<Page<WatchlistEntry>>('GET', `/watchlist${qs(p)}`),
-  getHistory: (p: { q?: string; status?: string; source?: string; limit?: number; offset?: number }) =>
+  getHistory: (p: { q?: string; status?: string; source?: string; exclude_rated?: boolean; limit?: number; offset?: number }) =>
     request<Page<HistoryItem>>('GET', `/history${qs(p)}`),
 
   searchTmdb: (q: string, media_type?: MediaType | '') =>

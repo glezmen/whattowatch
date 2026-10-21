@@ -230,6 +230,7 @@
   "history": {
     "title": "Előzmények és értékelések",
     "status": "Státusz",
+    "hideRated": "Már értékeltek elrejtése",
     "allStatuses": "Minden státusz",
     "statuses": {
       "watched": "megnézve",
