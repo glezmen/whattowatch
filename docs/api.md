@@ -302,3 +302,32 @@ LinksResult {
   a magyar címmel. **Nem ellenőrzött** URL-minták (`providers.py`), változhatnak.
 - A válaszban nem szereplő korábbi linkek törlődnek (`deep_link = null`); a sor
   elavulttá jelölése a változásszinkron feladata.
+
+## Profilok és munkamenet (M8/A)
+
+Minden `/api/*` végpont — kivéve `/health`, `/users` (lista), `/auth/*` —
+aláírt sütit vár (`wtw_session`, `HttpOnly`, `SameSite=Lax`, 30 nap; titok:
+`SESSION_SECRET` a `.env`-ben, első induláskor generálva). Süti nélkül vagy
+érvénytelen sütivel `401 {detail, detail_code: "no_profile"}`. A frontend
+ilyenkor a profilválasztóra irányít.
+
+| Metódus, út | Leírás |
+|---|---|
+| `GET /users` | `{items: [{id, name, avatar_color, has_password, is_admin, last_active_at}]}` — süti nélkül is elérhető (a választóhoz) |
+| `POST /auth/select` `{user_id, password?}` | beállítja a sütit; jelszavas profilnál hibás/hiányzó jelszó → `401 wrong_password`; 5 hibás próba után profilonként 30 mp várakozás (`429 too_many_attempts`) |
+| `POST /auth/logout` | törli a sütit |
+| `GET /auth/me` | `{id, name, avatar_color, has_password, is_admin}` |
+| `POST /users` `{name, avatar_color?, password?}` | új profil; süti nélkül csak akkor engedett, ha még nincs egyetlen profil sem (első indítás), egyébként admin vagy bármely bejelentkezett profil hozhat létre újat (háztartás) |
+| `PUT /users/me` `{name?, avatar_color?}` | saját profil |
+| `PUT /users/me/password` `{current_password?, new_password: string|null}` | jelszó beállítása (null = törlés); meglévő jelszónál a `current_password` kötelező |
+| `DELETE /users/{id}` `{confirm: "DELETE"}` | saját profil törlése, vagy adminként bármelyiké (az utolsó admin nem törölhető); minden személyes adat törlődik |
+| `POST /users/{id}/password/reset` | csak admin: törli a másik profil jelszavát (elfelejtett jelszó) |
+| `GET /settings/secrets`, `PUT /settings/secrets`, `POST /backup/*`, `POST /refresh` | csak admin (`403 admin_required`) |
+
+Személyes adatot adó végpontok (`/recommendations`, `/titles/*` felhasználói
+mezői, `/watchlist`, `/history`, `/resolutions`, `/import/*`, `/notifications`,
+`/updates`, `/chat`, `/settings/app`, `/settings/subscriptions`, `/settings/llm`,
+`/settings/tmdb-account`) mind az aktuális profilra szűrnek. A kártya `user`
+mezője az aktuális profilé. A `/import/netflix/profiles` válaszában a talált
+exportprofilokhoz megadható `assign: {<exportprofil>: <user_id>}` a feltöltésnél
+(több app-profil egy feltöltésből); alapértelmezés: a saját profil.
