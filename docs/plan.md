@@ -1,6 +1,6 @@
 # Implementációs terv és architektúradöntések
 
-Állapot: **M0–M6 kész, M7 folyamatban** (2026-10-21). Nyitott tételek a fájl végén.. A specifikáció: `docs/spec.md`.
+Állapot: **M0–M7 kész** (2026-10-21). Nyitott tételek a fájl végén.. A specifikáció: `docs/spec.md`.
 
 ## Architektúradöntések
 
@@ -93,7 +93,7 @@ Kulcskonvenciók:
 - [x] `/ujdonsagok`, `/tavozik`, értesítés-harang; alapállapot-futás hamis „új” nélkül
 - [x] élő futás: 200 kikerülő, 53 érkező, 45 új SA-esemény; 257 teszt
 
-### M7 — nulláról indítás (folyamatban)
+### M7 — nulláról indítás (kész, 2026-10-21)
 - előfizetés-választás (`providers.enabled`), minden szűrés csak az engedélyezettekre
 - adatcsomag-feltöltés a felületen (IMDb CSV, Netflix ZIP, profilválasztás), háttérfeladat, állapot
 - beszélgetős ajánló a főoldal tetején is
@@ -101,6 +101,8 @@ Kulcskonvenciók:
 - `app_settings` tábla (migráció 0007), onboarding-panel
 
 ## Nyitott tételek
+- a feltöltési feladatok hibaszövegei és a backend `detail` üzenetei csak magyarul jönnek; i18n-kódosítás később
+- az importfeladat-lista memóriában él (szerverújraindításkor ürül; a `sync_runs` megmarad)
 - LLM élő próba: LM Studio-val sikeres (`wtw llm test`, `/api/chat`, 2026-10-21); Anthropic/OpenAI kulcs nélkül nem próbált; LM Studio-hívás csak a felhasználó engedélyével
 - a „Norbi” profil megerősítése (a Thumbs-kódok megerősítve)
 - beszélgetős eszköz: sorozatoknál a „Thriller” műfaj leképezése TMDB „Bűnügyi”/„Rejtély” műfajra (a TMDB tv-műfajok közt nincs Thriller)
