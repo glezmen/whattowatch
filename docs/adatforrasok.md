@@ -119,6 +119,15 @@ Feltételek:
   forrásként „harmadik fél, becsült” címkével kell tárolni, nem ellenőrzött
   tényként.
 
+**Élőben ellenőrizve 2026-10-21-én:** a közvetlen végpont
+`https://api.movieofthenight.com/v4`, hitelesítés `X-API-Key` fejléccel (a
+RapidAPI-s út nem kell). A HU `catalogs` azonosítók a hat előfizetésre:
+`netflix`, `disney`, `hbo`, `prime`, `apple`, `skyshowtime` (Apple TV és Prime
+esetén `subscription` típusra szűrve, mert `rent`/`buy`/`addon` is van). A
+`changes` válasz `changes[]` + `shows{}` térkép; a show `tmdbId` mezője
+`"tv/275279"` / `"movie/…"` formában közvetlenül TMDB-azonosítót ad, és van
+`imdbId` is, így a címfeloldás itt azonosító-alapú.
+
 Használati javaslat: naponta egyszer, országonként és változástípusonként
 lekérdezni (nem címenként), így a havi keret bőven elég. A `removed` jelzést a
 TMDB aktuális elérhetőségével keresztellenőrizni; ellentmondás esetén a kártya
@@ -372,8 +381,7 @@ négynél nincs adapter, amíg nincs kézben export.
 ## 4. Nyitott kérdések, igazolandó tételek
 
 - [x] HU provider-id-k a TMDB-ben a hat szolgáltatóhoz (2026-10-21, lásd 1.2).
-- [ ] Streaming Availability API: HU adatminőség és a `catalogs` id-k a hat
-      szolgáltatóra; mennyire egyezik a TMDB-vel.
+- [x] Streaming Availability API: végpont, kulcs, `catalogs` id-k (2026-10-21); adatminőség-összevetés a TMDB-vel az M6 után.
 - [x] Netflix teljes export tartalma és oszlopai (2026-10-20, lásd 2.1).
 - [x] IMDb ratings CSV oszlopai (2026-10-20, lásd 3.1).
 - [ ] Netflix `Thumbs Value` számkódjainak jelentése.
