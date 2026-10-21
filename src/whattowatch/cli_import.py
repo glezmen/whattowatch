@@ -90,3 +90,53 @@ def _app_netflix_profile(user_id: int) -> str | None:
         return None  # e.g. not migrated yet: fall back to .env
     finally:
         engine.dispose()
+
+
+@app.command("register")
+def register_upload(
+    source: Annotated[
+        str,
+        typer.Argument(help="netflix_export | prime_video_export | imdb_ratings | imdb_watchlist"),
+    ],
+    path: Annotated[Path, typer.Argument(help="Export file to add to the household library")],
+    user: UserOption = None,
+) -> None:
+    """Copy an export file into the household library (data/imports) without importing it.
+    Any profile can then import its own export profile from it in the web UI."""
+    import shutil
+    from datetime import UTC, datetime
+
+    from whattowatch.api.imports import sanitize_file_name
+    from whattowatch.config import get_settings
+    from whattowatch.db.engine import create_engine_from_settings, session_factory
+    from whattowatch.services.import_uploads import record_upload
+
+    allowed = {"netflix_export", "prime_video_export", "imdb_ratings", "imdb_watchlist"}
+    if source not in allowed:
+        raise typer.BadParameter(f"source must be one of {sorted(allowed)}")
+    if not path.is_file():
+        raise typer.BadParameter(f"not a file: {path}")
+    settings = get_settings()
+    now = datetime.now(UTC)
+    target = (
+        Path(settings.imports_dir)
+        / source
+        / f"{now.strftime('%Y%m%dT%H%M%S%fZ')}_{sanitize_file_name(path.name)}"
+    )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(path, target)
+    with session_factory(create_engine_from_settings(settings))() as session:
+        row, reused = record_upload(
+            session,
+            source=source,
+            file_name=path.name,
+            path=target,
+            user_id=lookup_user_id(user),
+            now=now,
+        )
+        session.commit()
+        names = [p.get("name") for p in (row.profiles or [])]
+    typer.echo(
+        f"{'Már a könyvtárban volt' if reused else 'Hozzáadva a háztartási könyvtárhoz'}: "
+        f"{row.file_name} (#{row.id}); profilok: {', '.join(n for n in names if n) or '-'}"
+    )
