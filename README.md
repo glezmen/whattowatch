@@ -14,6 +14,26 @@ uv run wtw db upgrade
 uv run wtw serve         # http://127.0.0.1:8000/health
 ```
 
+## Parancsok
+
+```bash
+uv run wtw tmdb providers --type movie      # HU szolgáltatólista a TMDB-ből
+uv run wtw tmdb probe "Interstellar" --type movie --year 2014
+uv run wtw tmdb validate                     # riport: data/reports/
+
+uv run wtw import imdb <ratings.csv> --kind ratings     # IMDb saját értékelések
+uv run wtw import imdb <watchlist.csv> --kind watchlist
+uv run wtw import netflix <export.zip> --profile <név>  # Netflix személyes adatexport
+
+uv run wtw resolve list --status ambiguous   # bizonytalan címfeloldások
+uv run wtw resolve set <id> movie|tv <tmdb_id>
+uv run wtw resolve reject <id>
+```
+
+Az importok idempotensek: ugyanaz a fájl kétszer betöltve nem duplikál. A
+személyes exportokat a gitignored `data/` alá tedd. Az adatforrások
+részleteit a `docs/adatforrasok.md` írja le.
+
 ## Tesztek és minőségellenőrzés
 
 ```
