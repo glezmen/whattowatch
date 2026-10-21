@@ -5,7 +5,9 @@ import uvicorn
 from alembic import command
 from alembic.config import Config
 
+from whattowatch.cli_catalog import app as catalog_app
 from whattowatch.cli_import import app as import_app
+from whattowatch.cli_recommend import app as recommend_app
 from whattowatch.cli_resolve import resolve_app
 from whattowatch.cli_tmdb import tmdb_app
 from whattowatch.config import Settings
@@ -17,6 +19,8 @@ db_app = typer.Typer(help="Database commands", no_args_is_help=True)
 app.add_typer(db_app, name="db")
 app.add_typer(tmdb_app, name="tmdb")
 app.add_typer(import_app, name="import")
+app.add_typer(catalog_app, name="catalog")
+app.add_typer(recommend_app, name="recommend")
 app.add_typer(resolve_app, name="resolve")
 
 ROOT = Path(__file__).resolve().parents[2]
