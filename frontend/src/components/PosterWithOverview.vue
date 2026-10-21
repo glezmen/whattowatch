@@ -62,13 +62,6 @@ function onPosterTap() {
   width: 20px;
   height: 20px;
 }
-.poster-wrap.small .poster-overlay {
-  width: 240px;
-  inset: 0 auto auto 0;
-  max-height: 200px;
-  z-index: 5;
-  box-shadow: 0 4px 16px rgb(0 0 0 / 0.25);
-}
 .poster-overlay {
   position: absolute;
   inset: 0;
@@ -83,13 +76,6 @@ function onPosterTap() {
   pointer-events: none;
   transition: opacity 0.2s ease;
 }
-.poster-wrap.tap-open .poster-wrap.small {
-  --poster-width: 60px;
-}
-.poster-wrap.small svg {
-  width: 20px;
-  height: 20px;
-}
 .poster-wrap.small .poster-overlay {
   width: 240px;
   inset: 0 auto auto 0;
@@ -97,26 +83,12 @@ function onPosterTap() {
   z-index: 5;
   box-shadow: 0 4px 16px rgb(0 0 0 / 0.25);
 }
-.poster-overlay {
+.poster-wrap.tap-open .poster-overlay {
   opacity: 1;
   pointer-events: auto;
 }
 @media (hover: hover) {
-  .poster-wrap:hover .poster-wrap.small {
-  --poster-width: 60px;
-}
-.poster-wrap.small svg {
-  width: 20px;
-  height: 20px;
-}
-.poster-wrap.small .poster-overlay {
-  width: 240px;
-  inset: 0 auto auto 0;
-  max-height: 200px;
-  z-index: 5;
-  box-shadow: 0 4px 16px rgb(0 0 0 / 0.25);
-}
-.poster-overlay {
+  .poster-wrap:hover .poster-overlay {
     opacity: 1;
     pointer-events: auto;
   }
