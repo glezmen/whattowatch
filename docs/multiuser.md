@@ -1,6 +1,6 @@
 # Többfelhasználós működés — terv (M8/A és M9/B)
 
-Állapot: terv, 2026-10-21. Két szakasz: **A) profilok egy háztartáson belül**
+Állapot: A1 folyamatban, 2026-10-21. Két szakasz: **A) profilok egy háztartáson belül**
 (profilválasztó induláskor, opcionális jelszó), majd **B) valódi fiókok
 hálózaton**. Az A szakasz úgy épül, hogy a B ne igényeljen újabb sémamódosítást.
 
@@ -37,9 +37,10 @@ hálózaton**. Az A szakasz úgy épül, hogy a B ne igényeljen újabb sémamó
   `onboarding_done` globális marad admin-szinten).
 - Egyedi korlátozások bővítése: `(user_id, title_id, source)` stb. mindenhol,
   ahol ma `(title_id, source)`.
-- Migráció: létrehoz egy „Alapértelmezett” (vagy a Netflix-profil nevével
-  egyező, pl. „Norbi”) felhasználót, minden meglévő személyes sort hozzá köt,
-  az app-beállításokat is. SQLite batch mód FK-védelemmel, mint 0005/0006.
+- Migráció: létrehoz egy első felhasználót — a neve a meglévő
+  `netflix_profile_name` app-beállítás, ha van, különben „Profil 1”; **név
+  nincs beégetve** —, minden meglévő személyes sort hozzá köt, az
+  app-beállításokat is. Az első felhasználó admin. SQLite batch mód FK-védelemmel, mint 0005/0006.
 - `providers.enabled`, `selected_profile`: profilonkénti beállításba költözik
   (`user_settings` kulcsok), a `providers` tábla csak a globális registry marad.
 
@@ -139,9 +140,10 @@ Az A szakasz után marad: hálózati kitétel és annak biztonsága.
 ## Sorrend és nyitott döntések
 
 1. A1 → A4 → A2 → A3 (a tesztek a szűrés előtt készülnek).
-2. Döntendő az A előtt: az első profil neve (javaslat: a Netflix-profil
-   neve, „Norbi”), és hogy a kulcsok megadása admin-jog legyen-e már az
-   A-ban (javaslat: igen, az első profil admin).
+2. Eldöntve (2026-10-21): az első profil neve a Netflix-profil beállításából
+   jön, nincs beégetett név; a kulcsok kezelése admin-jog már az A-ban, az
+   első profil admin. Az utolsó egyfelhasználós verzió a `v0.1-single-user`
+   git-tag.
 3. A B csak a hálózati kitétel igényekor; addig a konténer is csak a
    localhostra legyen kötve (`127.0.0.1:8000:8000` a compose-ban), amit az
    A-val együtt átállítok.
