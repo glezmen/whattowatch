@@ -40,4 +40,5 @@ Olvasd el ezeket, mielőtt érdemi kódot írsz.
 - Kövesd a meglévő stílust; típusannotáció mindenhol; felesleges absztrakció
   nélkül, de az adapterek és az LLM-providerek cserélhetők.
 - Ne állítsd, hogy egy mérföldkő kész, amíg a tesztek nem igazolják.
-- Magyar nyelvű felület és indoklás; a kód és a commit-üzenet angol.
+- A felület magyar és angol (vue-i18n); a kód, a commit-üzenet és a README angol.
+  A `docs/` alatti tervezési dokumentumok magyarok.
