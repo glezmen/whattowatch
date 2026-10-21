@@ -24,6 +24,7 @@ from whattowatch.adapters.tmdb import (
     EpisodeAir,
     FindResult,
     MediaType,
+    Offer,
     SearchHit,
     TitleDetails,
     TmdbClient,
@@ -47,9 +48,11 @@ from whattowatch.services.updates import (
     detect_tmdb_new_titles,
     detect_watchlist_available,
     generate_notifications,
+    is_baseline_run,
     list_events,
     list_notifications,
     mark_notification_read,
+    refresh_since,
     run_refresh,
     sync_sa_changes,
     upsert_event,
@@ -66,6 +69,7 @@ class FakeTmdb:
         self.episodes = dict(episodes or {})
         self.details_calls: list[tuple[str, int]] = []
         self.find_calls: list[str] = []
+        self.offers: dict[int, list[Offer]] = {}
 
     def details(self, media_type: MediaType, tmdb_id: int) -> TitleDetails:
         self.details_calls.append((media_type, tmdb_id))
@@ -120,7 +124,7 @@ class FakeTmdb:
             media_type=media_type,
             tmdb_id=tmdb_id,
             region="HU",
-            offers=[],
+            offers=list(self.offers.get(tmdb_id, [])),
             link=None,
             fetched_at=datetime.now(UTC),
         )
@@ -601,15 +605,19 @@ def test_list_events_leaving_excludes_seen(db: tuple[Session, dict[int, int]]) -
 # --- orchestration --------------------------------------------------------------------------
 
 
-def test_run_refresh_without_sa_key(db: tuple[Session, dict[int, int]]) -> None:
-    session, ids = db
-    settings = Settings(
+def _settings() -> Settings:
+    return Settings(
         _env_file=None,  # type: ignore[call-arg]
         database_url="sqlite://",
         tmdb_api_key="k",
         streaming_availability_api_key=None,
     )
+
+
+def test_run_refresh_without_sa_key(db: tuple[Session, dict[int, int]]) -> None:
+    session, ids = db
     tmdb = FakeTmdb()
+    settings = _settings()
     summary = run_refresh(session=session, tmdb=cast(TmdbClient, tmdb), now=NOW, settings=settings)
     assert summary["sa"] == "no_key"
     assert {"catalog", "new_titles", "new_seasons", "watchlist_available", "notifications"} <= set(
@@ -618,3 +626,105 @@ def test_run_refresh_without_sa_key(db: tuple[Session, dict[int, int]]) -> None:
     run = session.scalars(select(SyncRun).filter_by(source="refresh")).one()
     assert run.status in ("ok", "partial") and run.finished_at is not None
     assert session.scalars(select(SyncRun).filter_by(source="tmdb_discover")).one()
+
+
+def _refresh_run(session: Session, finished: datetime, status: str = "ok") -> SyncRun:
+    run = SyncRun(
+        source="refresh",
+        started_at=finished - timedelta(minutes=5),
+        finished_at=finished,
+        status=status,
+        errors=[],
+    )
+    session.add(run)
+    session.commit()
+    return run
+
+
+def test_is_baseline_run_and_since(migrated_session: Session) -> None:
+    session = migrated_session
+    assert is_baseline_run(session) and refresh_since(session) is None
+    session.add(SyncRun(source="tmdb_discover", started_at=NOW, finished_at=NOW, status="ok"))
+    session.add(SyncRun(source="refresh", started_at=NOW, status="running", errors=[]))
+    session.add(SyncRun(source="refresh", started_at=NOW, finished_at=NOW, status="error"))
+    session.commit()
+    assert is_baseline_run(session)  # catalog syncs / unfinished / failed refreshes don't count
+    _refresh_run(session, NOW - timedelta(days=2))
+    _refresh_run(session, NOW - timedelta(days=1), status="partial")
+    assert not is_baseline_run(session)
+    assert refresh_since(session) == NOW - timedelta(days=1)
+
+
+def test_run_refresh_baseline_then_diff(db: tuple[Session, dict[int, int]]) -> None:
+    session, ids = db
+    netflix = [Offer(provider_id=8, provider_name="Netflix", offer_type="flatrate")]
+    fake = FakeTmdb()
+    tmdb = cast(TmdbClient, fake)
+    # long on Netflix, but the baseline run is the first time we verify it
+    seen_first = _new_title(session, 701)
+    session.add(WatchlistItem(title_id=seen_first, source="app", status="active"))
+    session.commit()
+    fake.offers[701] = netflix
+
+    summary = run_refresh(session=session, tmdb=tmdb, now=NOW, settings=_settings())
+    assert summary["baseline"] is True
+    assert summary["new_titles"] == "baseline"
+    assert summary["watchlist_available"] == "baseline"
+    assert events(session, event_type="new") == []
+    assert events(session, event_type="watchlist_available") == []
+    assert session.scalar(select(func.count()).select_from(Notification)) == 0
+    first = session.scalars(select(SyncRun).filter_by(source="refresh")).one()
+    assert first.status == "ok" and first.created == 0
+
+    # between runs: a brand-new title arrives on Netflix and is on the watchlist
+    fresh = _new_title(session, 702)
+    session.add(WatchlistItem(title_id=fresh, source="app", status="active"))
+    session.commit()
+    fake.offers[702] = netflix
+
+    later = NOW + timedelta(days=1)
+    summary = run_refresh(session=session, tmdb=tmdb, now=later, settings=_settings())
+    assert summary["baseline"] is False
+    assert summary["new_titles"] == 1 and summary["watchlist_available"] == 1
+    assert [e.title_id for e in events(session, event_type="new")] == [fresh]
+    assert [e.title_id for e in events(session, event_type="watchlist_available")] == [fresh]
+    notes = list_notifications(session)
+    assert [(n.event.event_type, n.event.title_id) for n in notes] == [
+        ("watchlist_available", fresh)
+    ]
+
+
+def test_watchlist_available_since(db: tuple[Session, dict[int, int]]) -> None:
+    session, ids = db
+    old_offer = _new_title(session, 711)  # long available, just added to the watchlist
+    _avail(session, old_offer, "hbo_max", "tmdb/justwatch", NOW - timedelta(days=30))
+    session.add(WatchlistItem(title_id=old_offer, source="app", status="active", added_at=NOW))
+    stale = _new_title(session, 712)  # long available, long on the watchlist
+    _avail(session, stale, "hbo_max", "tmdb/justwatch", NOW - timedelta(days=30))
+    session.add(
+        WatchlistItem(
+            title_id=stale, source="app", status="active", added_at=NOW - timedelta(days=30)
+        )
+    )
+    session.commit()
+    since = NOW - timedelta(hours=1)
+    assert detect_watchlist_available(session, now=NOW, since=since) == 1
+    assert [e.title_id for e in events(session, event_type="watchlist_available")] == [old_offer]
+
+
+def test_baseline_still_records_sa_events(db: tuple[Session, dict[int, int]]) -> None:
+    session, ids = db
+    sa = cast(StreamingAvailabilityClient, sa_fixture())
+    settings = Settings(
+        _env_file=None,  # type: ignore[call-arg]
+        database_url="sqlite://",
+        tmdb_api_key="k",
+        streaming_availability_api_key="sa",
+    )
+    summary = run_refresh(
+        session=session, tmdb=cast(TmdbClient, FakeTmdb()), sa=sa, now=NOW, settings=settings
+    )
+    assert summary["baseline"] is True
+    assert isinstance(summary["sa"], int) and summary["sa"] > 0
+    assert {e.source for e in session.scalars(select(CatalogEvent))} == {SA_SOURCE}
+    assert events(session, event_type="expiring", source=SA_SOURCE)

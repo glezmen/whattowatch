@@ -3,6 +3,7 @@ import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { api, type NotificationItem } from '../api/client'
 import { eventRoute, eventTypeLabel, fmtDate } from '../format'
+import { displayTitle } from '../titles'
 
 const POLL_MS = 60_000
 
@@ -49,7 +50,7 @@ async function markRead(n: NotificationItem) {
 }
 
 function titleOf(n: NotificationItem): string {
-  return n.title.title_hu || n.title.original_title
+  return displayTitle(n.title)
 }
 
 function onDocClick(e: MouseEvent) {

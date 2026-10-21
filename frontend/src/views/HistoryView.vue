@@ -4,6 +4,7 @@ import { api, type HistoryItem, type UserState } from '../api/client'
 import FeedbackPanel from '../components/FeedbackPanel.vue'
 import Pagination from '../components/Pagination.vue'
 import { fmtDateTime, mediaTypeLabel, sourceLabel } from '../format'
+import { displayTitle, secondaryTitle } from '../titles'
 
 const LIMIT = 50
 const q = ref('')
@@ -77,8 +78,8 @@ function statusOf(it: HistoryItem): string {
     <li v-for="it in items" :key="it.title.id" class="card">
       <button type="button" class="row-head" :aria-expanded="expanded === it.title.id" @click="expanded = expanded === it.title.id ? null : it.title.id">
         <span class="name">
-          <strong>{{ it.title.title_hu || it.title.original_title }}</strong>
-          <span v-if="it.title.title_hu && it.title.title_hu !== it.title.original_title" class="muted"> · {{ it.title.original_title }}</span>
+          <strong>{{ displayTitle(it.title) }}</strong>
+          <span v-if="secondaryTitle(it.title)" class="muted"> · {{ secondaryTitle(it.title) }}</span>
           <span class="small muted"> ({{ it.title.year ?? '?' }}, {{ mediaTypeLabel(it.title.media_type) }})</span>
         </span>
         <span class="small muted info">

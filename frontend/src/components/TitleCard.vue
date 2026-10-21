@@ -4,6 +4,7 @@ import { api, type TitleCard, type UserState } from '../api/client'
 import { CONFIDENCE_LABELS, fmtDateTime, fmtInt, mediaTypeLabel, sourceLabel } from '../format'
 import FeedbackPanel from './FeedbackPanel.vue'
 import ProviderBadge from './ProviderBadge.vue'
+import { displayTitle, secondaryTitle } from '../titles'
 
 const IMG_BASE = 'https://image.tmdb.org/t/p/w342'
 
@@ -28,8 +29,8 @@ function onUser(u: UserState) {
 }
 
 const t = computed(() => props.title)
-const mainTitle = computed(() => t.value.title_hu || t.value.original_title)
-const showOriginal = computed(() => !!t.value.title_hu && t.value.original_title !== t.value.title_hu)
+const mainTitle = computed(() => displayTitle(t.value))
+const secondary = computed(() => secondaryTitle(t.value))
 const c = computed(() => t.value.community)
 </script>
 
@@ -44,7 +45,7 @@ const c = computed(() => t.value.community)
       </div>
       <div class="meta">
         <h3>{{ mainTitle }}</h3>
-        <p v-if="showOriginal" class="original">{{ t.original_title }}</p>
+        <p v-if="secondary" class="original">{{ secondary }}</p>
         <p v-if="!t.title_hu && t.has_hu_translation === false" class="hint">nincs magyar cím</p>
         <p class="small muted">
           {{ t.year ?? 'év ismeretlen' }} · {{ mediaTypeLabel(t.media_type) }}

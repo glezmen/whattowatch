@@ -52,6 +52,18 @@ Címfeloldás: `tmdb_id` ha adja, különben `imdb_id` → `find`, különben
 6. `SyncRun(source="refresh")` összefoglaló.
 Frissítés előtt a `expiring` címekre `watch_providers` újraellenőrzés (spec 7.).
 
+**Alapállapot-futás (baseline).** A `first_seen_at` azt jelzi, mikor láttuk *mi*
+először az ajánlatot, nem a magyar streamingpremiert. Ha még nincs befejezett
+(`ok`/`partial`) `SyncRun(source="refresh")` (`is_baseline_run`), a futás csak
+alapállapotot rögzít: nem keletkezik TMDB-diff alapú `new` és `watchlist_available`
+esemény, sem ilyen értesítés; az összefoglalóban `"baseline": True`, a kihagyott
+lépések értéke `"baseline"`. Az SA-események (valós időbélyeggel) ilyenkor is
+rögzülnek és értesíthetők. A további futásoknál a diff határa (`since`) az előző
+befejezett refresh `finished_at`-je (nem `started_at`, mert az előző futás közben
+először ellenőrzött — pl. az alapállapot — ajánlatokat nem szabad újra „új”-nak
+címkézni); `watchlist_available` csak akkor, ha az ellenőrzött ajánlat vagy a
+watchlist-tétel `since` utáni, a 90 napos ismétlés-tilalom mellett.
+
 ## 5. API és felület
 - `GET /api/updates?section=new|upcoming|leaving|new_season|watchlist_available&days=31`
   → `TitleCard` + esemény (dátum, forrás, bizonyosság). Szekciónként külön,

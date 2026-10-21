@@ -576,16 +576,46 @@ def _verified_offers(session: Session, title_ids: Iterable[int]) -> dict[int, li
     return {t: sorted(keys, key=_KEY_ORDER.__getitem__) for t, keys in out.items()}
 
 
-def detect_watchlist_available(session: Session, *, now: datetime | None = None) -> int:
+def detect_watchlist_available(
+    session: Session, *, now: datetime | None = None, since: datetime | None = None
+) -> int:
     """One `watchlist_available` event per active watchlist title with a verified offer,
     at most once per WATCHLIST_REPEAT_DAYS. The event's provider is the first by registry
-    order; all provider keys are in the payload."""
+    order; all provider keys are in the payload.
+
+    With `since`, only titles whose verified offer was first seen, or whose watchlist item
+    was added, at/after `since` qualify: an offer that predates both is not news.
+    """
     now = now or datetime.now(UTC)
     today = now.date()
     active = set(
         session.scalars(select(WatchlistItem.title_id).where(WatchlistItem.status == "active"))
     )
     offers = _verified_offers(session, active)
+    if since is not None:
+        since = _aware(since)
+        fresh_offer = set(
+            session.scalars(
+                select(Availability.title_id).where(
+                    Availability.title_id.in_(list(offers)),
+                    Availability.source == VERIFIED_SOURCE,
+                    Availability.region == REGION,
+                    Availability.offer_type == "flatrate",
+                    Availability.confidence == "verified",
+                    Availability.first_seen_at >= since,
+                )
+            )
+        )
+        fresh_item = set(
+            session.scalars(
+                select(WatchlistItem.title_id).where(
+                    WatchlistItem.title_id.in_(list(offers)),
+                    WatchlistItem.status == "active",
+                    WatchlistItem.added_at >= since,
+                )
+            )
+        )
+        offers = {t: k for t, k in offers.items() if t in fresh_offer | fresh_item}
     recent = set(
         session.scalars(
             select(CatalogEvent.title_id).where(
@@ -649,23 +679,32 @@ def _leaving_bucket(days_left: int, notice_days: Sequence[int]) -> int | None:
     return min(fitting) if fitting else None
 
 
+_NOTIFY_TYPES = ("expiring", "watchlist_available", "new_season")
+
+
 def generate_notifications(
     session: Session,
     *,
     now: datetime,
     leaving_notice_days: Sequence[int] = DEFAULT_LEAVING_NOTICE_DAYS,
+    baseline: bool = False,
 ) -> int:
-    """In-app notifications (docs/updates.md 4.5); `dedupe_key` prevents repeats."""
+    """In-app notifications (docs/updates.md 4.5); `dedupe_key` prevents repeats.
+
+    On a `baseline` run no `new` / `watchlist_available` notices are created: what we see
+    for the first time is not evidence of a recent arrival.
+    """
     today = now.date()
     excluded = excluded_title_ids(session)  # watched / seen / rated / not interested
     not_interested = _not_interested_ids(session)
     relevant_leaving = _relevant_for_leaving(session)
     existing = set(session.scalars(select(Notification.dedupe_key)))
     lookback = today - timedelta(days=WINDOW_DAYS)
+    types = ("expiring", "new_season") if baseline else _NOTIFY_TYPES
     events = session.scalars(
         select(CatalogEvent)
         .where(
-            CatalogEvent.event_type.in_(("expiring", "watchlist_available", "new_season")),
+            CatalogEvent.event_type.in_(types),
             CatalogEvent.event_date >= lookback,
         )
         .order_by(CatalogEvent.event_date, CatalogEvent.id)
@@ -792,6 +831,45 @@ def _verify_ids(session: Session, today: date) -> list[int]:
     return sorted(set(ids))
 
 
+_DONE_STATUSES = ("ok", "partial")
+
+
+def _previous_refresh(session: Session) -> SyncRun | None:
+    """Latest finished (`ok` / `partial`) refresh run."""
+    return session.scalars(
+        select(SyncRun)
+        .where(
+            SyncRun.source == "refresh",
+            SyncRun.status.in_(_DONE_STATUSES),
+            SyncRun.finished_at.is_not(None),
+        )
+        .order_by(SyncRun.finished_at.desc(), SyncRun.id.desc())
+        .limit(1)
+    ).first()
+
+
+def is_baseline_run(session: Session) -> bool:
+    """True when no refresh has finished yet: the next run only records a baseline.
+
+    `first_seen_at` is when *we* first saw an offer, not a Hungarian streaming premiere,
+    so the first refresh must not label the existing catalog as new.
+    """
+    return _previous_refresh(session) is None
+
+
+def refresh_since(session: Session) -> datetime | None:
+    """Diff boundary for the next refresh: when the previous refresh finished.
+
+    `finished_at` (not `started_at`): offers first verified *during* the previous run were
+    already examined by it (or were part of the baseline) and must not be re-labeled.
+    `None` on a baseline run.
+    """
+    prev = _previous_refresh(session)
+    if prev is None or prev.finished_at is None:
+        return None
+    return _aware(prev.finished_at)
+
+
 def run_refresh(
     *,
     session: Session | None = None,
@@ -827,11 +905,13 @@ def run_refresh(
     notice_days = settings.leaving_notice_thresholds
     summary: dict[str, Any] = {}
     errors: list[str] = []
+    since = refresh_since(session)
+    baseline = since is None
+    summary["baseline"] = baseline
     run = SyncRun(source="refresh", started_at=now, status="running", errors=[])
     try:
         session.add(run)
         session.commit()
-        since = datetime.now(UTC)
         try:
             catalog_run = run_sync(
                 pages=pages,
@@ -855,15 +935,31 @@ def run_refresh(
             summary["sa"] = sa_run.created
             errors.extend(f"sa: {e}" for e in sa_run.errors)
         steps: list[tuple[str, Any]] = [
-            ("new_titles", lambda: detect_tmdb_new_titles(session, since=since, now=now)),
+            (
+                "new_titles",
+                lambda: (
+                    "baseline"
+                    if since is None
+                    else detect_tmdb_new_titles(session, since=since, now=now)
+                ),
+            ),
             (
                 "new_seasons",
                 lambda: detect_new_seasons(session, tmdb, now=now, errors=errors),
             ),
-            ("watchlist_available", lambda: detect_watchlist_available(session, now=now)),
+            (
+                "watchlist_available",
+                lambda: (
+                    "baseline"
+                    if since is None
+                    else detect_watchlist_available(session, now=now, since=since)
+                ),
+            ),
             (
                 "notifications",
-                lambda: generate_notifications(session, now=now, leaving_notice_days=notice_days),
+                lambda: generate_notifications(
+                    session, now=now, leaving_notice_days=notice_days, baseline=baseline
+                ),
             ),
         ]
         for name, step in steps:
@@ -874,9 +970,10 @@ def run_refresh(
                 session.rollback()
                 errors.append(f"{name}: {exc}")
                 summary[name] = 0
-        run.processed = sum(v for v in summary.values() if isinstance(v, int))
+        counts = {k: v for k, v in summary.items() if type(v) is int}
+        run.processed = sum(counts.values())
         run.created = sum(
-            summary.get(k, 0) for k in ("new_titles", "new_seasons", "watchlist_available")
+            counts.get(k, 0) for k in ("new_titles", "new_seasons", "watchlist_available")
         )
         run.errors = errors
         run.status = "ok" if not errors else "partial"
