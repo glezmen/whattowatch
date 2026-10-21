@@ -225,6 +225,9 @@ class TitleRating(TimestampMixin, Base):
     normalized: Mapped[float | None] = mapped_column(Float)
     rated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     import_row_id: Mapped[int | None] = _fk("import_rows.id", nullable=True, ondelete="SET NULL")
+    # Push results of this (local) rating to external accounts, e.g.
+    # {"tmdb": {"status": "ok"|"error"|"skipped", "at": iso, "value": 7.0, "error": None}}.
+    external_sync: Mapped[dict[str, Any] | None] = mapped_column(JSON)
 
     title: Mapped[Title] = relationship(back_populates="ratings")
 

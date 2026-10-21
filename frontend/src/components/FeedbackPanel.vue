@@ -186,14 +186,28 @@ async function removeSignal(s: PreferenceSignal) {
       <StarRating :model-value="user.stars" :disabled="busy" @update:model-value="setStars" />
       <a
         v-if="imdbId"
-        class="small imdb-link"
+        class="imdb-link"
         :href="`https://www.imdb.com/title/${imdbId}/`"
         target="_blank"
         rel="noopener noreferrer"
+        :aria-label="t('feedback.imdbRate')"
         :title="t('feedback.imdbRateHint')"
       >
-        {{ t('feedback.imdbRate') }}
+        <svg viewBox="0 0 34 16" width="34" height="16" aria-hidden="true" focusable="false">
+          <rect width="34" height="16" rx="3" fill="#f5c518" />
+          <text x="17" y="12.2" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="900" font-size="11.5" fill="#000">IMDb</text>
+        </svg>
       </a>
+      <span
+        v-if="user.tmdb_sync?.status === 'ok'"
+        class="tmdb-sync ok small"
+        :title="t('feedback.tmdbSent', { date: new Date(user.tmdb_sync.at).toLocaleDateString() })"
+      >✓ TMDB</span>
+      <span
+        v-else-if="user.tmdb_sync?.status === 'error'"
+        class="tmdb-sync err small"
+        :title="user.tmdb_sync.error || t('feedback.tmdbError')"
+      >⚠ TMDB</span>
     </div>
 
     <button type="button" class="link small" :aria-expanded="open" @click="open = !open">
@@ -250,6 +264,15 @@ async function removeSignal(s: PreferenceSignal) {
 </template>
 
 <style scoped>
+.imdb-link {
+  display: inline-flex;
+  align-items: center;
+  line-height: 0;
+  border-radius: 3px;
+}
+.imdb-link:hover {
+  filter: brightness(1.1);
+}
 .feedback {
   display: flex;
   flex-direction: column;
@@ -314,5 +337,14 @@ async function removeSignal(s: PreferenceSignal) {
 }
 .chip .icon-btn {
   padding: 0 2px;
+}
+.tmdb-sync {
+  cursor: help;
+}
+.tmdb-sync.ok {
+  color: var(--positive);
+}
+.tmdb-sync.err {
+  color: var(--danger);
 }
 </style>

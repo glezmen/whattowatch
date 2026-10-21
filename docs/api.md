@@ -28,7 +28,10 @@ AvailabilityEntry { provider_key, provider_name, offer_type, source, confidence,
   // mint a recommender verified_max_age_days (alap 14 nap)
 UserState { seen: bool, seen_source?: "import"|"manual", abandoned: bool, not_interested: bool,
             stars?: 1..5, liked_text?, disliked_text?, on_watchlist: bool, watchlist_sources: string[],
-            personal_ratings: { source, scale, raw_value, rated_at }[] }
+            personal_ratings: { source, scale, raw_value, rated_at }[],
+            tmdb_sync: { status: "ok"|"error"|"skipped", at, error: str|null } | null }
+  // tmdb_sync: az app-értékelés legutóbbi TMDB-re küldésének eredménye
+  // (title_ratings.external_sync.tmdb); null, ha nincs app-értékelés vagy még nem futott
   // seen: kézi felülírás (PUT seen) elsőbbséget élvez; különben "manual" = kézi esemény vagy
   // app-csillag, "import" = importált watched esemény / személyes értékelés / watched watchlist-tétel
 UpdateItem { event: UpdateEvent, title: TitleCard }
@@ -223,6 +226,37 @@ app-beállítás, alapértéke `ADULT`, `PUT` csak `ADULT`/`CHILD` értéket fog
   `POST /settings/llm/test`: mindig `200` (`ok: false, error` hibánál), kivéve ismeretlen
   `provider` → `422`; ha a `provider` eltér a beállítottól és nincs `model`, a provider
   alapértelmezett modellje fut.
+
+## TMDB-fiók és értékelés-szinkron
+
+Hivatalos TMDB v3 felhasználói hitelesítés: az app request tokent kér
+(`GET /authentication/token/new`), a felhasználó a themoviedb.org oldalán hagyja jóvá
+(`https://www.themoviedb.org/authenticate/{token}`), majd az app session-azonosítót kér
+(`POST /authentication/session/new`). **Jelszót az app nem kér és nem tárol.** A
+session-azonosító titok: csak a `.env` `TMDB_SESSION_ID` sorába kerül, a kliens soha nem
+kapja meg, naplóba nem kerül. Az `app_settings` tárolja: `tmdb_account`
+(`{id, username, name, linked_at}`), `tmdb_pending_token` (`{request_token, expires_at}`),
+`tmdb_rating_sync_enabled` (alap: `true`). Kód: `services/tmdb_account.py`.
+
+| Metódus, út | Leírás |
+|---|---|
+| `GET /settings/tmdb-account` | `TmdbAccount {linked: bool, account: {id, username, name}|null, rating_sync_enabled: bool, pending: bool, api_key_set: bool}` |
+| `PUT /settings/tmdb-account` `{rating_sync_enabled: bool}` | válasz `TmdbAccount` |
+| `POST /settings/tmdb-account/link/start` `{redirect_to?: "http(s)://…"}` (törzs opcionális) | `{approval_url}`; a tokent függőként menti; nincs TMDB-kulcs → 409 `no_tmdb_key`; TMDB-hiba → 502 `tmdb_unreachable` |
+| `POST /settings/tmdb-account/link/finish` | a jóváhagyott tokenből session → `.env`, fiókadatok → `app_settings`; válasz `TmdbAccount`. Nem jóváhagyott/lejárt/hiányzó token → 422 `detail_code: tmdb_link_failed`, a `detail` a TMDB üzenetével (a még érvényes függő token megmarad, újrapróbálható); nincs kulcs → 409 `no_tmdb_key` |
+| `POST /settings/tmdb-account/unlink` | `DELETE /authentication/session` (hibája csak naplózva), `TMDB_SESSION_ID` törlése a `.env`-ből, fiókadatok törlése; válasz `TmdbAccount` |
+| `POST /settings/tmdb-account/resync` | minden helyi app-értékelés újraküldése (szinkron); válasz `{total, ok, error, skipped}`; nincs kulcs → 409 `no_tmdb_key`, nincs összekapcsolt fiók → 409 `tmdb_not_linked` |
+
+**Értékelés-szinkron (egyirányú).** A helyi app-értékelés az igazságforrás; a TMDB-ről
+semmi nem olvasódik vissza. `PUT /titles/{id}/rating` előbb commitolja a helyi
+értékelést, majd — ha `rating_sync_enabled` és van session — elküldi:
+`POST /{movie|tv}/{tmdb_id}/rating {value: stars × 2}` (0,5–5 → 1–10), törléskor
+`DELETE /{movie|tv}/{tmdb_id}/rating`. Az eredmény a `title_ratings.external_sync`
+JSON-ba kerül (migráció 0012): `{"tmdb": {status, at, value, error, reason?}}`, ahol
+`skipped` oka `reason`: `disabled` | `not_linked` | `no_tmdb_key`. TMDB-hiba soha nem
+rontja el a helyi mentést (`status: "error"`, `error`: a TMDB üzenete). Törölt értékelésnél
+nincs sor, ahová az eredmény kerülhetne, így ott `tmdb_sync` `null`. A chat
+`record_feedback` eszköze nem küld TMDB-re (`skipped`).
 
 ## Mentés és visszaállítás
 

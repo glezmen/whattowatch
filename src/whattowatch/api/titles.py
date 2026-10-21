@@ -18,8 +18,10 @@ from whattowatch.api.cards import (
 from whattowatch.api.deps import (
     NowDep,
     OptionalSADep,
+    OptionalTmdbDep,
     RecommenderConfigDep,
     SessionDep,
+    SettingsDep,
     TmdbDep,
     get_title_or_404,
 )
@@ -256,9 +258,19 @@ def delete_signal(signal_id: int, session: SessionDep) -> Response:
 
 
 @router.put("/titles/{title_id}/rating", response_model=UserState)
-def put_rating(title_id: int, body: RatingIn, session: SessionDep) -> UserState:
+def put_rating(
+    title_id: int,
+    body: RatingIn,
+    session: SessionDep,
+    settings: SettingsDep,
+    tmdb: OptionalTmdbDep,
+) -> UserState:
+    """Saves the local rating first (committed), then pushes it to a linked TMDB account;
+    the push result is in `tmdb_sync` and never fails the request."""
     get_title_or_404(session, title_id)
-    fb.set_star_rating(session, title_id, body.stars)
+    fb.set_star_rating(session, title_id, body.stars, sync=False)
+    session.commit()
+    fb.push_star_rating(session, title_id, settings=settings, tmdb=tmdb)
     session.commit()
     return user_state(session, title_id)
 

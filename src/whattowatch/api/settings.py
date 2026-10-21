@@ -22,6 +22,7 @@ from whattowatch.api.deps import (
     RecommenderConfigDep,
     SessionDep,
     SettingsDep,
+    no_tmdb_key,
 )
 from whattowatch.api.schemas import (
     AppSettingsIn,
@@ -43,11 +44,17 @@ from whattowatch.api.schemas import (
     SubscriptionItem,
     SubscriptionsIn,
     SubscriptionsOut,
+    TmdbAccountIn,
+    TmdbAccountInfo,
+    TmdbAccountOut,
+    TmdbLinkStartIn,
+    TmdbLinkStartOut,
+    TmdbResyncOut,
 )
 from whattowatch.config import Settings, env_file_path
 from whattowatch.llm import registry as llm_registry
 from whattowatch.services import app_settings as app_cfg
-from whattowatch.services import env_file, subscriptions
+from whattowatch.services import env_file, subscriptions, tmdb_account
 
 router = APIRouter(tags=["settings"])
 log = logging.getLogger(__name__)
@@ -419,4 +426,124 @@ def post_llm_test(body: LlmTestIn, session: SessionDep, settings: SettingsDep) -
         model=resp.model,
         reply=(resp.text or "").strip(),
         usage={k: int(v) for k, v in resp.usage.items()},
+    )
+
+
+# --- TMDB account -------------------------------------------------------------------------
+
+
+def _tmdb_account_out(st: tmdb_account.AccountStatus) -> TmdbAccountOut:
+    info = st.account or {}
+    return TmdbAccountOut(
+        linked=st.linked,
+        account=TmdbAccountInfo(
+            id=int(info["id"]), username=info.get("username"), name=info.get("name")
+        )
+        if st.linked and info.get("id") is not None
+        else None,
+        rating_sync_enabled=st.rating_sync_enabled,
+        pending=st.pending,
+        api_key_set=st.api_key_set,
+    )
+
+
+def _set_running_session(request: Request, session_id: str | None) -> None:
+    """Mirror the `.env` change into the running app's settings override, if any (without
+    one, `update_env` already cleared the `get_settings` cache)."""
+    override: Settings | None = getattr(request.app.state, "settings", None)
+    if override is not None:
+        request.app.state.settings = override.model_copy(update={"tmdb_session_id": session_id})
+
+
+@router.get("/settings/tmdb-account", response_model=TmdbAccountOut)
+def get_tmdb_account(session: SessionDep, settings: SettingsDep) -> TmdbAccountOut:
+    """Link status only; the session id is never returned."""
+    return _tmdb_account_out(tmdb_account.status(session, settings))
+
+
+@router.put("/settings/tmdb-account", response_model=TmdbAccountOut)
+def put_tmdb_account(
+    body: TmdbAccountIn, session: SessionDep, settings: SettingsDep
+) -> TmdbAccountOut:
+    tmdb_account.set_rating_sync_enabled(session, body.rating_sync_enabled)
+    session.commit()
+    return _tmdb_account_out(tmdb_account.status(session, settings))
+
+
+@router.post("/settings/tmdb-account/link/start", response_model=TmdbLinkStartOut)
+def post_tmdb_link_start(
+    session: SessionDep,
+    settings: SettingsDep,
+    tmdb: OptionalTmdbDep,
+    body: TmdbLinkStartIn | None = None,
+) -> TmdbLinkStartOut:
+    """New request token (kept as pending); the user approves it at `approval_url`."""
+    if tmdb is None:
+        raise no_tmdb_key()
+    redirect_to = (body.redirect_to or "").strip() or None if body else None
+    if redirect_to is not None and not redirect_to.startswith(("http://", "https://")):
+        raise HTTPException(status_code=422, detail="A redirect_to http(s):// kezdetű legyen.")
+    try:
+        started = tmdb_account.start_link(session, settings, tmdb, redirect_to=redirect_to)
+    except (TmdbError, httpx.HTTPError) as exc:
+        session.rollback()
+        raise CodedHTTPException(
+            502, "A TMDB nem érhető el, az összekapcsolás nem indítható.", "tmdb_unreachable"
+        ) from exc
+    session.commit()
+    return TmdbLinkStartOut(approval_url=started["approval_url"])
+
+
+@router.post("/settings/tmdb-account/link/finish", response_model=TmdbAccountOut)
+def post_tmdb_link_finish(
+    request: Request, session: SessionDep, settings: SettingsDep, tmdb: OptionalTmdbDep
+) -> TmdbAccountOut:
+    """Approved pending token -> session id in `.env`; not approved/expired -> 422."""
+    if tmdb is None:
+        raise no_tmdb_key()
+    try:
+        result = tmdb_account.finish_link(session, settings, tmdb)
+    except tmdb_account.TmdbLinkError as exc:
+        session.commit()  # an expired pending token is cleared
+        raise CodedHTTPException(422, exc.message, "tmdb_link_failed") from exc
+    except (OSError, ValueError) as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=500, detail=f"A .env nem írható ({type(exc).__name__})."
+        ) from exc
+    session.commit()
+    _set_running_session(request, result.session_id)
+    return _tmdb_account_out(result.status)
+
+
+@router.post("/settings/tmdb-account/unlink", response_model=TmdbAccountOut)
+def post_tmdb_unlink(
+    request: Request, session: SessionDep, settings: SettingsDep, tmdb: OptionalTmdbDep
+) -> TmdbAccountOut:
+    """Revokes the TMDB session (best effort) and removes it from `.env`."""
+    try:
+        st = tmdb_account.unlink(session, settings, tmdb)
+    except (OSError, ValueError) as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=500, detail=f"A .env nem írható ({type(exc).__name__})."
+        ) from exc
+    session.commit()
+    _set_running_session(request, None)
+    return _tmdb_account_out(st)
+
+
+@router.post("/settings/tmdb-account/resync", response_model=TmdbResyncOut)
+def post_tmdb_resync(
+    session: SessionDep, settings: SettingsDep, tmdb: OptionalTmdbDep
+) -> TmdbResyncOut:
+    """Pushes every local app rating to the linked account (synchronous)."""
+    if tmdb is None:
+        raise no_tmdb_key()
+    if not settings.tmdb_session_id:
+        raise CodedHTTPException(409, "Nincs összekapcsolt TMDB-fiók.", "tmdb_not_linked")
+    result = tmdb_account.resync_ratings(session, settings, tmdb)
+    session.commit()
+    return TmdbResyncOut(
+        total=result.total, ok=result.ok, error=result.error, skipped=result.skipped
     )

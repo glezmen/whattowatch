@@ -39,6 +39,7 @@ export interface UserState {
   on_watchlist: boolean
   watchlist_sources: string[]
   personal_ratings: PersonalRating[]
+  tmdb_sync?: { status: 'ok' | 'error' | 'skipped'; at: string; error: string | null } | null
 }
 
 export interface CommunityScores {
@@ -446,6 +447,14 @@ export interface NetflixProfile {
 
 export type RefreshSummary = Record<string, number | string>
 
+export interface TmdbAccountStatus {
+  linked: boolean
+  account: { username: string; name: string; id: number } | null
+  rating_sync_enabled: boolean
+  pending: boolean
+  api_key_set: boolean
+}
+
 export class ApiError extends Error {
   status: number
   /** `detail_code` from the response body, when the backend sends one. */
@@ -684,6 +693,14 @@ export const api = {
 
   getSecrets: () => request<SecretsResponse>('GET', '/settings/secrets'),
   /** Quiet: the caller shows errors inline (e.g. invalid_tmdb_key). */
+  getTmdbAccount: () => request<TmdbAccountStatus>('GET', '/settings/tmdb-account', undefined, true),
+  tmdbLinkStart: () => request<{ approval_url: string }>('POST', '/settings/tmdb-account/link/start', undefined, true),
+  tmdbLinkFinish: () => request<TmdbAccountStatus>('POST', '/settings/tmdb-account/link/finish', undefined, true),
+  tmdbUnlink: () => request<TmdbAccountStatus>('POST', '/settings/tmdb-account/unlink', undefined, true),
+  putTmdbAccount: (rating_sync_enabled: boolean) =>
+    request<TmdbAccountStatus>('PUT', '/settings/tmdb-account', { rating_sync_enabled }, true),
+  tmdbResync: () =>
+    request<{ ok: number; error: number; skipped: number }>('POST', '/settings/tmdb-account/resync', undefined, true),
   putSecrets: (patch: SecretsPatch) => request<SecretsResponse>('PUT', '/settings/secrets', patch, true),
   getLlmSettings: () => request<LlmSettings>('GET', '/settings/llm'),
   putLlmSettings: (patch: LlmSettingsPatch) => request<LlmSettings>('PUT', '/settings/llm', patch),

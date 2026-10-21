@@ -117,6 +117,7 @@ def test_title_card_shape_and_availability(api: ApiEnv) -> None:
         "on_watchlist": False,
         "watchlist_sources": [],
         "personal_ratings": [],
+        "tmdb_sync": None,
     }
 
 

@@ -135,6 +135,21 @@ function onKey(e: KeyboardEvent) {
   border: none;
   background: none;
   cursor: pointer;
+  box-shadow: none;
+  outline: none;
+  border-radius: 0;
+}
+.half:hover:not(:disabled),
+.half:active:not(:disabled) {
+  background: none;
+  border: 0;
+  padding: 0;
+  box-shadow: none;
+  outline: none;
+}
+.half:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 .half.left {
   left: 0;

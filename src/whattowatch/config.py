@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_ignore_empty=True)
 
     tmdb_api_key: str | None = None
+    # TMDB v3 user session; written by the app when the TMDB account is linked. Secret.
+    tmdb_session_id: str | None = None
     streaming_availability_api_key: str | None = None
     database_url: str = "sqlite:///data/whattowatch.db"
     lm_studio_base_url: str = "http://localhost:1234/v1"

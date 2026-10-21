@@ -6,6 +6,7 @@ it must carry JustWatch and TMDB attribution (see docs/adatforrasok.md 1.2).
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, date, datetime
@@ -21,6 +22,10 @@ MAX_RETRY_AFTER = 5.0
 MediaType = Literal["movie", "tv"]
 OfferType = Literal["flatrate", "rent", "buy", "ads", "free"]
 OFFER_TYPES: tuple[OfferType, ...] = get_args(OfferType)
+APPROVE_URL = "https://www.themoviedb.org/authenticate/{token}"
+
+# httpx logs every request URL at INFO; the URL carries `api_key` and `session_id`.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 class TmdbError(Exception):
@@ -101,6 +106,29 @@ class Provider(BaseModel):
     provider_name: str
     display_priority: int | None
     logo_path: str | None = None
+
+
+class RequestToken(BaseModel):
+    request_token: str
+    expires_at: datetime | None
+
+
+class TmdbAccount(BaseModel):
+    id: int
+    username: str | None
+    name: str | None
+
+
+def _tmdb_time(value: Any) -> datetime | None:
+    """TMDB auth timestamps look like `2026-10-21 13:00:00 UTC`."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip().removesuffix(" UTC").replace(" ", "T")
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
 class DiscoverHit(SearchHit):
@@ -248,16 +276,32 @@ class TmdbClient:
     def __exit__(self, *exc: object) -> None:
         self.close()
 
-    def _get(self, path: str, params: Mapping[str, Any] | None = None) -> Any:
+    def _request(
+        self,
+        method: str,
+        path: str,
+        params: Mapping[str, Any] | None = None,
+        body: Mapping[str, Any] | None = None,
+    ) -> Any:
         query = {"api_key": self.api_key, **(params or {})}
         url = path if str(self._client.base_url) else BASE_URL + path
-        response = self._client.get(url, params=query)
+
+        def send() -> httpx.Response:
+            return self._client.request(method, url, params=query, json=body)
+
+        response = send()
         if response.status_code == 429:
             self._sleep(self._retry_after(response))
-            response = self._client.get(url, params=query)
+            response = send()
         if not response.is_success:
             raise TmdbError(response.status_code, self._error_message(response))
-        return response.json()
+        try:
+            return response.json()
+        except ValueError:
+            return {}
+
+    def _get(self, path: str, params: Mapping[str, Any] | None = None) -> Any:
+        return self._request("GET", path, params)
 
     @staticmethod
     def _retry_after(response: httpx.Response) -> float:
@@ -401,3 +445,56 @@ class TmdbClient:
 
     def find_by_imdb_id(self, imdb_id: str) -> list[SearchHit]:
         return self.find(imdb_id).hits
+
+    # --- account (v3 user authentication: request token -> user approval -> session) ---
+
+    @staticmethod
+    def approval_url(request_token: str, redirect_to: str | None = None) -> str:
+        url = APPROVE_URL.format(token=request_token)
+        if redirect_to:
+            url += "?" + str(httpx.QueryParams({"redirect_to": redirect_to}))
+        return url
+
+    def new_request_token(self) -> RequestToken:
+        data = self._get("/authentication/token/new")
+        token = data.get("request_token") if isinstance(data, dict) else None
+        if not isinstance(token, str) or not token:
+            raise TmdbError(502, "no request_token in the TMDB response")
+        return RequestToken(request_token=token, expires_at=_tmdb_time(data.get("expires_at")))
+
+    def create_session(self, request_token: str) -> str:
+        """Session id for an approved request token (unapproved -> TmdbError 401)."""
+        data = self._request(
+            "POST", "/authentication/session/new", body={"request_token": request_token}
+        )
+        session_id = data.get("session_id") if isinstance(data, dict) else None
+        if not isinstance(session_id, str) or not session_id:
+            raise TmdbError(502, "no session_id in the TMDB response")
+        return session_id
+
+    def account(self, session_id: str) -> TmdbAccount:
+        data = self._get("/account", {"session_id": session_id})
+        if not isinstance(data, dict) or data.get("id") is None:
+            raise TmdbError(502, "no account id in the TMDB response")
+        return TmdbAccount(
+            id=int(data["id"]),
+            username=_nonempty(data.get("username")),
+            name=_nonempty(data.get("name")),
+        )
+
+    def delete_session(self, session_id: str) -> None:
+        self._request("DELETE", "/authentication/session", body={"session_id": session_id})
+
+    def rate(self, media_type: MediaType, tmdb_id: int, value: float, session_id: str) -> None:
+        """Set the account's rating (0.5-10 in 0.5 steps) for a movie or TV show."""
+        if not 0.5 <= value <= 10 or round(value * 2) / 2 != value:
+            raise ValueError("TMDB rating must be a multiple of 0.5 between 0.5 and 10")
+        self._request(
+            "POST",
+            f"/{media_type}/{tmdb_id}/rating",
+            {"session_id": session_id},
+            body={"value": value},
+        )
+
+    def unrate(self, media_type: MediaType, tmdb_id: int, session_id: str) -> None:
+        self._request("DELETE", f"/{media_type}/{tmdb_id}/rating", {"session_id": session_id})

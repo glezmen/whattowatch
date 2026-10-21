@@ -54,6 +54,14 @@ class PersonalRating(BaseModel):
     rated_at: datetime | None = None
 
 
+class ExternalSyncState(BaseModel):
+    """Push status of the app rating to an external account (`title_ratings.external_sync`)."""
+
+    status: Literal["ok", "error", "skipped"]
+    at: datetime | None = None
+    error: str | None = None
+
+
 class UserState(BaseModel):
     seen: bool = False
     seen_source: Literal["import", "manual"] | None = None
@@ -65,6 +73,7 @@ class UserState(BaseModel):
     on_watchlist: bool = False
     watchlist_sources: list[str] = Field(default_factory=list)
     personal_ratings: list[PersonalRating] = Field(default_factory=list)
+    tmdb_sync: ExternalSyncState | None = None
 
 
 class TitleCard(BaseModel):
@@ -474,6 +483,41 @@ class FeedbackIn(BaseModel):
 
     liked_text: str | None = None
     disliked_text: str | None = None
+
+
+class TmdbAccountInfo(BaseModel):
+    id: int
+    username: str | None = None
+    name: str | None = None
+
+
+class TmdbAccountOut(BaseModel):
+    linked: bool
+    account: TmdbAccountInfo | None = None
+    rating_sync_enabled: bool
+    pending: bool
+    api_key_set: bool
+
+
+class TmdbAccountIn(BaseModel):
+    rating_sync_enabled: bool
+
+
+class TmdbLinkStartIn(BaseModel):
+    """Optional: where themoviedb.org sends the user back after approving."""
+
+    redirect_to: str | None = None
+
+
+class TmdbLinkStartOut(BaseModel):
+    approval_url: str
+
+
+class TmdbResyncOut(BaseModel):
+    total: int
+    ok: int
+    error: int
+    skipped: int
 
 
 class RatingIn(BaseModel):

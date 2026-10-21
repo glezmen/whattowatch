@@ -7,11 +7,12 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Final
+from typing import Any, Final
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from whattowatch.config import Settings, get_settings
 from whattowatch.db.models import (
     Title,
     TitleFeedback,
@@ -21,6 +22,8 @@ from whattowatch.db.models import (
     WatchlistItem,
 )
 from whattowatch.preferences.extract import extract_for_feedback
+from whattowatch.services import tmdb_account
+from whattowatch.services.tmdb_account import TmdbAccountClient
 
 APP_SOURCE = "app"
 MANUAL_WATCH_SOURCE = "manual"
@@ -83,9 +86,20 @@ def set_feedback(
     return feedback
 
 
-def set_star_rating(session: Session, title_id: int, stars: float | None) -> TitleRating | None:
-    """Upsert the in-app 1-5 star rating (half steps, 0.5-5); None deletes it."""
-    _require_title(session, title_id)
+def set_star_rating(
+    session: Session,
+    title_id: int,
+    stars: float | None,
+    *,
+    settings: Settings | None = None,
+    tmdb: TmdbAccountClient | None = None,
+    sync: bool = True,
+) -> TitleRating | None:
+    """Upsert the in-app 1-5 star rating (half steps, 0.5-5); None deletes it.
+
+    With `sync` the result is then pushed to a linked TMDB account (`push_star_rating`);
+    a TMDB failure is only recorded, the local rating is always saved."""
+    title = _require_title(session, title_id)
     rating = session.scalar(
         select(TitleRating).where(
             TitleRating.title_id == title_id, TitleRating.source == APP_SOURCE
@@ -95,6 +109,8 @@ def set_star_rating(session: Session, title_id: int, stars: float | None) -> Tit
         if rating is not None:
             session.delete(rating)
             session.flush()
+        if sync:
+            _push(session, title, None, settings, tmdb)
         return None
     if not 0.5 <= stars <= 5 or round(stars * 2) / 2 != stars:
         raise ValueError("stars must be a multiple of 0.5 between 0.5 and 5")
@@ -107,7 +123,44 @@ def set_star_rating(session: Session, title_id: int, stars: float | None) -> Tit
     rating.normalized = (stars - 0.5) / 4.5
     rating.rated_at = _now()
     session.flush()
+    if sync:
+        _push(session, title, stars, settings, tmdb)
     return rating
+
+
+def push_star_rating(
+    session: Session,
+    title_id: int,
+    *,
+    settings: Settings | None = None,
+    tmdb: TmdbAccountClient | None = None,
+) -> dict[str, Any]:
+    """Push the current app rating of a title (or its absence) to TMDB; never raises.
+
+    Lets a caller commit the local save first and do the network call afterwards."""
+    title = _require_title(session, title_id)
+    rating = session.scalar(
+        select(TitleRating).where(
+            TitleRating.title_id == title_id, TitleRating.source == APP_SOURCE
+        )
+    )
+    stars: float | None = None
+    if rating is not None:
+        try:
+            stars = float(rating.raw_value)
+        except ValueError:
+            stars = None
+    return _push(session, title, stars, settings, tmdb)
+
+
+def _push(
+    session: Session,
+    title: Title,
+    stars: float | None,
+    settings: Settings | None,
+    tmdb: TmdbAccountClient | None,
+) -> dict[str, Any]:
+    return tmdb_account.sync_rating(session, settings or get_settings(), tmdb, title, stars)
 
 
 def _user_state(session: Session, title_id: int) -> TitleUserState:

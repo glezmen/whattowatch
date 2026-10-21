@@ -20,6 +20,9 @@ uv run wtw serve         # http://127.0.0.1:8000/api/health
 uv run wtw tmdb providers --type movie      # HU provider list from TMDB
 uv run wtw tmdb probe "Interstellar" --type movie --year 2014
 uv run wtw tmdb validate                     # report: data/reports/
+uv run wtw tmdb link                         # link your TMDB account (approve in the browser)
+uv run wtw tmdb resync-ratings               # push all app ratings to the linked account
+uv run wtw tmdb unlink
 
 uv run wtw catalog sync                      # TMDB discover for the six subscriptions (HU)
 uv run wtw catalog backfill                  # refresh title details: poster, votes, popularity
@@ -96,6 +99,21 @@ environment variable, it takes precedence over `.env`. The choice of LLM provide
 cloud text sending and fallback is stored in the database (`app_settings`) and takes
 precedence over the `LLM_*` values in `.env` (both `wtw llm test` and
 `wtw recommend extract --extractor llm` use it).
+
+### TMDB account
+
+Your in-app star ratings can be pushed to your TMDB account. Linking uses TMDB's official
+v3 user authentication: the app requests a token, you approve it on themoviedb.org
+(Settings page, or `uv run wtw tmdb link`, which prints the approval URL and waits for
+Enter), and the app exchanges the approved token for a session. The app never asks for or
+stores your TMDB password. The session id is a secret and is written only to the
+gitignored `.env` as `TMDB_SESSION_ID` (never sent to the browser, never logged); the
+account name/id and the on/off switch for rating sync (default on) live in the database.
+Sync is one-way: the local rating stays the source of truth (stars x 2 -> TMDB's 1-10),
+clearing a rating removes it on TMDB, and a TMDB error is shown on the card but never
+breaks the local save. Unlink from the Settings page or with `uv run wtw tmdb unlink`
+(revokes the session on TMDB and removes `TMDB_SESSION_ID` from `.env`); you can also
+revoke access on themoviedb.org. API: `docs/api.md` ("TMDB-fiók").
 
 ## Daily refresh
 

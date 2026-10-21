@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from typing import Any, Literal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from whattowatch.api.schemas import (
     AvailabilityEntry,
     CommunityScores,
+    ExternalSyncState,
     PersonalRating,
     TitleCard,
     UserState,
@@ -34,6 +35,22 @@ from whattowatch.services.subscriptions import enabled_keys
 IMDB_COMMUNITY_SOURCE = "imdb_community"
 DEFAULT_MAX_AGE_DAYS = 14
 _KEY_ORDER = {p.key: i for i, p in enumerate(SUBSCRIPTIONS)}
+
+
+def _sync_state(value: Any) -> ExternalSyncState | None:
+    """`external_sync["tmdb"]` -> UI state; malformed entries are ignored."""
+    if not isinstance(value, dict) or value.get("status") not in ("ok", "error", "skipped"):
+        return None
+    at = None
+    if isinstance(value.get("at"), str):
+        try:
+            at = _aware(datetime.fromisoformat(value["at"]))
+        except ValueError:
+            at = None
+    error = value.get("error")
+    return ExternalSyncState(
+        status=value["status"], at=at, error=error if isinstance(error, str) else None
+    )
 
 
 def _aware(dt: datetime) -> datetime:
@@ -175,6 +192,7 @@ def _user_states(session: Session, ids: list[int]) -> dict[int, UserState]:
                 stars = float(app_rating.raw_value)
             except ValueError:
                 stars = None
+        sync = ((app_rating.external_sync or {}) if app_rating else {}).get("tmdb")
         out[tid] = UserState(
             seen=seen,
             seen_source=seen_source,
@@ -194,6 +212,7 @@ def _user_states(session: Session, ids: list[int]) -> dict[int, UserState]:
                 )
                 for r in rats
             ],
+            tmdb_sync=_sync_state(sync),
         )
     return out
 

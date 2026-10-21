@@ -130,7 +130,9 @@
     "clearDisliked": "Clear what you didn't like",
     "saved": "Feedback saved.",
     "signals": "Extracted signals (you can remove them):",
-    "deleteSignal": "Remove signal: {label}"
+    "deleteSignal": "Remove signal: {label}",
+    "tmdbSent": "Sent to TMDB ({date})",
+    "tmdbError": "TMDB sync error"
   },
   "card": {
     "descToggle": "Description",
@@ -511,6 +513,28 @@
       "invalidBackup": "The file is not a valid whattowatch backup.",
       "confirmRequired": "Type the confirmation word to restore.",
       "failed": "The operation failed."
+    },
+    "tmdb": {
+      "title": "TMDB account",
+      "notLinked": "Not linked",
+      "linked": "Linked: {name}",
+      "link": "Link TMDB account",
+      "finish": "I approved, finish",
+      "approveHint": "Approve access on the TMDB page that just opened first, then click \"I approved, finish\".",
+      "approveFirst": "Approve the request on the TMDB page first.",
+      "unlink": "Unlink",
+      "unlinkConfirm": "Unlink the TMDB account?",
+      "sync": "Send my ratings to TMDB",
+      "syncNeedLink": "link the account first",
+      "resync": "Sync existing ratings",
+      "resyncResult": "Sent: {ok}, errors: {error}, skipped: {skipped}",
+      "privacy": "Only the star value and the TMDB title id are sent; nothing is read back from TMDB.",
+      "needKey": "Set the TMDB API key first.",
+      "toKeys": "API keys",
+      "noKey": "No TMDB API key is set.",
+      "failed": "The action failed.",
+      "loadFailed": "Couldn't load the TMDB account status.",
+      "linkedToast": "TMDB account linked"
     }
   },
   "chat": {

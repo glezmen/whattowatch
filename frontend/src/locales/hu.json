@@ -130,7 +130,9 @@
     "clearDisliked": "Negatív vélemény törlése",
     "saved": "Visszajelzés elmentve.",
     "signals": "Kinyert jelzések (törölhetők):",
-    "deleteSignal": "Jelzés törlése: {label}"
+    "deleteSignal": "Jelzés törlése: {label}",
+    "tmdbSent": "TMDB-re elküldve ({date})",
+    "tmdbError": "TMDB-szinkron hiba"
   },
   "card": {
     "descToggle": "Leírás",
@@ -511,6 +513,28 @@
       "invalidBackup": "A fájl nem érvényes whattowatch-mentés.",
       "confirmRequired": "A visszaállításhoz be kell írni a megerősítő szót.",
       "failed": "A művelet nem sikerült."
+    },
+    "tmdb": {
+      "title": "TMDB-fiók",
+      "notLinked": "Nincs összekötve",
+      "linked": "Összekötve: {name}",
+      "link": "TMDB-fiók összekötése",
+      "finish": "Jóváhagytam, befejezés",
+      "approveHint": "A TMDB megnyílt oldalán előbb hagyd jóvá a hozzáférést, utána kattints a „Jóváhagytam, befejezés” gombra.",
+      "approveFirst": "Előbb hagyd jóvá a kérést a TMDB oldalán.",
+      "unlink": "Leválasztás",
+      "unlinkConfirm": "Biztosan leválasztod a TMDB-fiókot?",
+      "sync": "Értékelések küldése a TMDB-re",
+      "syncNeedLink": "előbb kösd össze a fiókot",
+      "resync": "Meglévő értékelések szinkronizálása",
+      "resyncResult": "Elküldve: {ok}, hiba: {error}, kihagyva: {skipped}",
+      "privacy": "Csak a csillagos érték és a TMDB címazonosító kerül elküldésre; a TMDB-ből semmit nem olvasunk vissza.",
+      "needKey": "Előbb add meg a TMDB API-kulcsot.",
+      "toKeys": "API-kulcsok",
+      "noKey": "Nincs TMDB API-kulcs beállítva.",
+      "failed": "A művelet nem sikerült.",
+      "loadFailed": "A TMDB-fiók állapota nem tölthető be.",
+      "linkedToast": "TMDB-fiók összekötve"
     }
   },
   "chat": {

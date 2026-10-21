@@ -8,6 +8,7 @@ import SyncLog from '../components/SyncLog.vue'
 import LanguageSwitch from '../components/LanguageSwitch.vue'
 import LlmSection from '../components/LlmSection.vue'
 import SecretsSection from '../components/SecretsSection.vue'
+import TmdbAccountSection from '../components/TmdbAccountSection.vue'
 import SubscriptionToggles from '../components/SubscriptionToggles.vue'
 
 const { t } = useI18n()
@@ -77,6 +78,11 @@ function show(v: unknown): string {
   <section id="api-keys" class="card">
     <h2>{{ t('settings.secrets.title') }}</h2>
     <SecretsSection @saved="onSecretsSaved" />
+  </section>
+
+  <section class="card">
+    <h2>{{ t('settings.tmdb.title') }}</h2>
+    <TmdbAccountSection :reload-token="llmReload" />
   </section>
 
   <section class="card">
