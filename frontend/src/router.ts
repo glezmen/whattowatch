@@ -12,7 +12,7 @@ export const router = createRouter({
     { path: '/elozmenyek', component: () => import('./views/HistoryView.vue'), meta: { titleKey: 'nav.history' } },
     { path: '/feloldas', component: () => import('./views/ResolutionView.vue'), meta: { titleKey: 'nav.resolution' } },
     { path: '/import', component: () => import('./views/ImportView.vue'), meta: { titleKey: 'nav.import' } },
-    { path: '/sync', component: () => import('./views/SyncView.vue'), meta: { titleKey: 'nav.sync' } },
+    { path: '/sync', redirect: '/beallitasok' },
     { path: '/beallitasok', component: () => import('./views/SettingsView.vue'), meta: { titleKey: 'nav.settings' } },
     { path: '/ujdonsagok', component: () => import('./views/UpdatesView.vue'), meta: { titleKey: 'nav.updates' } },
     { path: '/tavozik', component: () => import('./views/LeavingView.vue'), meta: { titleKey: 'nav.leaving' } },

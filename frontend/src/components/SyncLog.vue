@@ -26,7 +26,7 @@ function errText(e: unknown): string {
 </script>
 
 <template>
-  <h1>{{ $t('sync.title') }}</h1>
+  <h2>{{ $t('sync.title') }}</h2>
   <div class="toolbar">
     <button type="button" :disabled="loading" @click="load">{{ $t('common.refresh') }}</button>
     <RouterLink to="/import" class="small">{{ $t('sync.hint') }}</RouterLink>

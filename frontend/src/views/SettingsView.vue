@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { api, type RefreshSummary, type Settings } from '../api/client'
 import { DATA_RESTORED_EVENT, loadAppSettings, loadSubscriptions } from '../appSettings'
 import BackupSection from '../components/BackupSection.vue'
+import SyncLog from '../components/SyncLog.vue'
 import LanguageSwitch from '../components/LanguageSwitch.vue'
 import LlmSection from '../components/LlmSection.vue'
 import SecretsSection from '../components/SecretsSection.vue'
@@ -153,6 +154,9 @@ function show(v: unknown): string {
       </dl>
     </section>
   </template>
+  <section id="sync" class="card">
+    <SyncLog />
+  </section>
 </template>
 
 <style scoped>

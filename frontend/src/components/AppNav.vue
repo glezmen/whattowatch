@@ -14,7 +14,6 @@ const links = [
   { to: '/tavozik', key: 'nav.leaving' },
   { to: '/feloldas', key: 'nav.resolution' },
   { to: '/import', key: 'nav.import' },
-  { to: '/sync', key: 'nav.sync' },
   { to: '/beallitasok', key: 'nav.settings' },
 ]
 </script>
