@@ -270,7 +270,7 @@ export interface ToolTraceEntry {
   arguments: Record<string, unknown>
   result_summary: string
   error?: string | null
-  /** Local title ids returned by get_recommendations / search_titles. */
+  /** Local title ids returned by get_recommendations / browse_catalog / search_titles. */
   title_ids: number[]
 }
 

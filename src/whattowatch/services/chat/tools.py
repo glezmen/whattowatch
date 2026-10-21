@@ -14,17 +14,17 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
-from sqlalchemy import or_, select, tuple_
+from sqlalchemy import func, or_, select, tuple_
 from sqlalchemy.orm import Session
 
 from whattowatch.adapters.tmdb import AvailabilitySnapshot, SearchHit, TmdbError
 from whattowatch.db.models import MediaType, Title, WatchlistItem
 from whattowatch.providers import BY_KEY
-from whattowatch.services.recommend.candidates import verified_subscriptions
+from whattowatch.services.recommend.candidates import GenresMode, verified_subscriptions
 from whattowatch.services.recommend.config import RecommenderConfig
 
 if TYPE_CHECKING:
@@ -79,7 +79,14 @@ class GetRecommendationsIn(_In):
         default=None, max_length=6, description="Szolgáltatókulcsok; legalább egyiken legyen."
     )
     genres: list[str] | None = Field(
-        default=None, max_length=10, description="TMDB magyar műfajnevek (pl. Thriller, Dráma)."
+        default=None,
+        max_length=10,
+        description="TMDB magyar műfajnevek (pl. Romantikus, Dráma); a rangsorolás előtt szűr.",
+    )
+    genres_mode: GenresMode = Field(
+        default="all",
+        description="all = minden műfaj egyezzen (alap; kevés találatnál automatikusan any), "
+        "any = legalább egy.",
     )
     mood_labels: list[str] | None = Field(
         default=None,
@@ -91,6 +98,29 @@ class GetRecommendationsIn(_In):
         description="true = a watchlistes címek is szerepelhetnek (alapból kimaradnak).",
     )
     limit: int = Field(default=8, ge=1, le=20)
+
+    @field_validator("providers")
+    @classmethod
+    def _known_providers(cls, value: list[str] | None) -> list[str] | None:
+        return _check_providers(value)
+
+
+class BrowseCatalogIn(_In):
+    genres: list[str] | None = Field(
+        default=None, max_length=10, description="TMDB magyar műfajnevek (pl. Romantikus, Dráma)."
+    )
+    genres_mode: GenresMode = Field(default="all", description="all = mind, any = legalább egy.")
+    media_type: MediaType | None = Field(default=None, description="movie = film, tv = sorozat.")
+    providers: list[str] | None = Field(
+        default=None, max_length=6, description="Szolgáltatókulcsok; legalább egyiken legyen."
+    )
+    sort: Literal["popularity", "rating", "newest"] = Field(
+        default="popularity",
+        description="popularity = népszerűség, rating = TMDB-pontszám, newest = legújabb év.",
+    )
+    include_seen: bool = Field(default=False, description="true = a látott címek is.")
+    limit: int = Field(default=10, ge=1, le=30)
+    offset: int = Field(default=0, ge=0, le=1000)
 
     @field_validator("providers")
     @classmethod
@@ -299,58 +329,158 @@ def search_titles(
 def get_recommendations(
     session: Session, tmdb: ChatTmdb | None, args: GetRecommendationsIn, ctx: ToolContext
 ) -> dict[str, Any]:
-    """Run the deterministic engine, then post-filter by providers/genres.
+    """Run the deterministic engine with the genre/provider filters applied to the
+    candidates before ranking (the batch is not stored as the home page's batch).
 
-    With filters the engine is asked for a larger batch (up to 50) so the filter has
-    room. `mood_labels` never exclude: titles whose genre-implied labels
-    (`labels_for_title(genres)`) match more requested labels move up, ties keep the
-    engine's rank. The persisted batch becomes the latest one (as on the home page).
+    `genres` with mode "all" falling short of `limit` is retried once with "any"; titles
+    matching more requested genres then come first. `mood_labels` never exclude: titles
+    whose genre-implied labels (`labels_for_title(genres)`) match more requested labels
+    move up, ties keep the engine's rank. `total_candidates` is the number of titles
+    matching the filters before ranking and verification.
     """
     from whattowatch.preferences import vocabulary
     from whattowatch.services.recommend import engine
+    from whattowatch.services.recommend.candidates import count_candidates
 
     known_labels = {label.full_key for label in vocabulary.all_labels()}
     moods = [m for m in (args.mood_labels or []) if m in known_labels]
     ignored = [m for m in (args.mood_labels or []) if m not in known_labels]
-    filtered = bool(args.providers or args.genres or moods)
-    rows = engine.run_recommendations(
-        user_id=ctx.user_id,
-        limit=min(max(args.limit * 5, 25), 50) if filtered else args.limit,
-        media_type=args.media_type,
-        session=session,
-        tmdb=tmdb if tmdb is not None else _OfflineTmdb(),
-        config=ctx.config,
-        now=ctx.clock(),
-        echo=False,
-        include_watchlist=args.include_watchlist,
-    )
-    subs = _subs(session, [r.title_id for r in rows], ctx)
     wanted_genres = {g.casefold() for g in args.genres or []}
-    picked: list[tuple[int, Any]] = []
+
+    def attempt(mode: GenresMode) -> tuple[list[Any], int]:
+        reorder = bool(moods) or (bool(wanted_genres) and mode == "any")
+        filters: dict[str, Any] = {
+            "media_type": args.media_type,
+            "genres": args.genres or None,
+            "genres_mode": mode,
+            "providers": args.providers or None,
+        }
+        total = count_candidates(
+            session,
+            user_id=ctx.user_id,
+            now=ctx.clock(),
+            max_age_days=ctx.config.verified_max_age_days,
+            exclude_watchlist=not args.include_watchlist,
+            **filters,
+        )
+        rows = engine.run_recommendations(
+            user_id=ctx.user_id,
+            limit=min(max(args.limit * 3, 25), 50) if reorder else args.limit,
+            session=session,
+            tmdb=tmdb if tmdb is not None else _OfflineTmdb(),
+            config=ctx.config,
+            now=ctx.clock(),
+            echo=False,
+            include_watchlist=args.include_watchlist,
+            persist=False,
+            **filters,
+        )
+        return rows, total
+
+    mode: GenresMode = args.genres_mode
+    rows, total = attempt(mode)
+    strict_total: int | None = None
+    if wanted_genres and mode == "all" and len(rows) < args.limit and len(wanted_genres) > 1:
+        strict_total = total
+        mode = "any"
+        rows, total = attempt(mode)
+    subs = _subs(session, [r.title_id for r in rows], ctx)
+    picked: list[tuple[int, int, Any]] = []
     for r in rows:
-        t = r.title
-        if args.providers and not set(args.providers) & set(subs.get(t.id, ())):
-            continue
-        if wanted_genres and not wanted_genres & {g.casefold() for g in t.genres or []}:
-            continue
-        matches = len(set(moods) & vocabulary.labels_for_title(t.genres or [])) if moods else 0
-        picked.append((matches, r))
-    picked.sort(key=lambda mr: (-mr[0], mr[1].rank))
+        genres = r.title.genres or []
+        g_matches = len(wanted_genres & {g.casefold() for g in genres})
+        m_matches = len(set(moods) & vocabulary.labels_for_title(genres)) if moods else 0
+        picked.append((g_matches if mode == "any" else 0, m_matches, r))
+    picked.sort(key=lambda gmr: (-gmr[0], -gmr[1], gmr[2].rank))
     items = [
         {
             "rank": r.rank,
             **_compact(r.title, subs),
             "genres": list(r.title.genres or []),
             "reasons": list(r.reasons or [])[:3],
+            **({"genre_matches": g} if wanted_genres and mode == "any" else {}),
             **({"mood_matches": m} if moods else {}),
         }
-        for m, r in picked[: args.limit]
+        for g, m, r in picked[: args.limit]
     ]
-    out: dict[str, Any] = {"items": items}
+    out: dict[str, Any] = {"items": items, "total_candidates": total}
+    if wanted_genres:
+        out["genres_mode"] = mode
+    if strict_total is not None:
+        out["total_candidates_all_genres"] = strict_total
+        out["note"] = (
+            "Minden műfajnak megfelelő címből kevés volt, ezért legalább egy műfaj "
+            "egyezésével is kerestem (genres_mode=any); a több egyezés áll elöl."
+        )
     if ignored:
         out["ignored_mood_labels"] = ignored
     if not items:
-        out["note"] = "Nincs a feltételeknek megfelelő, ellenőrzötten elérhető ajánlás."
+        out["note"] = (
+            "Nincs a feltételeknek megfelelő, ellenőrzötten elérhető ajánlás; "
+            "a browse_catalog eszközzel nézd meg a teljes kínálatot."
+        )
+    return out
+
+
+def browse_catalog(
+    session: Session, tmdb: ChatTmdb | None, args: BrowseCatalogIn, ctx: ToolContext
+) -> dict[str, Any]:
+    """Discover-like listing: fresh verified flatrate titles on enabled subscriptions,
+    filtered like `GET /titles`, without personal ranking. Not-interested titles are
+    always left out, seen ones unless `include_seen`."""
+    from whattowatch.api.cards import fresh_verified_title_ids, seen_title_ids
+    from whattowatch.db.models import TitleUserState
+    from whattowatch.services.recommend.candidates import active_watchlist_ids, genre_clause
+
+    available = fresh_verified_title_ids(
+        session,
+        user_id=ctx.user_id,
+        now=ctx.clock(),
+        max_age_days=ctx.config.verified_max_age_days,
+        provider_keys=args.providers,
+    )
+    hidden = set(
+        session.scalars(
+            select(TitleUserState.title_id).where(
+                TitleUserState.user_id == ctx.user_id, TitleUserState.not_interested.is_(True)
+            )
+        )
+    )
+    if not args.include_seen:
+        hidden |= seen_title_ids(session, user_id=ctx.user_id)
+    query = select(Title).where(Title.id.in_(available - hidden))
+    if args.media_type is not None:
+        query = query.where(Title.media_type == args.media_type)
+    if args.genres:
+        query = query.where(genre_clause(session, args.genres, args.genres_mode))
+    order = {
+        "popularity": (Title.popularity.desc().nulls_last(),),
+        "rating": (Title.vote_average.desc().nulls_last(), Title.vote_count.desc().nulls_last()),
+        "newest": (Title.year.desc().nulls_last(), Title.popularity.desc().nulls_last()),
+    }[args.sort]
+    query = query.order_by(*order, Title.id)
+    total = session.scalar(select(func.count()).select_from(query.subquery())) or 0
+    page = list(session.scalars(query.limit(args.limit).offset(args.offset)))
+    subs = _subs(session, [t.id for t in page], ctx)
+    watchlist = active_watchlist_ids(session, user_id=ctx.user_id)
+    items = [
+        {
+            **_compact(t, subs),
+            "genres": list(t.genres or []),
+            "tmdb_vote_average": t.vote_average,
+            "tmdb_vote_count": t.vote_count,
+            "on_watchlist": t.id in watchlist,
+        }
+        for t in page
+    ]
+    out: dict[str, Any] = {
+        "items": items,
+        "total": total,
+        "offset": args.offset,
+        "sort": args.sort,
+    }
+    if not items:
+        out["note"] = "Nincs a feltételeknek megfelelő, ellenőrzötten elérhető cím."
     return out
 
 
@@ -520,11 +650,23 @@ TOOLS: tuple[Tool, ...] = (
     Tool(
         "get_recommendations",
         "Személyre szabott ajánlások a determinisztikus ajánlómotorból, csak ellenőrzötten "
-        "elérhető, még nem látott címek. Szűrhető típusra, szolgáltatókra, műfajokra; a "
-        "mood_labels csak előnyt ad, nem szűr. A watchlisten lévő címek alapból kimaradnak; "
-        "include_watchlist=true esetén szerepelhetnek.",
+        "elérhető, még nem látott címek. A típus-, szolgáltató- és műfajszűrők a rangsorolás "
+        "előtt szűrnek; ha minden műfajra kevés a találat, automatikusan legalább egy műfaj "
+        "egyezésével keres (genres_mode=any). total_candidates = a szűrőknek megfelelő "
+        "jelöltek száma. A mood_labels csak előnyt ad, nem szűr. A watchlisten lévő címek "
+        "alapból kimaradnak; include_watchlist=true esetén szerepelhetnek.",
         GetRecommendationsIn,
         get_recommendations,
+    ),
+    Tool(
+        "browse_catalog",
+        "A teljes, ellenőrzötten előfizetéses kínálat böngészése (mint a Felfedezés oldal), "
+        "személyre szabott rangsor nélkül: műfaj, típus, szolgáltató szűrővel, "
+        "népszerűség/pontszám/újdonság szerint, lapozással (limit, offset). A 'nem érdekel' "
+        "címek kimaradnak, a látottak csak include_seen=true esetén szerepelnek. "
+        "total = az összes találat száma.",
+        BrowseCatalogIn,
+        browse_catalog,
     ),
     Tool(
         "filter_by_provider",

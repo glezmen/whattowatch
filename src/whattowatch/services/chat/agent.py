@@ -30,7 +30,7 @@ FINAL_ANSWER_NOTE = (
     "a záró ajánlásjelölő sorral együtt."
 )
 FINAL_FALLBACK_REPLY = "Nem sikerült befejezni a keresést, próbáld pontosítani a kérést."
-TITLE_ID_TOOLS = ("get_recommendations", "search_titles")
+TITLE_ID_TOOLS = ("get_recommendations", "browse_catalog", "search_titles")
 
 
 class ChatMessage(BaseModel):
@@ -43,7 +43,8 @@ class ToolTraceEntry(BaseModel):
     arguments: dict[str, Any]
     result_summary: str
     error: str | None = None
-    # Local title ids returned by get_recommendations / search_titles (for UI cards).
+    # Local title ids returned by get_recommendations / browse_catalog / search_titles
+    # (for UI cards).
     title_ids: list[int] = Field(default_factory=list)
 
 
@@ -81,6 +82,11 @@ _RULES = (
     "Ajánláshoz a get_recommendations eszközt használd; a rangsort a backend adja, ne "
     "rendezd át önkényesen. A mood_labels csak a lenti szótárból jöhet "
     "(kategória/kulcs alakban, pl. hangulat/feszult).",
+    "Műfaj- vagy hangulatkérésnél (pl. „romantikus dráma”) először a get_recommendations "
+    "eszközt hívd a genres megadásával (TMDB magyar műfajnevek, pl. Romantikus, Dráma). "
+    "Ha a total_candidates kicsi, vagy a felhasználó azt kérdezi, mi van egyáltalán "
+    "(„mi van még”, „mutass többet”), használd a browse_catalog eszközt (lapozás: offset). "
+    "Soha ne állítsd, hogy nincs ilyen cím, amíg a browse_catalog eszközt ki nem próbáltad.",
     "A record_feedback eszközt csak akkor hívd, ha a felhasználó kifejezetten kéri "
     "(pl. „ezt már láttam”, „5 csillag”, „tedd a watchlistre”).",
     "A magyar cím mellett add meg az eredeti címet is, ha eltér. Válaszolj tömören: "
@@ -139,7 +145,7 @@ def _summary(name: str, result: dict[str, Any]) -> tuple[str, list[int]]:
         return f"hiba: {result['error']}", []
     ids: list[int] = []
     if name in TITLE_ID_TOOLS:
-        rows = result.get("items" if name == "get_recommendations" else "hits", [])
+        rows = result.get("hits" if name == "search_titles" else "items", [])
         ids = [r["title_id"] for r in rows if r.get("title_id")]
         return f"{len(rows)} cím", ids
     if name == "filter_by_provider":

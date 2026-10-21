@@ -11,10 +11,10 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
-from typing import Protocol
+from typing import Literal, Protocol
 
 import httpx
-from sqlalchemy import or_, select
+from sqlalchemy import ColumnElement, Select, and_, exists, false, func, or_, select, true
 from sqlalchemy.orm import Session
 
 from whattowatch.adapters.tmdb import AvailabilitySnapshot, MediaType, TmdbError
@@ -34,6 +34,7 @@ VERIFIED_SOURCE = "tmdb/justwatch"
 ESTIMATED_SOURCE = "tmdb/discover"
 REGION = "HU"
 _KEY_ORDER = {p.key: i for i, p in enumerate(SUBSCRIPTIONS)}
+GenresMode = Literal["all", "any"]
 
 
 @dataclass(frozen=True)
@@ -134,23 +135,56 @@ def verified_subscriptions(
     return {tid: tuple(sorted(keys, key=_KEY_ORDER.__getitem__)) for tid, keys in found.items()}
 
 
-def load_candidates(
+def _genre_values(session: Session) -> list[str]:
+    each = func.json_each(Title.genres).table_valued("value")
+    query = select(each.c.value).select_from(Title).join(each, true()).distinct()
+    return [v for v in session.scalars(query) if isinstance(v, str)]
+
+
+def genre_clause(
+    session: Session, genres: Sequence[str], mode: GenresMode = "all"
+) -> ColumnElement[bool]:
+    """SQL condition on `Title.genres` (JSON list) for the requested genre names.
+
+    Names match case-insensitively (Unicode casefold, resolved against the catalog's
+    distinct genre values, since SQLite's `lower()` only folds ASCII). `mode="all"`
+    requires every requested genre (an unknown name matches nothing); `"any"` at least
+    one of them (unknown names are ignored).
+    """
+    wanted = {g.strip().casefold() for g in genres if g.strip()}
+    if not wanted:
+        return true()
+    by_fold: dict[str, list[str]] = {}
+    for value in _genre_values(session):
+        by_fold.setdefault(value.casefold(), []).append(value)
+
+    def has_any(values: Sequence[str]) -> ColumnElement[bool]:
+        if not values:
+            return false()
+        each = func.json_each(Title.genres).table_valued("value")
+        return exists(select(each.c.value).where(each.c.value.in_(values)))
+
+    if mode == "any":
+        return has_any([v for g in wanted for v in by_fold.get(g, [])])
+    return and_(*(has_any(by_fold.get(g, [])) for g in sorted(wanted)))
+
+
+def _eligible_query(
     session: Session,
     *,
     user_id: int,
-    media_type: MediaType | None = None,
-    pool: int = 500,
-    now: datetime | None = None,
-    max_age_days: int = 14,
-    exclude_watchlist: bool = False,
-) -> list[Candidate]:
-    """Unseen, not-rejected titles with verified or estimated availability, by popularity.
-
-    ``exclude_watchlist`` also drops titles with an active watchlist item (any source).
-    """
-    now = now or datetime.now(UTC)
+    media_type: MediaType | None,
+    now: datetime,
+    max_age_days: int,
+    exclude_watchlist: bool,
+    genres: Sequence[str] | None,
+    genres_mode: GenresMode,
+    providers: Sequence[str] | None,
+) -> tuple[Select[Title] | None, dict[int, tuple[str, ...]]]:
+    """The candidate query (unordered, unlimited) plus verified subscriptions per title;
+    `None` when nothing can be a candidate."""
     if not enabled_keys(session, user_id=user_id):
-        return []  # no subscription switched on: nothing may be recommended
+        return None, {}  # no subscription switched on: nothing may be recommended
     excluded = excluded_title_ids(session, user_id=user_id)
     if exclude_watchlist:
         excluded |= active_watchlist_ids(session, user_id=user_id)
@@ -163,19 +197,64 @@ def load_candidates(
         now=now,
         max_age_days=max_age_days,
     )
-    estimated = set(
-        session.scalars(
-            select(Availability.title_id)
-            .where(Availability.source == ESTIMATED_SOURCE, Availability.region == REGION)
-            .distinct()
+    if providers:
+        wanted = set(providers)
+        # Only a verified offer can prove a title is on a given provider.
+        verified = {tid: keys for tid, keys in verified.items() if wanted & set(keys)}
+        estimated: set[int] = set()
+    else:
+        estimated = set(
+            session.scalars(
+                select(Availability.title_id)
+                .where(Availability.source == ESTIMATED_SOURCE, Availability.region == REGION)
+                .distinct()
+            )
         )
-    )
     eligible = (set(verified) | estimated) - excluded
     if not eligible:
-        return []
+        return None, verified
     query = select(Title).where(Title.id.in_(eligible))
     if media_type is not None:
         query = query.where(Title.media_type == media_type)
+    if genres:
+        query = query.where(genre_clause(session, genres, genres_mode))
+    return query, verified
+
+
+def load_candidates(
+    session: Session,
+    *,
+    user_id: int,
+    media_type: MediaType | None = None,
+    pool: int = 500,
+    now: datetime | None = None,
+    max_age_days: int = 14,
+    exclude_watchlist: bool = False,
+    genres: Sequence[str] | None = None,
+    genres_mode: GenresMode = "all",
+    providers: Sequence[str] | None = None,
+) -> list[Candidate]:
+    """Unseen, not-rejected titles with verified or estimated availability, by popularity.
+
+    ``exclude_watchlist`` also drops titles with an active watchlist item (any source).
+    ``genres`` / ``genres_mode`` filter on the title's genres (see ``genre_clause``);
+    ``providers`` keeps only titles with a fresh verified flatrate offer on one of these
+    (enabled) subscriptions, so estimated-only titles are dropped. Filters apply before
+    the ``pool`` cut, i.e. before ranking.
+    """
+    query, verified = _eligible_query(
+        session,
+        user_id=user_id,
+        media_type=media_type,
+        now=now or datetime.now(UTC),
+        max_age_days=max_age_days,
+        exclude_watchlist=exclude_watchlist,
+        genres=genres,
+        genres_mode=genres_mode,
+        providers=providers,
+    )
+    if query is None:
+        return []
     query = query.order_by(
         Title.popularity.desc().nulls_last(), Title.tmdb_id, Title.media_type
     ).limit(pool)
@@ -187,6 +266,36 @@ def load_candidates(
         )
         for t in session.scalars(query)
     ]
+
+
+def count_candidates(
+    session: Session,
+    *,
+    user_id: int,
+    media_type: MediaType | None = None,
+    now: datetime | None = None,
+    max_age_days: int = 14,
+    exclude_watchlist: bool = False,
+    genres: Sequence[str] | None = None,
+    genres_mode: GenresMode = "all",
+    providers: Sequence[str] | None = None,
+) -> int:
+    """How many titles ``load_candidates`` would consider with these filters (no pool
+    cut; estimated-only titles are counted before verification)."""
+    query, _ = _eligible_query(
+        session,
+        user_id=user_id,
+        media_type=media_type,
+        now=now or datetime.now(UTC),
+        max_age_days=max_age_days,
+        exclude_watchlist=exclude_watchlist,
+        genres=genres,
+        genres_mode=genres_mode,
+        providers=providers,
+    )
+    if query is None:
+        return 0
+    return session.scalar(select(func.count()).select_from(query.subquery())) or 0
 
 
 def verify_candidates(

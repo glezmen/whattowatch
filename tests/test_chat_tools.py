@@ -6,11 +6,12 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-from conftest import NOW, StubTmdb
+from conftest import NOW, StubTmdb, _availability, _title
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from whattowatch.adapters.tmdb import MediaType, SearchHit, TmdbError
-from whattowatch.db.models import Title, TitleFeedback
+from whattowatch.db.models import Recommendation, Title, TitleFeedback
 from whattowatch.services.chat.tools import TOOLS, ToolContext, execute_tool
 from whattowatch.services.recommend.config import RecommenderConfig
 from whattowatch.services.users import default_user_id
@@ -54,6 +55,7 @@ def test_tool_names_and_schemas() -> None:
     assert [t.name for t in TOOLS] == [
         "search_titles",
         "get_recommendations",
+        "browse_catalog",
         "filter_by_provider",
         "get_title_details",
         "get_availability",
@@ -207,3 +209,105 @@ def test_record_feedback_requires_a_field(recommend_db: Env) -> None:
     assert "legalább egy" in run(recommend_db, "record_feedback", {"title_id": ids[106]})["error"]
     out = run(recommend_db, "record_feedback", {"title_id": ids[106], "not_interested": True})
     assert out["user"]["not_interested"] is True
+
+
+# tmdb_id, genres, popularity: low popularity, so a small candidate pool would cut them.
+ROMANCE = [
+    (301, ["Romantikus", "Dráma"], 0.3),
+    (302, ["Dráma", "Romantikus"], 0.2),
+    (303, ["Romantikus", "Dráma", "Történelmi"], 0.1),
+    (304, ["Dráma"], 0.05),
+]
+
+
+def _add_romance(env: Env) -> dict[int, int]:
+    session, ids = env
+    for tmdb_id, genres, pop in ROMANCE:
+        t = _title(tmdb_id, f"Szerelem {tmdb_id}", "en", genres, 2021)
+        t.popularity, t.vote_average, t.vote_count = pop, 6.0, 100
+        session.add(t)
+        session.flush()
+        ids[tmdb_id] = t.id
+        _availability(session, t, "netflix")
+    session.commit()
+    return {v: k for k, v in ids.items()}
+
+
+def test_get_recommendations_filters_before_ranking(recommend_db: Env) -> None:
+    inv = _add_romance(recommend_db)
+    ctx = replace(CTX, config=RecommenderConfig(candidate_pool=4))
+    args = {"genres": ["romantikus", "Dráma"], "limit": 3}
+    out = run(recommend_db, "get_recommendations", args, tmdb=StubTmdb(), ctx=ctx)
+    assert {inv[i["title_id"]] for i in out["items"]} == {301, 302, 303}
+    assert out["total_candidates"] == 3 and out["genres_mode"] == "all"
+    assert all(i["on_subscriptions"] == ["netflix"] for i in out["items"])
+
+
+def test_get_recommendations_any_mode_fallback(recommend_db: Env) -> None:
+    inv = _add_romance(recommend_db)
+    args = {"genres": ["Romantikus", "Dráma"], "limit": 5, "include_watchlist": True}
+    out = run(recommend_db, "get_recommendations", args, tmdb=StubTmdb())
+    assert out["genres_mode"] == "any" and out["total_candidates_all_genres"] == 3
+    assert out["total_candidates"] == 5  # + 304 and the watchlisted 107 (Dráma)
+    got = [(inv[i["title_id"]], i["genre_matches"]) for i in out["items"]]
+    assert {t for t, _ in got[:3]} == {301, 302, 303} and all(m == 2 for _, m in got[:3])
+    assert {t for t, _ in got[3:]} == {107, 304} and all(m == 1 for _, m in got[3:])
+    assert "genres_mode=any" in out["note"]
+
+
+def test_get_recommendations_leaves_stored_batch_untouched(recommend_db: Env) -> None:
+    from whattowatch.services.recommend.engine import run_recommendations
+
+    session, _ = recommend_db
+    uid = default_user_id(session)
+    batch = run_recommendations(user_id=uid, session=session, tmdb=StubTmdb(), now=NOW, echo=False)
+    before = session.execute(select(Recommendation.batch_id, Recommendation.title_id)).all()
+    assert len(before) == len(batch) > 0
+    run(recommend_db, "get_recommendations", {"limit": 3}, tmdb=StubTmdb())
+    run(recommend_db, "get_recommendations", {"genres": ["Thriller"]}, tmdb=StubTmdb())
+    after = session.execute(select(Recommendation.batch_id, Recommendation.title_id)).all()
+    assert after == before
+
+
+def test_browse_catalog_paging_sort_and_exclusions(recommend_db: Env) -> None:
+    inv = _add_romance(recommend_db)
+    out = run(recommend_db, "browse_catalog", {"limit": 30})
+    shown = [inv[i["title_id"]] for i in out["items"]]
+    # verified fresh flatrate only; seen (112, rated 201), not interested (114),
+    # stale (111), estimated (108, 109) and unavailable (110) titles are left out
+    assert set(shown) == {101, 102, 103, 104, 105, 106, 107, 113, 301, 302, 303, 304}
+    assert out["total"] == 12 and shown[:2] == [101, 106]  # by popularity
+    assert next(i for i in out["items"] if inv[i["title_id"]] == 107)["on_watchlist"] is True
+
+    first = run(recommend_db, "browse_catalog", {"limit": 5})
+    second = run(recommend_db, "browse_catalog", {"limit": 5, "offset": 5})
+    assert [i["title_id"] for i in first["items"] + second["items"]] == [
+        i["title_id"] for i in out["items"][:10]
+    ]
+    assert second["total"] == 12
+
+    by_rating = run(recommend_db, "browse_catalog", {"sort": "rating", "limit": 2})
+    assert [inv[i["title_id"]] for i in by_rating["items"]] == [107, 101]
+    newest = run(recommend_db, "browse_catalog", {"sort": "newest", "limit": 3})
+    assert [inv[i["title_id"]] for i in newest["items"]] == [101, 106, 113]  # year, popularity
+
+    romance = run(recommend_db, "browse_catalog", {"genres": ["Romantikus", "dráma"]})
+    assert [inv[i["title_id"]] for i in romance["items"]] == [301, 302, 303]
+    hbo = run(recommend_db, "browse_catalog", {"providers": ["hbo_max"], "media_type": "movie"})
+    assert {inv[i["title_id"]] for i in hbo["items"]} == {102, 104, 107}
+
+    seen = run(recommend_db, "browse_catalog", {"include_seen": True, "limit": 30})
+    shown_seen = {inv[i["title_id"]] for i in seen["items"]}
+    assert {112, 201} <= shown_seen and 114 not in shown_seen
+    assert "error" in run(recommend_db, "browse_catalog", {"sort": "random"})
+
+
+def test_system_prompt_mentions_browse_catalog() -> None:
+    from whattowatch.services.chat import agent
+
+    prompt = agent.system_prompt(NOW)
+    assert (
+        "total_candidates" in prompt
+        and "browse_catalog" in prompt
+        and "get_recommendations" in prompt
+    )

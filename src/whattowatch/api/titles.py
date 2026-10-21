@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Response
-from sqlalchemy import Select, exists, func, or_, select
+from sqlalchemy import Select, func, or_, select
 from sqlalchemy.orm import Session
 
 from whattowatch.api.cards import (
@@ -55,7 +55,7 @@ from whattowatch.providers import BY_KEY
 from whattowatch.services import deep_links
 from whattowatch.services import feedback as fb
 from whattowatch.services.catalog import ensure_title
-from whattowatch.services.recommend.candidates import active_watchlist_ids
+from whattowatch.services.recommend.candidates import active_watchlist_ids, genre_clause
 
 router = APIRouter(tags=["titles"])
 
@@ -149,8 +149,7 @@ def list_titles(
             )
         )
     if genre:
-        each = func.json_each(Title.genres).table_valued("value")
-        query = query.where(exists(select(each.c.value).where(each.c.value == genre)))
+        query = query.where(genre_clause(session, [genre]))
     if seen is not None:
         seen_ids = seen_title_ids(session, user_id=user.id)
         query = query.where(Title.id.in_(seen_ids) if seen else Title.id.not_in(seen_ids))

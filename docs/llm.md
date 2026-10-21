@@ -51,8 +51,20 @@ elérhetőséget a `get_availability` eredményével együtt mond.
 
 Eszközök (típusos pydantic sémák, backend hajtja végre, max 6 hívás/kör):
 - `search_titles(q, media_type?)` — helyi katalógus + TMDB-keresés
-- `get_recommendations(media_type?, providers?, genres?, mood_labels?, limit)` —
-  a determinisztikus motor futtatása a szűrőkkel; `mood_labels` a zárt szótárból
+- `get_recommendations(media_type?, providers?, genres?, genres_mode?, mood_labels?,
+  include_watchlist?, limit)` — a determinisztikus motor futtatása; a típus-,
+  szolgáltató- és műfajszűrők a rangsorolás előtt szűrik a jelölteket (műfajnév
+  kis-nagybetű független); `genres_mode="all"` kevés találatnál egyszer `"any"`-vel
+  újrapróbál (`genres_mode: "any"` az eredményben); `total_candidates` = a szűrőknek
+  megfelelő jelöltek száma; `mood_labels` a zárt szótárból, csak előre sorol. Nem ment
+  ajánlás-batch-et (`persist=False`), a főoldal batch-e változatlan.
+- `browse_catalog(genres?, genres_mode?, media_type?, providers?, sort?, include_seen?,
+  limit, offset)` — Felfedezés-szerű lista személyes rangsor nélkül: friss verified
+  flatrate a bekapcsolt előfizetéseken, „nem érdekel” nélkül, látottak csak
+  `include_seen`-nel; `sort` = popularity | rating | newest; `total` a lapozáshoz. A
+  rendszerprompt szerint műfaj-/hangulatkérésnél előbb `get_recommendations`, kis
+  `total_candidates` vagy „mi van még” kérdés esetén `browse_catalog`; „nincs ilyen”
+  csak `browse_catalog` után mondható.
 - `filter_by_provider(title_ids, provider_key)`
 - `get_title_details(title_id)`
 - `get_availability(title_id)`

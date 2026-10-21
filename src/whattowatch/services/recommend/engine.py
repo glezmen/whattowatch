@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import cast, get_args
@@ -18,6 +18,7 @@ from whattowatch.db.models import Recommendation, Title, TitleRating, WatchEvent
 from whattowatch.providers import BY_KEY
 from whattowatch.services.recommend.candidates import (
     Candidate,
+    GenresMode,
     WatchProviderSource,
     load_candidates,
     verify_candidates,
@@ -166,12 +167,20 @@ def run_recommendations(
     now: datetime | None = None,
     echo: bool = True,
     include_watchlist: bool = False,
+    genres: Sequence[str] | None = None,
+    genres_mode: GenresMode = "all",
+    providers: Sequence[str] | None = None,
+    persist: bool = True,
 ) -> list[Recommendation]:
     """Generate, persist and print one recommendation batch of `user_id`; returns its rows
     by rank.
 
     Titles on an active watchlist are excluded unless ``include_watchlist``; the flag is
-    stored in each row's ``components`` under ``_include_watchlist``.
+    stored in each row's ``components`` under ``_include_watchlist``. ``genres`` /
+    ``genres_mode`` / ``providers`` filter the candidates before ranking
+    (``load_candidates``). The batch is stored (and becomes the home page's latest batch)
+    only when ``persist`` is set and no genre/provider filter is given; otherwise the rows
+    are returned unsaved (availability snapshots fetched while verifying are still saved).
     """
     if media_type is not None and media_type not in get_args(MediaType):
         raise ValueError(f"media_type must be one of {get_args(MediaType)}, got {media_type!r}")
@@ -186,6 +195,9 @@ def run_recommendations(
             now=now,
             max_age_days=cfg.verified_max_age_days,
             exclude_watchlist=not include_watchlist,
+            genres=genres,
+            genres_mode=genres_mode,
+            providers=providers,
         )
         if cands:
             label_fn = _label_fn()
@@ -246,7 +258,8 @@ def run_recommendations(
             row.title = x.cand.title
             subs_by_title[x.cand.title.id] = x.cand.verified_subscriptions
             rows.append(row)
-        s.add_all(rows)
+        if persist and not genres and not providers:
+            s.add_all(rows)
         s.commit()
         if echo:
             _print_table(rows, subs_by_title)

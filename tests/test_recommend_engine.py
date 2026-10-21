@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from conftest import NOW, StubTmdb
 from sqlalchemy import delete, select
@@ -15,7 +17,7 @@ from whattowatch.db.models import (
     TitleRating,
     TitleUserState,
 )
-from whattowatch.services.recommend.candidates import load_candidates
+from whattowatch.services.recommend.candidates import Candidate, load_candidates
 from whattowatch.services.recommend.config import RecommenderConfig, Weights
 from whattowatch.services.recommend.engine import run_recommendations
 from whattowatch.services.users import default_user_id
@@ -289,3 +291,69 @@ def test_batch_persisted_and_rerun_creates_new_batch(
     with pytest.raises(IntegrityError):
         session.commit()
     session.rollback()
+
+
+def test_load_candidates_genre_filter(recommend_db: DB) -> None:
+    session, ids = recommend_db
+    uid = default_user_id(session)
+    everything = load_candidates(session, user_id=uid, now=NOW)
+
+    def genres_of(c: Candidate) -> set[str]:
+        return set(c.title.genres or [])
+
+    both = load_candidates(session, user_id=uid, now=NOW, genres=["thriller", "REJTÉLY"])
+    expected = {c.title.id for c in everything if {"Thriller", "Rejtély"} <= genres_of(c)}
+    assert {c.title.id for c in both} == expected and ids[101] in expected
+
+    either = load_candidates(
+        session, user_id=uid, now=NOW, genres=["Vígjáték", "Sci-Fi"], genres_mode="any"
+    )
+    assert {c.title.id for c in either} == {ids[106], ids[108]}  # 108: estimated-only
+    assert load_candidates(session, user_id=uid, now=NOW, genres=["Thriller", "Nincs"]) == []
+    any_unknown = load_candidates(
+        session, user_id=uid, now=NOW, genres=["Vígjáték", "Nincs"], genres_mode="any"
+    )
+    assert {c.title.id for c in any_unknown} == {ids[106]}
+
+
+def test_load_candidates_genre_filter_casefolds_non_ascii(recommend_db: DB) -> None:
+    session, ids = recommend_db
+    t = session.get_one(Title, ids[106])
+    t.genres = ["Életrajzi"]
+    session.commit()
+    uid = default_user_id(session)
+    got = load_candidates(session, user_id=uid, now=NOW, genres=["életrajzi"])
+    assert [c.title.id for c in got] == [ids[106]]
+
+
+def test_load_candidates_provider_filter(recommend_db: DB) -> None:
+    session, ids = recommend_db
+    uid = default_user_id(session)
+    hbo = load_candidates(session, user_id=uid, now=NOW, providers=["hbo_max"])
+    assert hbo and all(c.verified_subscriptions == ("hbo_max",) for c in hbo)
+    assert not any(c.estimated_only for c in hbo)  # estimated titles cannot prove a provider
+    assert {c.title.id for c in hbo} == {ids[102], ids[104], ids[107]}
+    small_pool = load_candidates(
+        session, user_id=uid, now=NOW, providers=["hbo_max"], genres=["Dráma"], pool=1
+    )
+    assert [c.title.id for c in small_pool] == [ids[107]]  # filtered before the pool cut
+
+
+def test_filtered_or_unpersisted_batches_are_not_stored(recommend_db: DB) -> None:
+    session, _ = recommend_db
+    uid = default_user_id(session)
+
+    def stored() -> int:
+        return len(session.scalars(select(Recommendation.id)).all())
+
+    def run(**kw: Any) -> list[Recommendation]:
+        return run_recommendations(
+            user_id=uid, session=session, tmdb=StubTmdb(), now=NOW, echo=False, **kw
+        )
+
+    rows = run(genres=["Thriller"])
+    assert rows and all("Thriller" in r.title.genres for r in rows) and stored() == 0
+    assert run(providers=["hbo_max"]) and stored() == 0
+    assert run(persist=False) and stored() == 0
+    rows = run()
+    assert stored() == len(rows) > 0

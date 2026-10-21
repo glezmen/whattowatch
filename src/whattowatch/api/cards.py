@@ -348,12 +348,14 @@ def fresh_verified_title_ids(
     now: datetime | None = None,
     max_age_days: int = DEFAULT_MAX_AGE_DAYS,
     provider_key: str | None = None,
+    provider_keys: Sequence[str] | None = None,
 ) -> set[int]:
     """Titles with a fresh verified HU flatrate offer on an enabled subscription (or on
-    `provider_key`, which must itself be enabled)."""
+    `provider_key` / one of `provider_keys`, which must themselves be enabled)."""
     cutoff = (now or datetime.now(UTC)) - timedelta(days=max_age_days)
     enabled = enabled_keys(session, user_id=user_id)
-    keys = [k for k in enabled if k == provider_key] if provider_key else enabled
+    wanted = set(provider_keys or ()) | ({provider_key} if provider_key else set())
+    keys = [k for k in enabled if k in wanted] if wanted else enabled
     rows = session.execute(
         select(Availability.title_id, Availability.last_seen_at)
         .join(Provider, Provider.id == Availability.provider_id)
