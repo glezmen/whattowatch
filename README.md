@@ -15,7 +15,9 @@ This installs Python and frontend dependencies if needed, creates `.env` from
 `.env.example` on first run, builds the web UI, applies database migrations and
 starts the server at http://127.0.0.1:8000, opening it in your browser. Options:
 `--no-open`, `--no-build`, `--port <n>`. API keys can be entered later in
-Settings.
+Settings. `start.sh` installs `uv` itself if it is missing (official installer,
+no sudo). It needs Node.js 20.19+ for the UI build; on Ubuntu/Debian run it with
+`--install-node` to install Node.js 22 from NodeSource (apt's `nodejs` is too old).
 
 ## Installation
 
