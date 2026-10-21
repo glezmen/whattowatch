@@ -89,6 +89,30 @@ def _csv(header: list[str], rows: list[list[str]]) -> bytes:
                 "standalone",
             ),
         ),
+        (
+            "Jeffrey Dahmer: Szörnyeteg: A Jeffrey Dahmer-sztori: A jófiú doboz (4. epizód)",
+            ParsedTitle(
+                "Jeffrey Dahmer: Szörnyeteg: A Jeffrey Dahmer-sztori",
+                None,
+                "A jófiú doboz",
+                4,
+                "Jeffrey Dahmer: Szörnyeteg: A Jeffrey Dahmer-sztori",
+                "episode",
+            ),
+        ),
+        (
+            "Sorozat: Alcím: Epizód (1. epizód)",
+            ParsedTitle("Sorozat: Alcím", None, "Epizód", 1, "Sorozat: Alcím", "episode"),
+        ),
+        (
+            "Show: Episode title (Episode 3)",
+            ParsedTitle("Show", None, "Episode title", 3, "Show", "episode"),
+        ),
+        (
+            "Sorozat: 2. évad: Epizód (5. epizód)",
+            ParsedTitle("Sorozat", 2, "Epizód", 5, "Sorozat", "episode"),
+        ),
+        ("Film: Alcím", ParsedTitle(None, None, None, None, "Film: Alcím", "standalone")),
         ("Inception", ParsedTitle(None, None, None, None, "Inception", "standalone")),
         (
             "Dűne: Második rész",

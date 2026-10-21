@@ -100,6 +100,12 @@ _LIMITED = re.compile(
 _EPISODE_ONLY = re.compile(
     r"^(?P<series>.+?):\s+(?:(?P<epno>\d+)\.\s*epizód|Episode\s+(?P<epno_en>\d+))$"
 )
+# Limited series have no season segment: "Series: Episode title (N. epizód)".
+# The greedy series group makes the episode title the last ": "-separated segment.
+_PAREN_EPISODE = re.compile(
+    r"^(?P<series>.+):\s+(?P<ep>(?:(?!:\s).)+?)"
+    r"\s+\((?:(?P<epno>\d+)\.\s*epizód|Episode\s+(?P<epno_en>\d+))\)$"
+)
 
 
 def _epno(m: re.Match[str]) -> int | None:
@@ -128,6 +134,8 @@ def parse_viewing_title(title: str) -> ParsedTitle:
         return _episode(m["series"], None, m["ep"], _epno(m))
     if m := _EPISODE_ONLY.match(text):
         return _episode(m["series"], None, None, _epno(m))
+    if m := _PAREN_EPISODE.match(text):
+        return _episode(m["series"], None, m["ep"], _epno(m))
     return ParsedTitle(None, None, None, None, text, "standalone")
 
 

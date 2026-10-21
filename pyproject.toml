@@ -12,13 +12,20 @@ dependencies = [
     "pydantic-settings",
     "httpx",
     "typer",
+    "pyyaml>=6.0.3",
 ]
 
 [project.scripts]
 wtw = "whattowatch.cli:app"
 
 [dependency-groups]
-dev = ["pytest", "respx", "ruff", "mypy"]
+dev = [
+    "pytest",
+    "respx",
+    "ruff",
+    "mypy",
+    "types-pyyaml>=6.0.12.20260906",
+]
 
 [build-system]
 requires = ["hatchling"]

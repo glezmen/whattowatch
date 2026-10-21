@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///data/whattowatch.db"
     lm_studio_base_url: str = "http://localhost:1234/v1"
     netflix_profile_name: str | None = None
+    recommender_config_path: str | None = None
 
 
 @lru_cache

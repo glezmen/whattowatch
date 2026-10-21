@@ -84,11 +84,18 @@ class Provider(BaseModel):
     display_priority: int | None
 
 
+class DiscoverHit(SearchHit):
+    genre_ids: list[int] = []
+    vote_average: float | None = None
+    poster_path: str | None = None
+    overview: str | None = None
+
+
 class DiscoverPage(BaseModel):
     page: int
     total_pages: int
     total_results: int
-    results: list[SearchHit]
+    results: list[DiscoverHit]
 
 
 def _year(date: Any) -> int | None:
@@ -116,6 +123,18 @@ def _hit(item: Mapping[str, Any], media_type: MediaType) -> SearchHit:
         year=_year(item.get(date)),
         popularity=float(item.get("popularity") or 0.0),
         vote_count=int(item.get("vote_count") or 0),
+    )
+
+
+def _discover_hit(item: Mapping[str, Any], media_type: MediaType) -> DiscoverHit:
+    base = _hit(item, media_type)
+    vote_average = item.get("vote_average")
+    return DiscoverHit(
+        **base.model_dump(),
+        genre_ids=[int(g) for g in item.get("genre_ids") or []],
+        vote_average=float(vote_average) if vote_average is not None else None,
+        poster_path=_nonempty(item.get("poster_path")),
+        overview=_nonempty(item.get("overview")),
     )
 
 
@@ -316,8 +335,12 @@ class TmdbClient:
             page=int(data.get("page", page)),
             total_pages=int(data.get("total_pages", 0)),
             total_results=int(data.get("total_results", 0)),
-            results=[_hit(r, media_type) for r in data.get("results", [])],
+            results=[_discover_hit(r, media_type) for r in data.get("results", [])],
         )
+
+    def genres(self, media_type: MediaType) -> dict[int, str]:
+        data = self._get(f"/genre/{media_type}/list", {"language": self.language})
+        return {int(g["id"]): g["name"] for g in data.get("genres", []) if g.get("name")}
 
     def find(self, imdb_id: str) -> FindResult:
         """Look up an IMDb id; episode ids yield the parent show's TMDB id."""

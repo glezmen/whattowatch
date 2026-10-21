@@ -315,3 +315,26 @@ class SyncRun(TimestampMixin, Base):
     skipped: Mapped[int] = mapped_column(default=0)
     errors: Mapped[list[Any]] = mapped_column(JSON, default=list)
     file_sha256: Mapped[str | None] = mapped_column(String)
+
+
+class Recommendation(TimestampMixin, Base):
+    __tablename__ = "recommendations"
+    __table_args__ = (
+        UniqueConstraint("batch_id", "title_id"),
+        Index("ix_recommendations_batch_id", "batch_id"),
+        Index("ix_recommendations_title_id", "title_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    batch_id: Mapped[str] = mapped_column(String)
+    title_id: Mapped[int] = _fk("titles.id")
+    rank: Mapped[int]
+    score: Mapped[float] = mapped_column(Float)
+    components: Mapped[dict[str, float]] = mapped_column(JSON, default=dict)
+    weighted: Mapped[dict[str, float]] = mapped_column(JSON, default=dict)
+    reasons: Mapped[list[str]] = mapped_column(JSON, default=list)
+    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    feedback: Mapped[str | None] = mapped_column(String)
+    feedback_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    title: Mapped[Title] = relationship()

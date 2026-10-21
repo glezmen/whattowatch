@@ -28,6 +28,7 @@ EXPECTED_TABLES = {
     "watchlist_items",
     "title_user_state",
     "sync_runs",
+    "recommendations",
 }
 
 

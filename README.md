@@ -28,11 +28,14 @@ uv run wtw import netflix <export.zip> --profile <név>  # Netflix személyes ad
 uv run wtw resolve list --status ambiguous   # bizonytalan címfeloldások
 uv run wtw resolve set <id> movie|tv <tmdb_id>
 uv run wtw resolve reject <id>
+
+uv run wtw recommend run --limit 20 --media-type movie   # ajánlási batch
 ```
 
 Az importok idempotensek: ugyanaz a fájl kétszer betöltve nem duplikál. A
 személyes exportokat a gitignored `data/` alá tedd. Az adatforrások
-részleteit a `docs/adatforrasok.md` írja le.
+részleteit a `docs/adatforrasok.md` írja le. Az ajánló súlyai a `RECOMMENDER_CONFIG_PATH`
+változóval megadott YAML-fájlból felülírhatók (`docs/recommender.md`).
 
 ## Tesztek és minőségellenőrzés
 
