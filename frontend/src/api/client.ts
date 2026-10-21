@@ -565,9 +565,13 @@ export interface RecommendationsResult {
   filteredWatchlist: number
 }
 
-function filteredWatchlistOf(headers: Headers): number {
-  const n = Number.parseInt(headers.get('X-Filtered-Watchlist') ?? '', 10)
+function countHeader(headers: Headers, name: string): number {
+  const n = Number.parseInt(headers.get(name) ?? '', 10)
   return Number.isFinite(n) && n > 0 ? n : 0
+}
+
+function filteredWatchlistOf(headers: Headers): number {
+  return countHeader(headers, 'X-Filtered-Watchlist')
 }
 
 async function fetchRecommendations(p: Query): Promise<RecommendationsResult> {
@@ -618,8 +622,16 @@ export const api = {
   addToWatchlist: (id: number) => request<UserState>('POST', `/titles/${id}/watchlist`),
   removeFromWatchlist: (id: number) => request<UserState>('DELETE', `/titles/${id}/watchlist`),
 
-  getWatchlist: (p: { source?: string; available?: boolean; limit?: number; offset?: number }) =>
-    request<Page<WatchlistEntry>>('GET', `/watchlist${qs(p)}`),
+  getWatchlist: async (p: {
+    source?: string
+    available?: boolean
+    hide_watched?: boolean
+    limit?: number
+    offset?: number
+  }): Promise<Page<WatchlistEntry> & { filteredWatched: number }> => {
+    const { data, headers } = await requestWithHeaders<Page<WatchlistEntry>>('GET', `/watchlist${qs(p)}`)
+    return { ...data, filteredWatched: countHeader(headers, 'X-Filtered-Watched') }
+  },
   getHistory: (p: {
     q?: string
     status?: string

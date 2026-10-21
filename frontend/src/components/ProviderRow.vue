@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import type { SubscriptionItem, SubscriptionProfile } from '../api/client'
 import { updateSubscription } from '../appSettings'
 import ProviderBadge from './ProviderBadge.vue'
+import ToggleSwitch from './ToggleSwitch.vue'
 
 const props = defineProps<{ item: SubscriptionItem; compact?: boolean }>()
 const { t } = useI18n()
@@ -26,8 +27,8 @@ function profileLabel(p: SubscriptionProfile): string {
   return extra.length ? `${p.name} (${extra.join(', ')})` : p.name
 }
 
-function onToggle(e: Event) {
-  void updateSubscription(props.item.key, { enabled: (e.target as HTMLInputElement).checked })
+function onToggle(enabled: boolean) {
+  void updateSubscription(props.item.key, { enabled })
 }
 
 function onProfile(e: Event) {
@@ -38,8 +39,7 @@ function onProfile(e: Event) {
 
 <template>
   <li class="provider-row" :class="{ off: !item.enabled, compact }">
-    <label class="main">
-      <input type="checkbox" :checked="item.enabled" @change="onToggle" />
+    <ToggleSwitch class="main" :model-value="item.enabled" @update:model-value="onToggle">
       <img
         v-if="item.logo_url && !logoFailed"
         class="logo"
@@ -52,7 +52,7 @@ function onProfile(e: Event) {
       />
       <ProviderBadge v-else :provider-key="item.key" :fallback-name="item.display_name" />
       <span class="name">{{ item.display_name }}</span>
-    </label>
+    </ToggleSwitch>
     <div v-if="!compact || hasProfiles" class="profile">
       <label :for="selectId" class="visually-hidden">{{ t('providers.profile', { name: item.display_name }) }}</label>
       <select v-if="hasProfiles" :id="selectId" :value="selected" @change="onProfile">
@@ -93,17 +93,8 @@ function onProfile(e: Event) {
 .provider-row.off .main :deep(.provider-badge) {
   opacity: 0.5;
 }
-.main {
-  display: inline-flex;
+.provider-row .main {
   align-items: center;
-  gap: 10px;
-  cursor: pointer;
-  min-width: 0;
-}
-.main input[type='checkbox'] {
-  width: 18px;
-  height: 18px;
-  flex: none;
 }
 .logo {
   width: 32px;
@@ -144,7 +135,7 @@ function onProfile(e: Event) {
 @media (max-width: 480px) {
   .profile {
     width: 100%;
-    padding-left: 28px;
+    padding-left: 46px;
   }
   .profile select {
     flex: 1 1 auto;

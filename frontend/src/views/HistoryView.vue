@@ -7,6 +7,7 @@ import DescriptionToggle from '../components/DescriptionToggle.vue'
 import FeedbackPanel from '../components/FeedbackPanel.vue'
 import Pagination from '../components/Pagination.vue'
 import PosterWithOverview from '../components/PosterWithOverview.vue'
+import ToggleSwitch from '../components/ToggleSwitch.vue'
 import WatchlistToggle from '../components/WatchlistToggle.vue'
 import { fmtDateTime, mediaTypeLabel, sourceLabel } from '../format'
 import { displayTitle, secondaryTitle } from '../titles'
@@ -105,13 +106,15 @@ function statusOf(it: HistoryItem): string {
 <template>
   <h1>{{ t('history.title') }}</h1>
   <div class="toolbar">
+    <div class="toggle-stack">
+      <ToggleSwitch v-model="hideRated" class="small" :label="t('history.hideRated')" />
+      <WatchlistToggle :hidden="filteredWatchlist" />
+    </div>
     <input v-model="q" type="search" :placeholder="t('common.searchPlaceholder')" :aria-label="t('common.search')" />
     <select v-model="status" :aria-label="t('history.status')">
       <option value="">{{ t('history.allStatuses') }}</option>
       <option v-for="s in STATUSES" :key="s" :value="s">{{ statusLabel(s) }}</option>
     </select>
-    <label class="hide-rated"><input v-model="hideRated" type="checkbox" /> {{ t('history.hideRated') }}</label>
-    <WatchlistToggle :hidden="filteredWatchlist" />
   </div>
   <p v-if="loading && !items.length" class="empty"><span class="spinner"></span> {{ t('common.loading') }}</p>
   <p v-else-if="!items.length" class="empty">{{ t('history.empty') }}</p>
@@ -189,12 +192,6 @@ function statusOf(it: HistoryItem): string {
   display: flex;
   flex-direction: column;
   gap: 10px;
-}
-.hide-rated {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
 }
 @media (max-width: 600px) {
   .panel {

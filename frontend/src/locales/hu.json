@@ -255,6 +255,9 @@
     "source": "Forrás",
     "allSources": "Minden forrás",
     "availableOnly": "Csak az elérhető most (ellenőrzött előfizetéses)",
+    "hideWatched": "Már megnézettek elrejtése",
+    "watchedHidden": "{n} megnézett elrejtve.",
+    "showWatched": "Mutasd őket",
     "hint": "Importált (Netflix, IMDb) tételek csak a forrásukban távolíthatók el; itt az app saját watchlistjét kezelheted. A watchlist érdeklődést jelez, nem értékelést.",
     "empty": "A watchlist üres."
   },

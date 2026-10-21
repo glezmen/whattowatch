@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api, type LlmProviderName, type LlmSettings, type LlmSettingsPatch, type LlmTestResult } from '../api/client'
 import { pushToast } from '../toast'
+import ToggleSwitch from './ToggleSwitch.vue'
 
 const props = defineProps<{ reloadToken?: number }>()
 const { t } = useI18n()
@@ -175,30 +176,20 @@ function usageText(u: Record<string, number> | null | undefined): string {
     </p>
     <p v-if="isCloud" class="small muted">{{ t('settings.llm.cloudNote') }}</p>
 
-    <label class="switch">
-      <input
-        type="checkbox"
-        :checked="s.cloud_send_feedback_text"
-        :disabled="saving"
-        @change="save({ cloud_send_feedback_text: ($event.target as HTMLInputElement).checked })"
-      />
-      <span>
-        {{ t('settings.llm.sendFeedback') }}
-        <span class="small muted block">{{ t('settings.llm.sendFeedbackHint') }}</span>
-      </span>
-    </label>
-    <label class="switch">
-      <input
-        type="checkbox"
-        :checked="s.fallback_allowed"
-        :disabled="saving"
-        @change="save({ fallback_allowed: ($event.target as HTMLInputElement).checked })"
-      />
-      <span>
-        {{ t('settings.llm.fallback') }}
-        <span class="small muted block">{{ t('settings.llm.fallbackHint') }}</span>
-      </span>
-    </label>
+    <ToggleSwitch
+      :model-value="s.cloud_send_feedback_text"
+      :disabled="saving"
+      :label="t('settings.llm.sendFeedback')"
+      :hint="t('settings.llm.sendFeedbackHint')"
+      @update:model-value="(v) => save({ cloud_send_feedback_text: v })"
+    />
+    <ToggleSwitch
+      :model-value="s.fallback_allowed"
+      :disabled="saving"
+      :label="t('settings.llm.fallback')"
+      :hint="t('settings.llm.fallbackHint')"
+      @update:model-value="(v) => save({ fallback_allowed: v })"
+    />
 
     <div class="test">
       <button type="button" :disabled="testing || saving" @click="runTest">
@@ -262,21 +253,6 @@ function usageText(u: Record<string, number> | null | undefined): string {
 }
 p {
   margin: 0;
-}
-.switch {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  cursor: pointer;
-}
-.switch input {
-  width: 18px;
-  height: 18px;
-  margin-top: 2px;
-  flex: none;
-}
-.block {
-  display: block;
 }
 .test {
   display: flex;

@@ -251,3 +251,16 @@ td {
 .table-wrap {
   overflow-x: auto;
 }
+/* Column of on/off switches inside a toolbar; other controls stay on the toolbar row. */
+.toggle-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+@media (max-width: 600px) {
+  .toggle-stack {
+    flex-basis: 100%;
+  }
+}

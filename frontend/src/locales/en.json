@@ -255,6 +255,9 @@
     "source": "Source",
     "allSources": "All sources",
     "availableOnly": "Streaming now only (verified, on your subscriptions)",
+    "hideWatched": "Hide already watched",
+    "watchedHidden": "{n} watched title hidden. | {n} watched titles hidden.",
+    "showWatched": "Show them",
     "hint": "Imported items (Netflix, IMDb) can only be removed at their source; here you manage the app's own watchlist. A watchlist shows interest, not a rating.",
     "empty": "Your watchlist is empty."
   },

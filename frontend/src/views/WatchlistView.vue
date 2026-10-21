@@ -3,6 +3,7 @@ import { onMounted, ref, watch } from 'vue'
 import { api, type UserState, type WatchlistEntry } from '../api/client'
 import Pagination from '../components/Pagination.vue'
 import TitleCard from '../components/TitleCard.vue'
+import ToggleSwitch from '../components/ToggleSwitch.vue'
 
 const LIMIT = 48
 const items = ref<WatchlistEntry[]>([])
@@ -11,6 +12,16 @@ const offset = ref(0)
 const loading = ref(false)
 const available = ref(false)
 const source = ref('')
+const filteredWatched = ref(0)
+const HIDE_WATCHED_KEY = 'watchlist_hide_watched'
+function readHideWatched(): boolean {
+  try {
+    return localStorage.getItem(HIDE_WATCHED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+const hideWatched = ref(readHideWatched())
 
 const sources = [
   { value: '', label: '' },
@@ -27,11 +38,13 @@ async function load() {
     const page = await api.getWatchlist({
       source: source.value,
       available: available.value || undefined,
+      hide_watched: hideWatched.value || undefined,
       limit: LIMIT,
       offset: offset.value,
     })
     items.value = page.items
     total.value = page.total
+    filteredWatched.value = page.filteredWatched
   } catch {
     // toast already shown
   } finally {
@@ -46,7 +59,14 @@ function onUser(e: WatchlistEntry, u: UserState) {
   }
 }
 
-watch([available, source], () => {
+watch(hideWatched, (v) => {
+  try {
+    localStorage.setItem(HIDE_WATCHED_KEY, v ? '1' : '0')
+  } catch {
+    // storage unavailable
+  }
+})
+watch([available, source, hideWatched], () => {
   offset.value = 0
   load()
 })
@@ -62,10 +82,20 @@ function goto(o: number) {
 <template>
   <h1>{{ $t('watchlist.title') }}</h1>
   <div class="toolbar">
+    <div class="toggle-stack">
+      <ToggleSwitch v-model="available" class="small" :label="$t('watchlist.availableOnly')" />
+      <ToggleSwitch v-model="hideWatched" class="small" :label="$t('watchlist.hideWatched')">
+        <template v-if="hideWatched && filteredWatched > 0" #hint>
+          <span role="status">
+            {{ $t('watchlist.watchedHidden', { n: filteredWatched }, filteredWatched) }}
+            <a href="#" @click.prevent="hideWatched = false">{{ $t('watchlist.showWatched') }}</a>
+          </span>
+        </template>
+      </ToggleSwitch>
+    </div>
     <select v-model="source" :aria-label="$t('watchlist.source')">
       <option v-for="s in sources" :key="s.value" :value="s.value">{{ s.value ? s.label : $t('watchlist.allSources') }}</option>
     </select>
-    <label><input v-model="available" type="checkbox" /> {{ $t('watchlist.availableOnly') }}</label>
   </div>
   <p class="small muted">
     {{ $t('watchlist.hint') }}
