@@ -1,6 +1,6 @@
 # Implementációs terv és architektúradöntések
 
-Állapot: **M0–M1 kész, M2 folyamatban** (2026-10-21). A specifikáció: `docs/spec.md`.
+Állapot: **M0–M3 kész, M4 folyamatban** (2026-10-21). A specifikáció: `docs/spec.md`.
 
 ## Architektúradöntések
 
@@ -65,17 +65,22 @@ Kulcskonvenciók:
 - [x] `wtw tmdb probe|providers|validate`, riport `data/reports/`
 - [ ] kézi összevetés 10–20 watchlist-címen a szolgáltatói appokkal (M2 import után, valós címekkel)
 
-### M2 — séma és import
-- teljes séma (spec 10.) migrációval
-- IMDb CSV import (id-alapú feloldás `find` végponttal)
-- Netflix export import: profilszűrés, előzetesek kiszűrése, epizód→sorozat aggregálás, HU címfeloldás, bizonytalan találatok kézi feloldása
-- idempotencia-tesztek
+### M2 — séma és import (kész, 2026-10-21)
+- [x] séma (`docs/schema.md`), migrációk 0002–0003, provider seed
+- [x] IMDb CSV import (id-alapú feloldás), Netflix export import (profil, előzetes-szűrés, epizód→sorozat, HU feloldás)
+- [x] címfeloldás döntési szabályokkal: év-felső korlát, Netflix HU elérhetőség, népszerűség; `wtw resolve` kézi javítás
+- [x] idempotencia-tesztek; élő futás: nézési előzmény 81% feloldva, 140 kétértelmű, 55 feloldatlan → kézi feloldás az M4 felületen
 
-### M3 — ajánló
-- jelöltek `discover`-ből, kizárások, konfigurálható pontozás, változatosság
-- szöveges visszajelzés mentése, címkék zárt szótárral
-- reprodukálható tesztek
+### M3 — ajánló (kész, 2026-10-21)
+- [x] `wtw catalog sync`: discover a hat szolgáltatóra, `watch_providers` ellenőrzés, migráció 0004
+- [x] pontozás (`docs/recommender.md`), kizárások, MMR-változatosság, magyar indoklás, `recommendations` tábla
+- [x] preferencia-szótár (55 címke), szabályalapú kinyerés, profil, visszajelzés-szolgáltatás
+- [x] 143 teszt; első élő batch lefutott
 
-### M4 — API és Vue felület
+### M4 — API és Vue felület (folyamatban)
+- API-szerződés: `docs/api.md`
+- FastAPI routerek + statikus frontend kiszolgálás
+- Vue 3 + TS + Vite: ajánló, felfedezés, watchlist, előzmények, címfeloldás, sync-állapot
+- `has_hu_translation` nullázhatóvá tétele (discover-ből „nem ismert”)
 ### M5 — LLM-réteg és beszélgetés
 ### M6 — frissítés, újdonságok, kivezetések (Streaming Availability API)
