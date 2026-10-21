@@ -1,6 +1,6 @@
 # Implementációs terv és architektúradöntések
 
-Állapot: **M0 folyamatban** (2026-10-21). A specifikáció: `docs/spec.md`.
+Állapot: **M0 kész, M1 folyamatban** (2026-10-21). A specifikáció: `docs/spec.md`.
 
 ## Architektúradöntések
 
@@ -50,14 +50,14 @@ Kulcskonvenciók:
 
 ## Mérföldkövek
 
-### M0 — váz (folyamatban)
-- [ ] uv projekt, pyproject, src layout, ruff/mypy/pytest konfig
-- [ ] `Settings` (TMDB_API_KEY, STREAMING_AVAILABILITY_API_KEY, DATABASE_URL, LM_STUDIO_BASE_URL)
-- [ ] SQLAlchemy engine + Alembic init, üres kezdő migráció
-- [ ] FastAPI app factory `/health` végponttal
-- [ ] `wtw` CLI `--help`, `db upgrade` parancs
-- [ ] README, `.env.example`
-- [ ] tesztek: health, settings betöltés, migráció üres DB-n
+### M0 — váz (kész, 2026-10-21)
+- [x] uv projekt, pyproject, src layout, ruff/mypy/pytest konfig
+- [x] `Settings` (TMDB_API_KEY, STREAMING_AVAILABILITY_API_KEY, DATABASE_URL, LM_STUDIO_BASE_URL)
+- [x] SQLAlchemy engine + Alembic init, üres kezdő migráció
+- [x] FastAPI app factory `/health` végponttal
+- [x] `wtw` CLI `--help`, `db upgrade` parancs
+- [x] README, `.env.example`
+- [x] tesztek: health, settings betöltés, migráció üres DB-n
 
 ### M1 — TMDB-validálás
 - TMDB adapter (search, details, external_ids, translations, watch/providers, discover, watch/providers/{movie,tv} lista HU-ra)
