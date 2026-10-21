@@ -1,6 +1,6 @@
 # Többfelhasználós működés — terv (M8/A és M9/B)
 
-Állapot: A1 kész, A2 1. rész (service-réteg, `CurrentUser`-függőség) és 2. rész (süti, `/auth/*`, `/users`; docs/api.md) kész, 2026-10-21. Két szakasz: **A) profilok egy háztartáson belül**
+Állapot: **A (M8) kész, 2026-10-21** — profilválasztó, opcionális jelszó, admin-jogok, elkülönítési és route-guard tesztek (433 teszt). B (M9) nincs elkezdve.
 (profilválasztó induláskor, opcionális jelszó), majd **B) valódi fiókok
 hálózaton**. Az A szakasz úgy épül, hogy a B ne igényeljen újabb sémamódosítást.
 

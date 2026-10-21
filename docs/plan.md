@@ -1,6 +1,6 @@
 # Implementációs terv és architektúradöntések
 
-Állapot: **M0–M7 kész** (2026-10-21). Nyitott tételek a fájl végén.. A specifikáció: `docs/spec.md`.
+Állapot: **M0–M8 kész** (2026-10-21). Nyitott tételek a fájl végén.. A specifikáció: `docs/spec.md`.
 
 ## Architektúradöntések
 
@@ -99,6 +99,13 @@ Kulcskonvenciók:
 - beszélgetős ajánló a főoldal tetején is
 - kétnyelvű felület (hu/en), vue-i18n, indoklás-kódok
 - `app_settings` tábla (migráció 0007), onboarding-panel
+
+### M8 — profilok (kész, 2026-10-21)
+- [x] `users`, `user_subscriptions`, `user_id` a személyes táblákon, migráció 0013 (első profil a Netflix-beállításból, név nincs beégetve)
+- [x] süti alapú munkamenet, `/auth/*`, `/users/*`, opcionális profiljelszó (argon2), zárolás 5 hibás próba után, admin-jogok a kulcsokhoz/mentéshez/frissítéshez
+- [x] profilválasztó induláskor, fejléc-profilmenü, Beállítások → Profil, export-profilok hozzárendelése app-profilokhoz
+- [x] elkülönítési tesztek, route-guard teszt (minden `/api` végpont sütit kér, kivéve a felsoroltak); `v0.1-single-user` tag az előző állapotra
+- terv és M9 (hálózati fiókok): `docs/multiuser.md`
 
 ## Nyitott tételek
 - a feltöltési feladatok hibaszövegei és a backend `detail` üzenetei csak magyarul jönnek; i18n-kódosítás később
