@@ -5,6 +5,8 @@ from __future__ import annotations
 import stat
 from pathlib import Path
 
+import pytest
+
 from whattowatch.services.env_file import read_env, update_env
 
 
@@ -44,3 +46,23 @@ def test_file_mode_is_0600(tmp_path: Path) -> None:
     update_env(path, {"B": "2"})
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert not [p for p in tmp_path.iterdir() if p.name != ".env"]  # no temp left over
+
+
+def test_wtw_env_file_overrides_location(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from whattowatch.config import Settings, env_file_path
+
+    custom = tmp_path / "data" / ".env"
+    custom.parent.mkdir()
+    custom.write_text("TMDB_API_KEY=from-custom\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("TMDB_API_KEY", raising=False)
+
+    monkeypatch.delenv("WTW_ENV_FILE", raising=False)
+    assert env_file_path() == (tmp_path / ".env").resolve()
+    assert Settings().tmdb_api_key is None
+
+    monkeypatch.setenv("WTW_ENV_FILE", str(custom))
+    assert env_file_path() == custom.resolve()
+    assert Settings().tmdb_api_key == "from-custom"
+    # An explicit `_env_file` still wins (tests rely on `_env_file=None`).
+    assert Settings(_env_file=None).tmdb_api_key is None  # type: ignore[call-arg]

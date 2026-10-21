@@ -1,0 +1,30 @@
+# Personal data and secrets never go into the image
+data/
+imports/
+*.db
+*.sqlite
+*.sqlite3
+.env
+*.un~
+*.sw[a-p]
+
+# Local environments, caches and build output (rebuilt inside the image)
+.venv/
+**/__pycache__/
+*.pyc
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+frontend/node_modules/
+frontend/dist/
+
+# Not needed at runtime
+.git/
+.gitignore
+.DS_Store
+tests/
+docs/
+Dockerfile
+docker-compose.yml
+.dockerignore
+start.sh

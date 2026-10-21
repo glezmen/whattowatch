@@ -19,6 +19,39 @@ Settings. `start.sh` installs `uv` itself if it is missing (official installer,
 no sudo). It needs Node.js 20.19+ for the UI build; on Ubuntu/Debian run it with
 `--install-node` to install Node.js 22 from NodeSource (apt's `nodejs` is too old).
 
+## Docker
+
+```bash
+docker compose up --build        # then open http://localhost:8000
+```
+
+The image (`Dockerfile`) builds the web UI with Node 22, installs the backend with `uv`
+(no dev dependencies) and runs as a non-root user (uid 1000). On every start
+`docker-entrypoint.sh` applies the migrations (`wtw db upgrade`) and serves on
+`0.0.0.0:8000` inside the container (`WTW_PORT` changes the internal port).
+
+- **Data** lives in `./data` on the host, mounted at `/app/data`: the database
+  (`whattowatch.db`), uploaded exports (`imports/`), backups (`backups/`) and `.env`.
+  Nothing personal is baked into the image. On Linux the directory must be writable by
+  uid 1000 (`sudo chown -R 1000 data`).
+- **API keys**: enter them on the Settings page; they are written to `data/.env`
+  (`WTW_ENV_FILE=/app/data/.env`, created from `.env.example` on first start, mode `0600`).
+  `WTW_ENV_FILE` can also be used outside Docker to keep `.env` somewhere else.
+- **LM Studio** on the host is reached at `http://host.docker.internal:1234/v1` (set in
+  `docker-compose.yml`; edit it there, since the compose value takes precedence over the
+  Settings page). LM Studio must listen on all interfaces ("Serve on local network"),
+  otherwise the container cannot connect.
+- The **Claude Code (CLI)** provider is **not** available in the container (no `claude`
+  CLI or login there); use LM Studio, Anthropic or OpenAI.
+- **Daily refresh**: `docker compose exec whattowatch uv run wtw refresh run`, or from the
+  host crontab:
+
+  ```
+  0 6 * * * cd /ABSZOLUT/UT/whattowatch && docker compose exec -T whattowatch uv run wtw refresh run >> /tmp/whattowatch-refresh.log 2>&1
+  ```
+
+  Other CLI commands work the same way (`docker compose exec whattowatch uv run wtw ...`).
+
 ## Installation
 
 ```
@@ -105,7 +138,7 @@ overridden from a YAML file given by `RECOMMENDER_CONFIG_PATH` (`docs/recommende
 
 API keys entered on the web Settings page (`TMDB_API_KEY`,
 `STREAMING_AVAILABILITY_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) and
-`LM_STUDIO_BASE_URL` are written to the gitignored `.env` file in the repository root
+`LM_STUDIO_BASE_URL` are written to the gitignored `.env` file in the repository root (or to `$WTW_ENV_FILE`)
 (atomic replace, `0600` permissions, other lines and comments are preserved). The UI never
 gets a key back, only whether it is set and its last 4 characters. A new TMDB key is
 checked with a `GET /configuration` call before saving. If a key is also set as a process

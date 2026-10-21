@@ -1,12 +1,23 @@
+import os
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Overrides the `.env` location (e.g. `/app/data/.env` in Docker, on the data volume).
+ENV_FILE_VAR = "WTW_ENV_FILE"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_ignore_empty=True)
+
+    def __init__(self, **values: Any) -> None:
+        # `WTW_ENV_FILE` is read at instantiation; an explicit `_env_file` (tests) still wins.
+        if "_env_file" not in values and os.environ.get(ENV_FILE_VAR):
+            values["_env_file"] = env_file_path()
+        super().__init__(**values)
 
     tmdb_api_key: str | None = None
     # TMDB v3 user session; written by the app when the TMDB account is linked. Secret.
@@ -64,7 +75,11 @@ def parse_notice_days(value: str) -> tuple[int, ...]:
 
 
 def env_file_path() -> Path:
-    """The `.env` file `Settings` reads, resolved against the current directory."""
+    """The `.env` file `Settings` reads: `$WTW_ENV_FILE` if set, else `.env`; resolved
+    against the current directory."""
+    override = os.environ.get(ENV_FILE_VAR)
+    if override:
+        return Path(override).expanduser().resolve()
     env_file = Settings.model_config.get("env_file") or ".env"
     if isinstance(env_file, (list, tuple)):
         env_file = env_file[0]

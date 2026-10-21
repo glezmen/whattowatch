@@ -89,16 +89,19 @@ def _hint(value: str | None) -> str | None:
 def get_settings_view(
     settings: SettingsDep, cfg: RecommenderConfigDep, session: SessionDep
 ) -> SettingsOut:
+    from whattowatch.llm.registry import effective_llm_config
+
+    llm = effective_llm_config(session, settings)
     return SettingsOut(
         tmdb_api_key_set=bool(settings.tmdb_api_key),
         netflix_profile_name=app_cfg.effective_netflix_profile(session, settings),
         lm_studio_base_url=settings.lm_studio_base_url,
-        llm_provider=settings.llm_provider,
-        llm_model=settings.llm_model,
+        llm_provider=llm.provider,
+        llm_model=llm.model,
         anthropic_api_key_set=bool(settings.anthropic_api_key),
         openai_api_key_set=bool(settings.openai_api_key),
-        llm_fallback_allowed=settings.llm_fallback_allowed,
-        llm_cloud_send_feedback_text=settings.llm_cloud_send_feedback_text,
+        llm_fallback_allowed=llm.fallback_allowed,
+        llm_cloud_send_feedback_text=llm.cloud_send_feedback_text,
         recommender=cfg.model_dump(),
         ui_language=app_cfg.ui_language(session),
         enabled_subscriptions=subscriptions.enabled_keys(session),

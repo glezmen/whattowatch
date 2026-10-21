@@ -1,0 +1,20 @@
+services:
+  whattowatch:
+    build: .
+    image: whattowatch:latest
+    ports:
+      - "8000:8000"
+    volumes:
+      # Database, uploaded imports, backups and the `.env` with API keys.
+      - ./data:/app/data
+    environment:
+      WTW_ENV_FILE: /app/data/.env
+      DATABASE_URL: sqlite:////app/data/whattowatch.db
+      IMPORTS_DIR: /app/data/imports
+      BACKUPS_DIR: /app/data/backups
+      # LM Studio on the host; it must listen on all interfaces ("Serve on local network").
+      LM_STUDIO_BASE_URL: http://host.docker.internal:1234/v1
+    extra_hosts:
+      # Docker Desktop provides this name; on Linux it maps to the host gateway.
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

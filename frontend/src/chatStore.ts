@@ -31,16 +31,18 @@ export const chat = reactive<{
 
 let nextId = 1
 
-/** Default provider from GET /settings, once per session. */
-export async function loadDefaultProvider(): Promise<void> {
-  if (chat.providerLoaded) return
-  chat.providerLoaded = true
+/** Provider chosen in Settings (GET /settings/llm). Re-read on every panel mount so a change
+ *  on the Settings page takes effect without a reload; the user's in-panel selection is kept
+ *  only while the conversation is open. */
+export async function loadDefaultProvider(force = false): Promise<void> {
+  if (chat.providerLoaded && !force) return
   try {
-    const s = await api.getSettings()
-    const p = s.llm_provider
+    const s = await api.getLlmSettings()
+    const p = s.provider
     if (typeof p === 'string' && (CHAT_PROVIDERS as string[]).includes(p)) chat.provider = p as LlmProviderName
+    chat.providerLoaded = true
   } catch {
-    // toast already shown; keep the default
+    // toast already shown; keep the current value
   }
 }
 

@@ -20,7 +20,7 @@ const shownTurns = computed(() => {
 const hiddenCount = computed(() => chat.turns.length - shownTurns.value.length)
 
 onMounted(() => {
-  void loadDefaultProvider()
+  void loadDefaultProvider(true)
   void scrollToEnd()
 })
 

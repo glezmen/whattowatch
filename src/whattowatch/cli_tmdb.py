@@ -22,7 +22,8 @@ from whattowatch.providers import SUBSCRIPTIONS, match_provider
 tmdb_app = typer.Typer(help="TMDB data-source validation", no_args_is_help=True)
 
 ROOT = Path(__file__).resolve().parents[2]
-REPORTS_DIR = ROOT / "data" / "reports"
+# Source checkout: `<repo>/data/reports`; installed non-editable (Docker): `./data/reports`.
+REPORTS_DIR = (ROOT if (ROOT / "pyproject.toml").is_file() else Path.cwd()) / "data" / "reports"
 
 # Fixed validation set: one well-known movie and one series.
 VALIDATION_TITLES: tuple[tuple[str, MediaType, int], ...] = (
