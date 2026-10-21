@@ -18,6 +18,11 @@
     "menu": "Menu",
     "language": "Language"
   },
+  "providerLink": {
+    "open": "Open on {name}",
+    "search": "Search on the provider's site",
+    "none": "No link available"
+  },
   "common": {
     "loading": "Loading…",
     "save": "Save",

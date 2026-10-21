@@ -17,6 +17,7 @@ from whattowatch.api.cards import (
 )
 from whattowatch.api.deps import (
     NowDep,
+    OptionalSADep,
     RecommenderConfigDep,
     SessionDep,
     TmdbDep,
@@ -26,6 +27,8 @@ from whattowatch.api.schemas import (
     FeedbackIn,
     FeedbackResponse,
     FlagIn,
+    LinkItem,
+    LinksResult,
     Page,
     RatingIn,
     ResolutionRef,
@@ -46,6 +49,7 @@ from whattowatch.db.models import (
 )
 from whattowatch.preferences.vocabulary import all_labels
 from whattowatch.providers import BY_KEY
+from whattowatch.services import deep_links
 from whattowatch.services import feedback as fb
 from whattowatch.services.catalog import ensure_title
 
@@ -180,6 +184,29 @@ def get_title(
             )
             for r in resolutions
         ],
+    )
+
+
+@router.get("/titles/{title_id}/links", response_model=LinksResult)
+def get_links(title_id: int, session: SessionDep, sa: OptionalSADep, now: NowDep) -> LinksResult:
+    """Provider deep links (cached up to 7 days, refreshed from Streaming Availability when
+    a key is set) plus unverified search URLs; an SA failure only drops the refresh."""
+    title = get_title_or_404(session, title_id)
+    result = deep_links.get_links(session, sa, title, now=now)
+    session.commit()
+    return LinksResult(
+        items=[
+            LinkItem(
+                provider_key=i.provider_key,
+                offer_type=i.offer_type,
+                url=i.url,
+                source=i.source,
+                fetched_at=i.fetched_at,
+            )
+            for i in result.items
+        ],
+        fallback_search=result.fallback_search,
+        refreshed=result.refreshed,
     )
 
 

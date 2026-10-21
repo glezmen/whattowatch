@@ -62,6 +62,22 @@ class SAShow:
 
 
 @dataclass(frozen=True)
+class SAStreamingOption:
+    service_id: str
+    option_type: str  # subscription | rent | buy | addon | free
+    link: str | None
+    expires_soon: bool
+    expires_on: datetime | None
+    available_since: datetime | None
+
+
+@dataclass(frozen=True)
+class SAShowDetail:
+    show: SAShow
+    options: list[SAStreamingOption]
+
+
+@dataclass(frozen=True)
 class ChangesPage:
     changes: list[SAChange]
     shows: dict[str, SAShow] = field(default_factory=dict)
@@ -115,6 +131,25 @@ def parse_show(item: Mapping[str, Any]) -> SAShow:
         show_type=_str(item.get("showType")),
         year=year if isinstance(year, int) else None,
     )
+
+
+def parse_streaming_option(item: Mapping[str, Any]) -> SAStreamingOption:
+    service = item.get("service") or {}
+    return SAStreamingOption(
+        service_id=str(service.get("id") or "") if isinstance(service, Mapping) else "",
+        option_type=str(item.get("type") or ""),
+        link=_str(item.get("link")),
+        expires_soon=bool(item.get("expiresSoon")),
+        expires_on=_timestamp(item.get("expiresOn")),
+        available_since=_timestamp(item.get("availableSince")),
+    )
+
+
+def parse_show_detail(data: Mapping[str, Any], country: str = "hu") -> SAShowDetail:
+    by_country = data.get("streamingOptions") or {}
+    raw = by_country.get(country) if isinstance(by_country, Mapping) else None
+    options = [parse_streaming_option(o) for o in raw or [] if isinstance(o, Mapping)]
+    return SAShowDetail(show=parse_show(data), options=options)
 
 
 def parse_changes_page(data: Mapping[str, Any]) -> ChangesPage:
@@ -181,6 +216,22 @@ class StreamingAvailabilityClient:
                 )
             )
         return services
+
+    def show_by_tmdb(
+        self, media_type: TmdbMediaType, tmdb_id: int, *, country: str = "hu"
+    ) -> SAShowDetail | None:
+        """`GET /shows/{media_type}/{tmdb_id}?country=..`; None when SA does not know it."""
+        try:
+            data = self._get(f"/shows/{media_type}/{tmdb_id}", {"country": country})
+        except SAError as exc:
+            if exc.status == 404:
+                return None
+            raise
+        except (httpx.HTTPError, ValueError) as exc:  # transport error / non-JSON body
+            raise SAError(0, str(exc)[:200]) from exc
+        if not isinstance(data, Mapping):
+            raise SAError(0, "unexpected response shape")
+        return parse_show_detail(data, country)
 
     def changes(
         self,

@@ -18,6 +18,11 @@
     "menu": "Menü",
     "language": "Nyelv"
   },
+  "providerLink": {
+    "open": "Megnyitás: {name}",
+    "search": "Keresés a szolgáltatónál",
+    "none": "Nincs elérhető link"
+  },
   "common": {
     "loading": "Betöltés…",
     "save": "Mentés",

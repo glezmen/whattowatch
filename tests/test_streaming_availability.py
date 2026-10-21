@@ -143,3 +143,41 @@ def test_country_services(sa: StreamingAvailabilityClient) -> None:
     )
     (svc,) = sa.country()
     assert (svc.id, set(svc.option_types)) == ("apple", {"subscription", "rent", "buy"})
+
+
+@respx.mock
+def test_show_by_tmdb_parses_options(sa: StreamingAvailabilityClient) -> None:
+    route = respx.get(f"{BASE_URL}/shows/tv/1396").mock(
+        return_value=httpx.Response(200, json=fx("show_tv_1396.json"))
+    )
+    detail = sa.show_by_tmdb("tv", 1396)
+    assert detail is not None
+    assert route.calls.last.request.url.params["country"] == "hu"
+    assert route.calls.last.request.headers["X-API-Key"] == "secret"
+    assert (detail.show.tmdb_media_type, detail.show.tmdb_id) == ("tv", 1396)
+    assert detail.show.imdb_id == "tt0903747"
+    netflix, prime_sub, prime_buy, addon, mubi = detail.options
+    assert netflix.service_id == "netflix" and netflix.option_type == "subscription"
+    assert netflix.link == "https://www.netflix.com/title/70143836/"
+    assert netflix.expires_soon is True
+    assert netflix.expires_on == datetime.fromtimestamp(1793401140, UTC)
+    assert netflix.available_since == datetime.fromtimestamp(1700000000, UTC)
+    assert prime_sub.expires_on is None and prime_sub.available_since is None
+    assert prime_buy.option_type == "buy"
+    assert addon.option_type == "addon"
+    assert mubi.service_id == "mubi"
+
+
+@respx.mock
+def test_show_by_tmdb_404_is_none_and_429_not_retried(sa: StreamingAvailabilityClient) -> None:
+    respx.get(f"{BASE_URL}/shows/movie/1").mock(
+        return_value=httpx.Response(404, json={"message": "not found"})
+    )
+    assert sa.show_by_tmdb("movie", 1) is None
+    route = respx.get(f"{BASE_URL}/shows/movie/2").mock(
+        return_value=httpx.Response(429, json={"message": "quota"})
+    )
+    with pytest.raises(SAError) as exc:
+        sa.show_by_tmdb("movie", 2)
+    assert exc.value.status == 429
+    assert route.call_count == 1

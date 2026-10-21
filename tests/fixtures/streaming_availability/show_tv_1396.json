@@ -1,0 +1,46 @@
+{
+  "itemType": "show",
+  "showType": "series",
+  "id": "11",
+  "imdbId": "tt0903747",
+  "tmdbId": "tv/1396",
+  "title": "Breaking Bad",
+  "originalTitle": "Breaking Bad",
+  "firstAirYear": 2008,
+  "streamingOptions": {
+    "hu": [
+      {
+        "service": {"id": "netflix", "name": "Netflix"},
+        "type": "subscription",
+        "link": "https://www.netflix.com/title/70143836/",
+        "expiresSoon": true,
+        "expiresOn": 1793401140,
+        "availableSince": 1700000000
+      },
+      {
+        "service": {"id": "prime", "name": "Prime Video"},
+        "type": "subscription",
+        "link": "https://www.primevideo.com/detail/0ABC/",
+        "expiresSoon": false
+      },
+      {
+        "service": {"id": "prime", "name": "Prime Video"},
+        "type": "buy",
+        "link": "https://www.primevideo.com/detail/0ABC/buy",
+        "expiresSoon": false
+      },
+      {
+        "service": {"id": "prime", "name": "Prime Video"},
+        "type": "addon",
+        "link": "https://www.primevideo.com/detail/0ABC/addon",
+        "expiresSoon": false
+      },
+      {
+        "service": {"id": "mubi", "name": "MUBI"},
+        "type": "subscription",
+        "link": "https://mubi.com/films/x",
+        "expiresSoon": false
+      }
+    ]
+  }
+}

@@ -30,6 +30,21 @@ class AvailabilityEntry(BaseModel):
     arriving_at: datetime | None = None
     arriving_confidence: str | None = None
     enabled: bool = True  # the user's subscription switch (docs/api.md M7)
+    deep_link: str | None = None  # newest cached provider deep link for this offer type
+
+
+class LinkItem(BaseModel):
+    provider_key: str
+    offer_type: str
+    url: str
+    source: str
+    fetched_at: datetime | None = None
+
+
+class LinksResult(BaseModel):
+    items: list[LinkItem]
+    fallback_search: dict[str, str]  # provider_key -> unverified provider search URL
+    refreshed: bool
 
 
 class PersonalRating(BaseModel):

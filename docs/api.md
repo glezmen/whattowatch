@@ -16,7 +16,10 @@ TitleCard {
   user: UserState
 }
 AvailabilityEntry { provider_key, provider_name, offer_type, source, confidence, last_seen_at,
-                    leaving_at?, leaving_confidence?, arriving_at?, arriving_confidence? }
+                    leaving_at?, leaving_confidence?, arriving_at?, arriving_confidence?,
+                    enabled, deep_link? }
+  // deep_link: a szolgáltató azonos offer_type-ú sorai közül a legfrissebb tárolt mélylink
+  // (bármely forrásból, jelenleg csak streaming_availability), különben null
   // szolgáltatónként a legfrissebb "verified" sor, ha van, különben a legfrissebb sor (egy
   // harmadik feles "estimated" sor nem takarja el az ellenőrzöttet);
   // leaving_*/arriving_*: a szolgáltató bármely sorából, a legerősebb bizonyosságú (exact >
@@ -224,3 +227,30 @@ exportfájlok; a válaszok `note` mezője ezt jelzi. Kód: `services/backup.py`,
 | `GET /backup/list` | `{backups_dir, items: [{name, size_bytes, created_at}], note}`, legújabb elöl |
 | `POST /backup/inspect` multipart `file` | ellenőrzés visszaállítás nélkül (csak olvasva): SQLite-fejléc, `quick_check`, `alembic_version` tábla, ismert revízió; válasz `BackupInfo {alembic_revision, tables, titles, watch_events, size_bytes, note}`; érvénytelen fájl → 422 `detail_code: invalid_backup` |
 | `POST /backup/restore` multipart `file` + `confirm: "RESTORE"` | előbb biztonsági mentés a jelenlegi adatbázisról `BACKUPS_DIR`-be, majd atomikus fájlcsere (`-wal`/`-shm` törlése), `alembic upgrade head` (régebbi sémájú mentés is visszaállítható) és szolgáltató-seed; a szerver motor-/session-cache-e újraépül. Válasz `{previous_backup, revision_before (a feltöltött fájlé), revision_after, restored: BackupInfo, note}`. Hiányzó/hibás `confirm` → 422 `detail_code: confirm_required`; érvénytelen fájl → 422 `invalid_backup` |
+
+## Mélylinkek a szolgáltatókhoz
+
+| Metódus, út | Leírás |
+|---|---|
+| `GET /titles/{id}/links` | `LinksResult`; ismeretlen cím `404`; SA-hiba esetén sem 5xx |
+
+```
+LinksResult {
+  items: { provider_key, offer_type: "flatrate"|"rent"|"buy"|"free", url, source, fetched_at? }[],
+  fallback_search: { [provider_key]: url },   // minden bekapcsolt előfizetéshez
+  refreshed: bool                             // történt-e most SA-lekérés
+}
+```
+
+- Forrás: Streaming Availability `GET /v4/shows/{movie|tv}/{tmdb_id}?country=hu`
+  (`streamingOptions.hu[].link`). A linkek az `availability` sorokon tárolódnak
+  (`source = "streaming_availability"`, `deep_link`, `deep_link_fetched_at`,
+  `confidence = "estimated"`); az `expiresOn` → `leaving_at` (`exact`).
+- Gyorsítótár: 7 napnál frissebb lekérés esetén nincs új SA-hívás. Ha nincs SA-kulcs vagy a
+  hívás hibázik (pl. 429 kvóta), a tárolt (akár régebbi) linkek és a keresési fallback jön.
+- Csak a bekapcsolt előfizetések szerepelnek. Prime Video / Apple: `subscription` →
+  `flatrate`, `rent`/`buy` változatlan, `addon` (csatorna-előfizetés) kimarad.
+- `fallback_search`: a szolgáltató keresőoldala a `title_en`, különben az eredeti, különben
+  a magyar címmel. **Nem ellenőrzött** URL-minták (`providers.py`), változhatnak.
+- A válaszban nem szereplő korábbi linkek törlődnek (`deep_link = null`); a sor
+  elavulttá jelölése a változásszinkron feladata.

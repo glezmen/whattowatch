@@ -291,6 +291,9 @@ class Availability(TimestampMixin, Base):
     leaving_confidence: Mapped[LeavingConfidence | None] = mapped_column(String)
     arriving_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     arriving_confidence: Mapped[LeavingConfidence | None] = mapped_column(String)
+    # Provider deep link (Streaming Availability `link`), refreshed on demand.
+    deep_link: Mapped[str | None] = mapped_column(String)
+    deep_link_fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     title: Mapped[Title] = relationship(back_populates="availability")
 

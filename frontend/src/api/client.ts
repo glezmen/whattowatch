@@ -18,6 +18,7 @@ export interface AvailabilityEntry {
   arriving_confidence?: 'exact' | 'estimated' | null
   /** False when the provider is not among the enabled subscriptions (M7). */
   enabled?: boolean
+  deep_link?: string | null
 }
 
 export interface PersonalRating {
@@ -66,6 +67,20 @@ export interface TitleCard {
   community: CommunityScores
   availability: AvailabilityEntry[]
   user: UserState
+}
+
+export interface TitleLinkItem {
+  provider_key: string
+  offer_type: string
+  url: string
+  source: string
+  fetched_at: string
+}
+
+export interface TitleLinks {
+  items: TitleLinkItem[]
+  fallback_search: Record<string, string>
+  refreshed: boolean
 }
 
 export interface ReasonCode {
@@ -580,6 +595,7 @@ export const api = {
 
   putFeedback: (id: number, body: { liked_text?: string | null; disliked_text?: string | null }) =>
     request<FeedbackResponse>('PUT', `/titles/${id}/feedback`, body),
+  getTitleLinks: (id: number) => request<TitleLinks>('GET', `/titles/${id}/links`, undefined, true),
   getSignals: (id: number) => request<PreferenceSignal[]>('GET', `/titles/${id}/signals`),
   deleteSignal: (signalId: number) => request<unknown>('DELETE', `/signals/${signalId}`),
   putRating: (id: number, stars: number | null) => request<UserState>('PUT', `/titles/${id}/rating`, { stars }),

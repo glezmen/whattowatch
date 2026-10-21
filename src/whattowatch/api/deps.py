@@ -11,6 +11,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from whattowatch.adapters.streaming_availability import StreamingAvailabilityClient
 from whattowatch.adapters.tmdb import TmdbClient
 from whattowatch.config import Settings, get_settings
 from whattowatch.db.engine import create_engine_from_settings, session_factory
@@ -93,10 +94,22 @@ def require_tmdb(tmdb: Annotated[TmdbClient | None, Depends(tmdb_dep)]) -> TmdbC
     return tmdb
 
 
+def sa_dep(
+    settings: Annotated[Settings, Depends(settings_dep)],
+) -> Iterator[StreamingAvailabilityClient | None]:
+    """A Streaming Availability client, or None when no API key is configured."""
+    if not settings.streaming_availability_api_key:
+        yield None
+        return
+    with StreamingAvailabilityClient(settings.streaming_availability_api_key) as client:
+        yield client
+
+
 SettingsDep = Annotated[Settings, Depends(settings_dep)]
 SessionDep = Annotated[Session, Depends(session_dep)]
 OptionalTmdbDep = Annotated[TmdbClient | None, Depends(tmdb_dep)]
 TmdbDep = Annotated[TmdbClient, Depends(require_tmdb)]
+OptionalSADep = Annotated[StreamingAvailabilityClient | None, Depends(sa_dep)]
 
 
 def recommender_config_dep(settings: SettingsDep) -> RecommenderConfig:

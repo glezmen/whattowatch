@@ -7,7 +7,7 @@ import { reasonTexts } from '../reasons'
 import DescriptionToggle from './DescriptionToggle.vue'
 import FeedbackPanel from './FeedbackPanel.vue'
 import PosterWithOverview from './PosterWithOverview.vue'
-import ProviderBadge from './ProviderBadge.vue'
+import ProviderLink from './ProviderLink.vue'
 import { displayTitle, secondaryTitle } from '../titles'
 
 const props = defineProps<{
@@ -71,7 +71,7 @@ const c = computed(() => t.value.community)
         :class="{ off: a.enabled === false }"
         :title="a.enabled === false ? tr('card.notSubscribed') : undefined"
       >
-        <ProviderBadge :provider-key="a.provider_key" :fallback-name="a.provider_name" />
+        <ProviderLink :title-id="t.id" :provider-key="a.provider_key" :fallback-name="a.provider_name" :deep-link="a.deep_link" />
         <span class="small muted" :title="tr('card.sourceTitle', { source: a.source })">{{ tr('card.checked', { date: fmtDateTime(a.last_seen_at) }) }}</span>
         <span class="tag" :class="`conf-${a.confidence}`">{{ confidenceLabel(a.confidence) }}</span>
         <span v-if="a.leaving_at" class="small warn">

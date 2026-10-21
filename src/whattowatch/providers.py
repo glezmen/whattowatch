@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from urllib.parse import quote_plus
 
 
 @dataclass(frozen=True)
@@ -26,12 +27,36 @@ class SubscriptionProvider:
     # True where the SA service also lists rent/buy/addon offers: only
     # `streamingOptionType == "subscription"` counts as our subscription.
     sa_subscription_only: bool = False
+    # Best-effort provider search page (`{q}` = URL-encoded query). UNVERIFIED: these
+    # were not checked against the live sites and may change or ignore the query.
+    search_url_template: str = ""
 
 
 SUBSCRIPTIONS: tuple[SubscriptionProvider, ...] = (
-    SubscriptionProvider("netflix", "Netflix", (8,), ("netflix",), "netflix"),
-    SubscriptionProvider("disney_plus", "Disney+", (337,), ("disney plus", "disney+"), "disney"),
-    SubscriptionProvider("hbo_max", "HBO Max", (1899,), ("hbo max", "max"), "hbo"),
+    SubscriptionProvider(
+        "netflix",
+        "Netflix",
+        (8,),
+        ("netflix",),
+        "netflix",
+        search_url_template="https://www.netflix.com/search?q={q}",
+    ),
+    SubscriptionProvider(
+        "disney_plus",
+        "Disney+",
+        (337,),
+        ("disney plus", "disney+"),
+        "disney",
+        search_url_template="https://www.disneyplus.com/search?q={q}",
+    ),
+    SubscriptionProvider(
+        "hbo_max",
+        "HBO Max",
+        (1899,),
+        ("hbo max", "max"),
+        "hbo",
+        search_url_template="https://play.hbomax.com/search?q={q}",
+    ),
     SubscriptionProvider(
         "prime_video",
         "Prime Video",
@@ -39,6 +64,7 @@ SUBSCRIPTIONS: tuple[SubscriptionProvider, ...] = (
         ("amazon prime video", "prime video"),
         "prime",
         sa_subscription_only=True,
+        search_url_template="https://www.primevideo.com/search/ref=atv_nb_sr?phrase={q}",
     ),
     SubscriptionProvider(
         "apple_tv_plus",
@@ -47,8 +73,16 @@ SUBSCRIPTIONS: tuple[SubscriptionProvider, ...] = (
         ("apple tv+", "apple tv plus"),
         "apple",
         sa_subscription_only=True,
+        search_url_template="https://tv.apple.com/hu/search?term={q}",
     ),
-    SubscriptionProvider("skyshowtime", "SkyShowtime", (1773,), ("skyshowtime",), "skyshowtime"),
+    SubscriptionProvider(
+        "skyshowtime",
+        "SkyShowtime",
+        (1773,),
+        ("skyshowtime",),
+        "skyshowtime",
+        search_url_template="https://www.skyshowtime.com/hu/search?q={q}",
+    ),
 )
 
 BY_KEY: dict[str, SubscriptionProvider] = {p.key: p for p in SUBSCRIPTIONS}
@@ -59,6 +93,13 @@ SA_CATALOG_IDS: tuple[str, ...] = tuple(p.sa_catalog_id for p in SUBSCRIPTIONS)
 def provider_for_sa(service_id: str) -> SubscriptionProvider | None:
     """Map a Streaming Availability service id (e.g. "hbo") to our subscription."""
     return BY_SA_ID.get(service_id)
+
+
+def search_url(provider: SubscriptionProvider, query: str) -> str | None:
+    """The provider's (unverified) search page for `query`, URL-encoded; None if unknown."""
+    if not provider.search_url_template or not query.strip():
+        return None
+    return provider.search_url_template.replace("{q}", quote_plus(query.strip()))
 
 
 def _normalize(name: str) -> str:
