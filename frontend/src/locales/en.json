@@ -405,7 +405,24 @@
     "assignHint": "Pick an app profile for each export profile; one upload can import into several profiles.",
     "assignMe": "{name} (you)",
     "assignSkip": "do not import",
-    "assignNone": "Assign at least one profile."
+    "assignNone": "Assign at least one profile.",
+    "library": {
+      "title": "Household exports",
+      "intro": "Exports uploaded by any profile of the household. You can import any of them into your own profile; the viewing data always stays with the profile you import it into.",
+      "empty": "No exports uploaded yet.",
+      "uploadedBy": "Uploaded by {name}, {date}",
+      "unknownUser": "deleted profile",
+      "profiles": "Profiles in the export: {list}",
+      "runs": "Previous imports",
+      "fileMissing": "The file is no longer on the server; upload it again.",
+      "target": "App profile",
+      "targetMe": "my profile",
+      "run": "Import into my profile",
+      "runInto": "Import into {name}",
+      "started": "The import has started.",
+      "delete": "Delete",
+      "deleteConfirm": "Delete the export “{name}” from the server? Results of previous imports are kept."
+    }
   },
   "settings": {
     "title": "Settings",
@@ -547,7 +564,8 @@
       "noKey": "No TMDB API key is set.",
       "failed": "The action failed.",
       "loadFailed": "Couldn't load the TMDB account status.",
-      "linkedToast": "TMDB account linked"
+      "linkedToast": "TMDB account linked",
+      "perProfile": "Every profile can link its own TMDB account; your ratings only go to your account."
     }
   },
   "chat": {
@@ -580,7 +598,7 @@
     "profile": "{name} profile",
     "noProfile": "– not selected –",
     "noProfileData": "No profile data",
-    "profileHint": "Profiles come from the uploaded export",
+    "profileHint": "Profiles from the household's uploaded exports",
     "rows": "{n} row | {n} rows"
   },
   "profile": {

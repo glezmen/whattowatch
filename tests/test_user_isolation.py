@@ -337,21 +337,128 @@ def test_admin_only_routes(two: tuple[ApiEnv, User, User]) -> None:
     assert api.client.get("/api/settings/secrets").status_code == 200
 
 
-def test_tmdb_link_is_owned_by_one_profile(two: tuple[ApiEnv, User, User]) -> None:
+def test_tmdb_link_is_per_profile(two: tuple[ApiEnv, User, User]) -> None:
     from whattowatch.config import Settings
     from whattowatch.services import tmdb_account
     from whattowatch.services.app_settings import set_setting
 
     api, a, b = two
     s = api.session
-    linked = Settings(_env_file=None, tmdb_session_id="sid", tmdb_api_key="k")  # type: ignore[call-arg]
+    linked = Settings(_env_file=None, tmdb_session_ids={a.id: "sid-a"}, tmdb_api_key="k")  # type: ignore[call-arg]
     set_setting(s, tmdb_account.TMDB_ACCOUNT, {"id": 1}, user_id=a.id)
     s.commit()
     assert tmdb_account.status(s, linked, user_id=a.id).linked
     assert not tmdb_account.status(s, linked, user_id=b.id).linked
-    assert tmdb_account.linked_by_other(s, linked, user_id=b.id)
-    with pytest.raises(tmdb_account.TmdbLinkError):
-        tmdb_account.start_link(s, linked, object(), user_id=b.id)  # type: ignore[arg-type]
+    assert tmdb_account.session_id_for(s, linked, b.id) is None
+    both = tmdb_account.with_session(linked, b.id, "sid-b")
+    assert tmdb_account.session_id_for(s, both, a.id) == "sid-a"
+    assert tmdb_account.session_id_for(s, both, b.id) == "sid-b"
+
+    # Legacy single session: only its owner (the profile with `tmdb_account`) sees it.
+    legacy = Settings(_env_file=None, tmdb_session_id="old", tmdb_api_key="k")  # type: ignore[call-arg]
+    assert tmdb_account.session_id_for(s, legacy, a.id) == "old"
+    assert tmdb_account.session_id_for(s, legacy, b.id) is None
+
+
+class _Tmdb:
+    def __init__(self, session_id: str, account_id: int) -> None:
+        self.session_id, self.account_id = session_id, account_id
+        self.rated: list[tuple[int, float, str]] = []
+
+    def new_request_token(self) -> Any:
+        from whattowatch.adapters.tmdb import RequestToken
+
+        return RequestToken(request_token=f"tok-{self.session_id}", expires_at=None)
+
+    def create_session(self, request_token: str) -> str:
+        return self.session_id
+
+    def account(self, session_id: str) -> Any:
+        from whattowatch.adapters.tmdb import TmdbAccount
+
+        return TmdbAccount(id=self.account_id, username=f"u{self.account_id}", name=None)
+
+    def delete_session(self, session_id: str) -> None:
+        pass
+
+    def rate(self, media_type: str, tmdb_id: int, value: float, session_id: str) -> None:
+        self.rated.append((tmdb_id, value, session_id))
+
+    def unrate(self, media_type: str, tmdb_id: int, session_id: str) -> None:
+        pass
+
+
+def test_tmdb_each_profile_links_and_syncs_its_own_account(
+    two: tuple[ApiEnv, User, User], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from whattowatch.api.deps import tmdb_dep
+    from whattowatch.services import tmdb_account
+    from whattowatch.services.env_file import read_env
+
+    api, a, b = two
+    env_path = tmp_path / ".env"
+    monkeypatch.setattr(tmdb_account, "env_file_path", lambda: env_path)
+    app = api.client.app
+    app.state.settings = app.state.settings.model_copy(update={"tmdb_api_key": "k"})  # type: ignore[attr-defined]
+    fakes = {a.id: _Tmdb("sid-a", 1), b.id: _Tmdb("sid-b", 2)}
+    current: dict[str, int] = {"uid": a.id}
+    app.dependency_overrides[tmdb_dep] = lambda: fakes[current["uid"]]  # type: ignore[attr-defined]
+
+    for user in (a, b):
+        as_user(api, user)
+        current["uid"] = user.id
+        assert api.client.post("/api/settings/tmdb-account/link/start").status_code == 200
+        r = api.client.post("/api/settings/tmdb-account/link/finish")
+        assert r.status_code == 200, r.text
+        assert r.json()["linked"] and r.json()["account"]["id"] == fakes[user.id].account_id
+        assert "sid-" not in r.text
+    env = read_env(env_path)
+    assert env[f"TMDB_SESSION_ID__{a.id}"] == "sid-a"
+    assert env[f"TMDB_SESSION_ID__{b.id}"] == "sid-b"
+
+    t = api.ids[106]
+    as_user(api, b)
+    current["uid"] = b.id
+    r = api.client.put(f"/api/titles/{t}/rating", json={"stars": 4})
+    assert r.json()["tmdb_sync"]["status"] == "ok"
+    assert fakes[b.id].rated[-1][2] == "sid-b"
+    assert api.client.get("/api/settings/tmdb-account").json()["account"]["id"] == 2
+
+    # B unlinks: A's link is untouched.
+    assert api.client.post("/api/settings/tmdb-account/unlink").json()["linked"] is False
+    env = read_env(env_path)
+    assert f"TMDB_SESSION_ID__{b.id}" not in env and env[f"TMDB_SESSION_ID__{a.id}"] == "sid-a"
+    r = api.client.put(f"/api/titles/{t}/rating", json={"stars": 3})
+    assert r.json()["tmdb_sync"]["status"] == "skipped"
+    assert len(fakes[b.id].rated) == 1 and fakes[a.id].rated == []
+    as_user(api, a)
+    assert api.client.get("/api/settings/tmdb-account").json()["linked"] is True
+
+
+def test_tmdb_legacy_session_moves_to_owner(
+    two: tuple[ApiEnv, User, User], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from whattowatch.services import tmdb_account
+    from whattowatch.services.app_settings import set_setting
+    from whattowatch.services.env_file import read_env
+
+    api, a, b = two
+    env_path = tmp_path / ".env"
+    env_path.write_text("TMDB_API_KEY=k\nTMDB_SESSION_ID=legacy-sid\n")
+    monkeypatch.setattr(tmdb_account, "env_file_path", lambda: env_path)
+    set_setting(api.session, tmdb_account.TMDB_ACCOUNT, {"id": 5}, user_id=b.id)
+    api.session.commit()
+    app = api.client.app
+    app.state.settings = app.state.settings.model_copy(update={"tmdb_session_id": "legacy-sid"})  # type: ignore[attr-defined]
+
+    as_user(api, a)
+    assert api.client.get("/api/settings/tmdb-account").json()["linked"] is False
+    assert read_env(env_path) == {"TMDB_API_KEY": "k", f"TMDB_SESSION_ID__{b.id}": "legacy-sid"}
+    settings = app.state.settings  # type: ignore[attr-defined]
+    assert settings.tmdb_session_id is None and settings.tmdb_session_ids == {b.id: "legacy-sid"}
+    as_user(api, b)
+    body = api.client.get("/api/settings/tmdb-account").json()
+    assert body["linked"] is True and body["account"]["id"] == 5
 
 
 # --- users service ------------------------------------------------------------------------

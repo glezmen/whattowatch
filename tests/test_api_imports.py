@@ -12,16 +12,24 @@ from pathlib import Path
 import httpx
 import pytest
 import respx
-from conftest import ApiEnv
+from conftest import ApiEnv, login_as
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 from test_import_prime import fake_resolver, write_zip
 
 from whattowatch.adapters.tmdb import BASE_URL, TmdbClient
 from whattowatch.api.imports import import_tmdb_factory_dep, job_session_factory_dep
-from whattowatch.db.models import SyncRun, TitleRating, WatchEvent
-from whattowatch.services import import_prime
+from whattowatch.db.models import (
+    ImportUpload,
+    SyncRun,
+    TitleRating,
+    TitleResolution,
+    User,
+    WatchEvent,
+)
+from whattowatch.services import import_netflix, import_prime
 from whattowatch.services.import_jobs import ImportJobRegistry
+from whattowatch.services.users import create_user, default_user_id
 
 FX = Path(__file__).parent / "fixtures"
 RATINGS = FX / "imdb" / "ratings_synthetic.csv"
@@ -276,3 +284,159 @@ def test_prime_profiles_and_upload(
         files={"file": ("Prime Video.zip", data)},
     )
     assert r.json()["status"] == "failed" and "TEEN" in r.json()["error"]
+
+
+# --- household export library (docs/api.md "Háztartás exportjai") -------------------------
+
+
+def _upload(api: ApiEnv, source: str, name: str, data: bytes, **form: str) -> dict[str, object]:
+    r = api.client.post(
+        "/api/import/upload", data={"source": source, **form}, files={"file": (name, data)}
+    )
+    assert r.status_code == 200, r.text
+    job: dict[str, object] = r.json()
+    return job
+
+
+def _uploads(api: ApiEnv) -> list[dict[str, object]]:
+    r = api.client.get("/api/import/uploads")
+    assert r.status_code == 200, r.text
+    items: list[dict[str, object]] = r.json()["items"]
+    return items
+
+
+def _second_profile(api: ApiEnv) -> tuple[User, User]:
+    admin = api.session.get_one(User, default_user_id(api.session))
+    bela = create_user(api.session, "Béla")
+    api.session.commit()
+    return admin, bela
+
+
+def _unresolved(session: object, tmdb: object, **req: object) -> TitleResolution:
+    from sqlalchemy.orm import Session
+
+    assert isinstance(session, Session)
+    key = f"{req['title_text']}"
+    found = session.scalars(
+        select(TitleResolution).filter_by(source=req["source"], lookup_key=key)
+    ).one_or_none()
+    if found is not None:
+        return found
+    res = TitleResolution(source=req["source"], lookup_key=key, status="unresolved")
+    session.add(res)
+    session.flush()
+    return res
+
+
+def test_upload_is_recorded_and_deduplicated(env: tuple[ApiEnv, Path]) -> None:
+    api, imports_dir = env
+    first = _upload(api, "imdb_ratings", "ratings.csv", RATINGS.read_bytes())
+    second = _upload(api, "imdb_ratings", "ratings again.csv", RATINGS.read_bytes())
+    assert first["upload_id"] == second["upload_id"] is not None
+    assert len(list((imports_dir / "imdb_ratings").iterdir())) == 1
+    items = _uploads(api)
+    assert len(items) == 1
+    item = items[0]
+    assert item["source"] == "imdb_ratings" and item["file_name"] == "ratings.csv"
+    assert item["size_bytes"] == len(RATINGS.read_bytes()) and item["profiles"] is None
+    assert item["uploaded_by"] == {"id": default_user_id(api.session), "name": "Profil 1"}
+    assert item["can_delete"] is True and item["file_present"] is True
+    runs = item["runs"]
+    assert isinstance(runs, list) and len(runs) == 2
+    assert {r["user_name"] for r in runs} == {"Profil 1"}
+    api.session.expire_all()
+    linked = api.session.scalars(select(SyncRun).where(SyncRun.upload_id == item["id"])).all()
+    assert len(linked) == 2
+
+
+def test_household_upload_runs_into_own_profile(
+    env: tuple[ApiEnv, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    api, _ = env
+    admin, bela = _second_profile(api)
+    monkeypatch.setattr(import_netflix, "_resolve", _unresolved)
+    netflix = _upload(api, "netflix_export", "netflix.zip", _netflix_zip(), profile_name="Anna")
+    assert netflix["status"] == "done", netflix
+    imdb = _upload(api, "imdb_ratings", "ratings.csv", RATINGS.read_bytes())
+
+    login_as(api.client, bela)
+    items = {i["source"]: i for i in _uploads(api)}  # visible to every profile
+    nf = items["netflix_export"]
+    assert [p["name"] for p in nf["profiles"]] == ["Anna", "Bela"]  # type: ignore[index]
+    assert nf["can_delete"] is False
+    subs = {s["key"]: s for s in api.client.get("/api/settings/subscriptions").json()["items"]}
+    assert [p["name"] for p in subs["netflix"]["profiles"]] == ["Anna", "Bela"]
+
+    url = f"/api/import/uploads/{netflix['upload_id']}/run"
+    r = api.client.post(url, json={})
+    assert r.status_code == 422 and r.json()["detail_code"] == "export_profile_required"
+    assert r.json()["profiles"] == ["Anna", "Bela"]
+    r = api.client.post(url, json={"profile_name": "Cecil"})
+    assert r.status_code == 422 and r.json()["detail_code"] == "export_profile_unknown"
+    r = api.client.post(url, json={"profile_name": "Bela"})
+    assert r.status_code == 200, r.text
+    job = r.json()
+    assert job["status"] == "done", job
+    assert job["upload_id"] == netflix["upload_id"] and job["target_user_id"] is None
+    api.session.expire_all()
+    run = api.session.get_one(SyncRun, job["sync_run_id"])
+    assert run.user_id == bela.id and run.profile_name == "Bela"
+    assert run.upload_id == netflix["upload_id"]
+    assert [j["id"] for j in api.client.get("/api/import/jobs").json()] == [job["id"]]
+
+    r = api.client.post(f"/api/import/uploads/{imdb['upload_id']}/run", json={})
+    assert r.status_code == 200 and r.json()["status"] == "done", r.text
+    api.session.expire_all()
+    mine = api.session.scalars(
+        select(TitleRating).where(TitleRating.source == "imdb_user", TitleRating.user_id == bela.id)
+    ).all()
+    assert len(mine) == 2
+    runs = {i["source"]: i["runs"] for i in _uploads(api)}
+    assert {(r["user_name"], r["profile_name"]) for r in runs["netflix_export"]} == {  # type: ignore[union-attr]
+        ("Profil 1", "Anna"),
+        ("Béla", "Bela"),
+    }
+
+    # A non-admin cannot import into another profile; the admin can.
+    r = api.client.post(f"/api/import/uploads/{imdb['upload_id']}/run", json={"user_id": admin.id})
+    assert r.status_code == 403 and r.json()["detail_code"] == "admin_required"
+    assert api.client.post("/api/import/uploads/999/run", json={}).status_code == 404
+
+
+def test_admin_imports_upload_into_another_profile(env: tuple[ApiEnv, Path]) -> None:
+    api, _ = env
+    _, bela = _second_profile(api)
+    imdb = _upload(api, "imdb_ratings", "ratings.csv", RATINGS.read_bytes())
+    r = api.client.post(f"/api/import/uploads/{imdb['upload_id']}/run", json={"user_id": bela.id})
+    assert r.status_code == 200, r.text
+    job = r.json()
+    assert job["status"] == "done" and job["target_user_id"] == bela.id
+    api.session.expire_all()
+    assert api.session.get_one(SyncRun, job["sync_run_id"]).user_id == bela.id
+    r = api.client.post(f"/api/import/uploads/{imdb['upload_id']}/run", json={"user_id": 999})
+    assert r.status_code == 422
+
+
+def test_delete_upload_rules(env: tuple[ApiEnv, Path]) -> None:
+    api, imports_dir = env
+    admin, bela = _second_profile(api)
+    mine = _upload(api, "imdb_ratings", "ratings.csv", RATINGS.read_bytes())
+    login_as(api.client, bela)
+    theirs = _upload(
+        api,
+        "imdb_watchlist",
+        "watchlist.csv",
+        (FX / "imdb" / "watchlist_synthetic.csv").read_bytes(),
+    )
+    r = api.client.delete(f"/api/import/uploads/{mine['upload_id']}")
+    assert r.status_code == 403 and r.json()["detail_code"] == "upload_not_owner"
+    assert api.client.delete(f"/api/import/uploads/{theirs['upload_id']}").status_code == 204
+    assert list((imports_dir / "imdb_watchlist").iterdir()) == []
+    login_as(api.client, admin)
+    assert api.client.delete(f"/api/import/uploads/{mine['upload_id']}").status_code == 204
+    assert api.client.delete(f"/api/import/uploads/{mine['upload_id']}").status_code == 404
+    assert _uploads(api) == []
+    api.session.expire_all()
+    run = api.session.get_one(SyncRun, mine["sync_run_id"])  # runs stay
+    assert run.upload_id is None
+    assert api.session.scalars(select(ImportUpload)).all() == []

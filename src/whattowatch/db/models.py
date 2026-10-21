@@ -423,6 +423,33 @@ class SyncRun(TimestampMixin, Base):
     skipped: Mapped[int] = mapped_column(default=0)
     errors: Mapped[list[Any]] = mapped_column(JSON, default=list)
     file_sha256: Mapped[str | None] = mapped_column(String)
+    # Import runs started from a stored household upload (0014); the export profile used.
+    upload_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("import_uploads.id", ondelete="SET NULL"), index=True
+    )
+    profile_name: Mapped[str | None] = mapped_column(String)
+
+
+class ImportUpload(Base):
+    """An uploaded export file kept under `imports_dir`, shared by the household (0014).
+
+    `profiles`: the export profiles found in a Netflix/Prime Video export
+    (`[{name, primary_lang?, rows}]`); NULL for CSV sources or not parsed yet."""
+
+    __tablename__ = "import_uploads"
+    __table_args__ = (UniqueConstraint("source", "sha256", name="uq_import_uploads_source_sha256"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source: Mapped[str] = mapped_column(String)
+    file_name: Mapped[str] = mapped_column(String)
+    stored_path: Mapped[str] = mapped_column(String)
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = mapped_column(String)
+    uploaded_by: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    profiles: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON)
 
 
 class Recommendation(TimestampMixin, Base):

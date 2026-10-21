@@ -196,6 +196,9 @@ def delete_user(session: Session, user: User) -> None:
         if admins <= 1:
             raise UserError("last_admin", "Az utolsó adminisztrátor profil nem törölhető.")
     uid = user.id
+    from whattowatch.services.import_uploads import forget_uploader
+
+    forget_uploader(session, uid)
     for model in _PERSONAL_MODELS:
         session.execute(delete(model).where(model.user_id == uid))
     session.delete(user)

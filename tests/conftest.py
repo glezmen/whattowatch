@@ -232,6 +232,12 @@ def build_recommend_db(session: Session) -> dict[int, int]:
     return ids
 
 
+@pytest.fixture(autouse=True)
+def _isolated_imports_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Migration 0014 backfills from `IMPORTS_DIR`: never let tests scan the real one."""
+    monkeypatch.setenv("IMPORTS_DIR", str(tmp_path / "imports-isolated"))
+
+
 @pytest.fixture
 def migrated_session(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Session]:
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'test.db'}")

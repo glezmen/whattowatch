@@ -158,6 +158,7 @@ async function resync() {
       </span>
     </div>
 
+    <p class="small muted">{{ t('settings.tmdb.perProfile') }}</p>
     <p class="small muted">{{ t('settings.tmdb.privacy') }}</p>
   </div>
 </template>

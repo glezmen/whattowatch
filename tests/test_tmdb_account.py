@@ -179,7 +179,9 @@ def test_link_start_finish_unlink(migrated_session: Session, env_path: Path) -> 
     assert result.status.linked and result.status.pending is False
     assert result.status.account is not None and result.status.account["username"] == "nbokor"
     env = read_env(env_path)
-    assert env["TMDB_SESSION_ID"] == SESSION_ID and env["TMDB_API_KEY"] == "k"
+    key = f"TMDB_SESSION_ID__{default_user_id(session)}"
+    assert env[key] == SESSION_ID and env["TMDB_API_KEY"] == "k"
+    assert "TMDB_SESSION_ID" not in env
     assert (
         get_setting(session, tmdb_account.TMDB_PENDING_TOKEN, user_id=default_user_id(session))
         is None
@@ -187,11 +189,11 @@ def test_link_start_finish_unlink(migrated_session: Session, env_path: Path) -> 
     stored = get_setting(session, tmdb_account.TMDB_ACCOUNT, user_id=default_user_id(session))
     assert stored["id"] == 42 and "linked_at" in stored and SESSION_ID not in json.dumps(stored)
 
-    linked = settings.model_copy(update={"tmdb_session_id": SESSION_ID})
+    linked = tmdb_account.with_session(settings, default_user_id(session), SESSION_ID)
     st = tmdb_account.unlink(session, linked, tmdb, user_id=default_user_id(session))
     assert ("delete_session", SESSION_ID) in tmdb.calls
     assert not st.linked and st.account is None
-    assert "TMDB_SESSION_ID" not in read_env(env_path)
+    assert key not in read_env(env_path)
     assert get_setting(session, tmdb_account.TMDB_ACCOUNT, user_id=default_user_id(session)) is None
 
 
@@ -204,7 +206,7 @@ def test_finish_without_approval_keeps_pending(migrated_session: Session, env_pa
             session, settings, FakeTmdb(deny=True), user_id=default_user_id(session)
         )
     assert tmdb_account.status(session, settings, user_id=default_user_id(session)).pending is True
-    assert "TMDB_SESSION_ID" not in read_env(env_path)
+    assert not any(k.startswith("TMDB_SESSION_ID") for k in read_env(env_path))
 
 
 def test_finish_with_expired_or_missing_token(migrated_session: Session, env_path: Path) -> None:
@@ -399,7 +401,8 @@ def test_api_link_flow_and_rating_sync(
     assert SESSION_ID not in r.text
     body = r.json()
     assert body["linked"] and body["account"] == {"id": 42, "username": "nbokor", "name": "N"}
-    assert read_env(env_path)["TMDB_SESSION_ID"] == SESSION_ID
+    uid = default_user_id(migrated_session)
+    assert read_env(env_path)[f"TMDB_SESSION_ID__{uid}"] == SESSION_ID
 
     t = _title(migrated_session, 550)
     migrated_session.commit()
@@ -428,7 +431,7 @@ def test_api_link_flow_and_rating_sync(
     )
     r = client.post("/api/settings/tmdb-account/unlink")
     assert r.status_code == 200 and r.json()["linked"] is False
-    assert "TMDB_SESSION_ID" not in read_env(env_path)
+    assert f"TMDB_SESSION_ID__{uid}" not in read_env(env_path)
 
 
 @respx.mock
@@ -439,7 +442,7 @@ def test_api_finish_not_approved_is_422(client: TestClient, env_path: Path) -> N
     assert r.status_code == 422
     assert r.json()["detail_code"] == "tmdb_link_failed"
     assert "Session denied." in r.json()["detail"]
-    assert "TMDB_SESSION_ID" not in read_env(env_path)
+    assert not any(k.startswith("TMDB_SESSION_ID") for k in read_env(env_path))
 
 
 @respx.mock
@@ -460,7 +463,7 @@ def test_api_resync(client: TestClient, migrated_session: Session) -> None:
     )
     app = client.app
     app.state.settings = app.state.settings.model_copy(  # type: ignore[attr-defined]
-        update={"tmdb_session_id": SESSION_ID}
+        update={"tmdb_session_ids": {default_user_id(migrated_session): SESSION_ID}}
     )
     r = client.post("/api/settings/tmdb-account/resync")
     assert r.status_code == 200

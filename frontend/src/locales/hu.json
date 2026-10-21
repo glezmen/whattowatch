@@ -405,7 +405,24 @@
     "assignHint": "Minden exportprofilhoz választhatsz app-profilt; egy feltöltésből több profil is importálható.",
     "assignMe": "{name} (te)",
     "assignSkip": "nem importálom",
-    "assignNone": "Legalább egy profilt rendelj hozzá."
+    "assignNone": "Legalább egy profilt rendelj hozzá.",
+    "library": {
+      "title": "Háztartás exportjai",
+      "intro": "A háztartás bármelyik profilja által feltöltött exportok. Bármelyiket importálhatod a saját profilodba; a nézési adatok mindig annál a profilnál maradnak, amelyikbe importálod.",
+      "empty": "Még nincs feltöltött export.",
+      "uploadedBy": "Feltöltötte: {name}, {date}",
+      "unknownUser": "törölt profil",
+      "profiles": "Profilok az exportban: {list}",
+      "runs": "Korábbi importok",
+      "fileMissing": "A fájl már nincs meg a szerveren; töltsd fel újra.",
+      "target": "App-profil",
+      "targetMe": "a saját profilom",
+      "run": "Importálás a profilomba",
+      "runInto": "Importálás ide: {name}",
+      "started": "Az import elindult.",
+      "delete": "Törlés",
+      "deleteConfirm": "Biztosan törlöd a(z) „{name}” exportot a szerverről? A korábbi importok eredménye megmarad."
+    }
   },
   "settings": {
     "title": "Beállítások",
@@ -547,7 +564,8 @@
       "noKey": "Nincs TMDB API-kulcs beállítva.",
       "failed": "A művelet nem sikerült.",
       "loadFailed": "A TMDB-fiók állapota nem tölthető be.",
-      "linkedToast": "TMDB-fiók összekötve"
+      "linkedToast": "TMDB-fiók összekötve",
+      "perProfile": "Minden profil a saját TMDB-fiókját kötheti össze; az értékeléseid csak a te fiókodba kerülnek."
     }
   },
   "chat": {
@@ -580,7 +598,7 @@
     "profile": "{name} profil",
     "noProfile": "– nincs kiválasztva –",
     "noProfileData": "Nincs profiladat",
-    "profileHint": "Profilok a feltöltött exportból jönnek",
+    "profileHint": "Profilok a háztartás feltöltött exportjaiból",
     "rows": "{n} sor | {n} sor"
   },
   "profile": {

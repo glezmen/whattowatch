@@ -45,6 +45,7 @@ EXPECTED_TABLES = {
     "app_settings",
     "users",
     "user_subscriptions",
+    "import_uploads",
 }
 # Personal tables: owner column (NOT NULL unless noted) and the user-scoped unique key.
 USER_SCOPED_UNIQUE: dict[str, list[str]] = {

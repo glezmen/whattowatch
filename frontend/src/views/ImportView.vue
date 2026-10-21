@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { api, type ImportJob, type ImportSource, type NetflixProfile, type UserProfile } from '../api/client'
+import { api, type ImportJob, type ImportSource, type ImportUpload, type NetflixProfile, type UserProfile } from '../api/client'
 import { appSettings, loadAppSettings, loadSubscriptions, subscriptions } from '../appSettings'
 import { me } from '../auth'
 import FilePicker from '../components/FilePicker.vue'
 import ProviderBadge from '../components/ProviderBadge.vue'
-import { fmtDateTime } from '../format'
+import { fmtDateTime, fmtInt } from '../format'
 import { PROVIDER_BY_KEY } from '../providers'
 import { pushToast } from '../toast'
 
@@ -145,6 +145,7 @@ async function loadJobs(quiet = false) {
   if (wasActive && !jobs.value.some(isActive)) {
     void loadAppSettings()
     void loadSubscriptions(true)
+    void loadUploads()
   }
   schedulePoll()
 }
@@ -200,6 +201,7 @@ async function upload(source: string) {
     const job = await api.uploadImport(source, s.file, profileName, assign)
     jobs.value = [job, ...jobs.value.filter((j) => j.id !== job.id)]
     pushToast(t('import.uploaded'))
+    void loadUploads()
     s.file = null
     s.profiles = null
     s.inputKey++
@@ -248,10 +250,105 @@ function needsResolution(j: ImportJob): boolean {
   return (j.summary?.ambiguous ?? 0) > 0 || (j.summary?.unresolved ?? 0) > 0
 }
 
+// --- household export library (GET /import/uploads) --------------------------------------
+
+const uploads = ref<ImportUpload[]>([])
+const uploadsLoaded = ref(false)
+
+interface LibraryState {
+  profile: string
+  /** Admin only: the app profile to import into ('' = mine). */
+  userId: number | ''
+  running: boolean
+  deleting: boolean
+}
+const library = reactive<Record<number, LibraryState>>({})
+
+function lib(u: ImportUpload): LibraryState {
+  if (!library[u.id]) {
+    const names = (u.profiles ?? []).map((p) => p.name)
+    const preferred = preferredProfile(u.source)
+    const profile = preferred && names.includes(preferred) ? preferred : (names[0] ?? '')
+    library[u.id] = { profile, userId: '', running: false, deleting: false }
+  }
+  return library[u.id]!
+}
+
+async function loadUploads() {
+  try {
+    uploads.value = (await api.getImportUploads(true)).items
+  } catch {
+    // keep the last list
+  } finally {
+    uploadsLoaded.value = true
+  }
+}
+
+function needsProfile(u: ImportUpload): boolean {
+  return hasProfiles(u.source) && (u.profiles?.length ?? 0) > 0
+}
+
+function canRun(u: ImportUpload): boolean {
+  const l = lib(u)
+  return u.file_present && !l.running && (!needsProfile(u) || !!l.profile)
+}
+
+async function runUpload(u: ImportUpload) {
+  const l = lib(u)
+  if (!canRun(u)) return
+  l.running = true
+  try {
+    const job = await api.runImportUpload(u.id, {
+      profile_name: needsProfile(u) ? l.profile : null,
+      user_id: typeof l.userId === 'number' ? l.userId : null,
+    })
+    jobs.value = [job, ...jobs.value.filter((j) => j.id !== job.id)]
+    pushToast(t('import.library.started'))
+    schedulePoll()
+    void loadUploads()
+  } catch {
+    // toast already shown
+  } finally {
+    l.running = false
+  }
+}
+
+async function deleteUpload(u: ImportUpload) {
+  if (!window.confirm(t('import.library.deleteConfirm', { name: u.file_name }))) return
+  const l = lib(u)
+  l.deleting = true
+  try {
+    await api.deleteImportUpload(u.id)
+    uploads.value = uploads.value.filter((x) => x.id !== u.id)
+  } catch {
+    // toast already shown
+  } finally {
+    l.deleting = false
+  }
+}
+
+function fmtSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} kB`
+  return `${fmtInt(bytes)} B`
+}
+
+function uploadProfileText(p: { name: string; primary_lang?: string | null; rows?: number | null }): string {
+  return profileText({ name: p.name, primary_lang: p.primary_lang, viewing_rows: p.rows ?? 0 })
+}
+
+function runText(r: ImportUpload['runs'][number]): string {
+  const who = r.user_name ?? '?'
+  const what = r.profile_name ? ` (${r.profile_name})` : ''
+  const when = r.finished_at ? ` · ${fmtDateTime(r.finished_at)}` : ''
+  return `${who}${what}${when} · ${statusText(r.status)}`
+}
+
 onMounted(() => {
   void loadSources()
   void loadJobs()
   void loadUsers()
+  void loadUploads()
 })
 onBeforeUnmount(() => {
   unmounted = true
@@ -311,6 +408,51 @@ onBeforeUnmount(() => {
       <p class="small">{{ noteOf(src) }}</p>
     </section>
   </div>
+
+  <h2 class="jobs-title">{{ t('import.library.title') }}</h2>
+  <p class="small muted library-intro">{{ t('import.library.intro') }}</p>
+  <p v-if="!uploadsLoaded" class="empty"><span class="spinner"></span> {{ t('common.loading') }}</p>
+  <p v-else-if="!uploads.length" class="small muted library-intro">{{ t('import.library.empty') }}</p>
+  <ul v-else class="jobs library">
+    <li v-for="u in uploads" :key="u.id" class="card job">
+      <div class="job-head">
+        <strong>{{ labelOf(u.source) }}</strong>
+        <span class="small muted file-name">{{ u.file_name }}</span>
+        <span class="small muted">{{ fmtSize(u.size_bytes) }}</span>
+      </div>
+      <p class="small muted meta">
+        <span>{{ t('import.library.uploadedBy', { name: u.uploaded_by?.name ?? t('import.library.unknownUser'), date: fmtDateTime(u.uploaded_at) }) }}</span>
+        <span v-if="u.profiles?.length">{{ t('import.library.profiles', { list: u.profiles.map((p) => p.name).join(', ') }) }}</span>
+      </p>
+      <p v-if="u.runs.length" class="small summary">
+        <span class="muted">{{ t('import.library.runs') }}:</span>
+        <span v-for="(r, i) in u.runs" :key="i" class="chip">{{ runText(r) }}</span>
+      </p>
+      <p v-if="!u.file_present" class="small warn">{{ t('import.library.fileMissing') }}</p>
+      <div class="library-actions">
+        <label v-if="needsProfile(u)" class="small">
+          {{ u.source === PRIME ? t('import.profilePrime') : t('import.profile') }}
+          <select v-model="lib(u).profile">
+            <option v-for="p in u.profiles ?? []" :key="p.name" :value="p.name">{{ uploadProfileText(p) }}</option>
+          </select>
+        </label>
+        <label v-if="me?.is_admin" class="small">
+          {{ t('import.library.target') }}
+          <select v-model="lib(u).userId">
+            <option value="">{{ t('import.library.targetMe') }}</option>
+            <option v-for="usr in userOptions.filter((x) => x.id !== me?.id)" :key="usr.id" :value="usr.id">{{ usr.name }}</option>
+          </select>
+        </label>
+        <button type="button" class="primary" :disabled="!canRun(u)" @click="runUpload(u)">
+          <span v-if="lib(u).running" class="spinner" aria-hidden="true"></span>
+          {{ typeof lib(u).userId === 'number' ? t('import.library.runInto', { name: userOptions.find((x) => x.id === lib(u).userId)?.name ?? '?' }) : t('import.library.run') }}
+        </button>
+        <button v-if="u.can_delete" type="button" class="danger-btn" :disabled="lib(u).deleting" @click="deleteUpload(u)">
+          {{ t('import.library.delete') }}
+        </button>
+      </div>
+    </li>
+  </ul>
 
   <h2 class="jobs-title">{{ t('import.jobs.title') }}</h2>
   <p v-if="!jobsLoaded" class="empty"><span class="spinner"></span> {{ t('common.loading') }}</p>
@@ -411,6 +553,31 @@ onBeforeUnmount(() => {
 .jobs-title {
   font-size: 1.15rem;
   margin: 0 0 10px;
+}
+.library-intro {
+  margin: -4px 0 10px;
+}
+.library {
+  margin-bottom: 24px;
+}
+.library-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+.library-actions label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+.library-actions select {
+  max-width: 100%;
+}
+.danger-btn {
+  border-color: var(--danger);
+  color: var(--danger);
 }
 .jobs {
   list-style: none;

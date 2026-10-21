@@ -437,6 +437,25 @@ export interface ImportJob {
   error?: string | null
   sync_run_id?: number | null
   params?: { profile_name?: string | null; assign?: Record<string, number> | null } | null
+  /** Household export library: the stored upload this job imports. */
+  upload_id?: number | null
+  /** App profile the data goes to when not the starter's (admin import from an upload). */
+  target_user_id?: number | null
+}
+
+/** GET /import/uploads item: an export stored for the whole household. */
+export interface ImportUpload {
+  id: number
+  source: ImportSourceKey
+  file_name: string
+  uploaded_by: { id: number; name: string } | null
+  uploaded_at: string
+  size_bytes: number
+  /** Netflix/Prime export profiles; null for CSV sources. */
+  profiles: { name: string; primary_lang?: string | null; rows?: number | null }[] | null
+  runs: { user_id: number | null; user_name: string | null; profile_name: string | null; finished_at: string | null; status: string }[]
+  can_delete: boolean
+  file_present: boolean
 }
 
 export interface NetflixProfile {
@@ -752,6 +771,12 @@ export const api = {
     fd.set('file', file)
     return request<{ profiles: NetflixProfile[] }>('POST', '/import/netflix/profiles', fd)
   },
+  getImportUploads: (quiet = false) =>
+    request<{ items: ImportUpload[] }>('GET', '/import/uploads', undefined, quiet),
+  /** Import a stored household export into the current profile (admin: `user_id` of another). */
+  runImportUpload: (id: number, body: { profile_name?: string | null; user_id?: number | null }) =>
+    request<ImportJob>('POST', `/import/uploads/${id}/run`, body),
+  deleteImportUpload: (id: number) => request<unknown>('DELETE', `/import/uploads/${id}`),
   /** Prime Video export: the two profile types (ADULT, CHILD) with viewing-row counts. */
   primeProfiles: (file: File) => {
     const fd = new FormData()

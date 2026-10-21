@@ -178,10 +178,24 @@ class SubscriptionRow:
     profile_support: str
 
 
+def _merge_profiles(
+    own: list[dict[str, Any]], household: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """The user's own list first, then the names only found in household uploads."""
+    names = {p.get("name") for p in own}
+    return [*own, *(p for p in household if p.get("name") not in names)]
+
+
 def subscription_rows(
     session: Session, settings: Settings, *, user_id: int
 ) -> list[SubscriptionRow]:
-    """The six subscriptions with logo, export profiles and the selected profile."""
+    """The six subscriptions with logo, export profiles and the selected profile.
+
+    Netflix/Prime Video `profiles`: the union of the profile's own stored list and the
+    export profiles found in the household's uploads (docs/multiuser.md "Háztartási
+    megosztás"); `selected_profile` stays per user."""
+    from whattowatch.services.import_uploads import household_profiles
+
     rows = _rows(session, user_id)
     logos = _logos(session)
     out: list[SubscriptionRow] = []
@@ -192,10 +206,12 @@ def subscription_rows(
         if sub.key == "netflix":
             if not profiles:
                 profiles = [{"name": n} for n in app_cfg.netflix_profiles(session, user_id=user_id)]
+            profiles = _merge_profiles(profiles, household_profiles(session, sub.key))
             selected = app_cfg.effective_netflix_profile(session, settings, user_id=user_id)
         elif sub.key == "prime_video":
             if not profiles:
                 profiles = [{"name": n} for n in app_cfg.prime_profiles(session, user_id=user_id)]
+            profiles = _merge_profiles(profiles, household_profiles(session, sub.key))
             selected = app_cfg.prime_profile_type(session, user_id=user_id)
         logo = logos.get(sub.key)
         out.append(

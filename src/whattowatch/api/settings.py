@@ -476,25 +476,40 @@ def _tmdb_account_out(st: tmdb_account.AccountStatus) -> TmdbAccountOut:
     )
 
 
-def _linked_by_other() -> CodedHTTPException:
-    return CodedHTTPException(
-        409, "A TMDB-fiókot egy másik profil kapcsolta össze.", "tmdb_linked_by_other_profile"
-    )
-
-
-def _set_running_session(request: Request, session_id: str | None) -> None:
+def _set_running_session(request: Request, after: Settings) -> None:
     """Mirror the `.env` change into the running app's settings override, if any (without
     one, `update_env` already cleared the `get_settings` cache)."""
     override: Settings | None = getattr(request.app.state, "settings", None)
     if override is not None:
-        request.app.state.settings = override.model_copy(update={"tmdb_session_id": session_id})
+        request.app.state.settings = override.model_copy(
+            update={
+                "tmdb_session_id": after.tmdb_session_id,
+                "tmdb_session_ids": dict(after.tmdb_session_ids),
+            }
+        )
+
+
+def _migrated(request: Request, session: Session, settings: Settings) -> Settings:
+    """Moves a legacy single `TMDB_SESSION_ID` to its profile's key (once)."""
+    if not settings.tmdb_session_id:
+        return settings
+    try:
+        after = tmdb_account.migrate_legacy_session(session, settings)
+    except (OSError, ValueError) as exc:
+        log.warning("legacy TMDB session could not be moved (%s)", type(exc).__name__)
+        return settings
+    if after is not settings:
+        _set_running_session(request, after)
+    return after
 
 
 @router.get("/settings/tmdb-account", response_model=TmdbAccountOut)
 def get_tmdb_account(
-    session: SessionDep, user: CurrentUserDep, settings: SettingsDep
+    request: Request, session: SessionDep, user: CurrentUserDep, settings: SettingsDep
 ) -> TmdbAccountOut:
-    """Link status of the current profile only; the session id is never returned."""
+    """Link status of the current profile's own TMDB account; the session id is never
+    returned."""
+    settings = _migrated(request, session, settings)
     return _tmdb_account_out(tmdb_account.status(session, settings, user_id=user.id))
 
 
@@ -516,12 +531,9 @@ def post_tmdb_link_start(
     body: TmdbLinkStartIn | None = None,
 ) -> TmdbLinkStartOut:
     """New request token (kept as pending); the user approves it at `approval_url`.
-
-    409 `tmdb_linked_by_other_profile` while another profile owns the link."""
+    Every profile links its own account."""
     if tmdb is None:
         raise no_tmdb_key()
-    if tmdb_account.linked_by_other(session, settings, user_id=user.id):
-        raise _linked_by_other()
     redirect_to = (body.redirect_to or "").strip() or None if body else None
     if redirect_to is not None and not redirect_to.startswith(("http://", "https://")):
         raise HTTPException(status_code=422, detail="A redirect_to http(s):// kezdetű legyen.")
@@ -546,11 +558,10 @@ def post_tmdb_link_finish(
     settings: SettingsDep,
     tmdb: OptionalTmdbDep,
 ) -> TmdbAccountOut:
-    """Approved pending token -> session id in `.env`; not approved/expired -> 422."""
+    """Approved pending token -> the profile's session id in `.env`
+    (`TMDB_SESSION_ID__<user_id>`); not approved/expired -> 422."""
     if tmdb is None:
         raise no_tmdb_key()
-    if tmdb_account.linked_by_other(session, settings, user_id=user.id):
-        raise _linked_by_other()
     try:
         result = tmdb_account.finish_link(session, settings, tmdb, user_id=user.id)
     except tmdb_account.TmdbLinkError as exc:
@@ -562,7 +573,10 @@ def post_tmdb_link_finish(
             status_code=500, detail=f"A .env nem írható ({type(exc).__name__})."
         ) from exc
     session.commit()
-    _set_running_session(request, result.session_id)
+    after = tmdb_account.with_session(settings, user.id, result.session_id)
+    if tmdb_account.legacy_owner(session, settings) == user.id:
+        after = after.model_copy(update={"tmdb_session_id": None})
+    _set_running_session(request, after)
     return _tmdb_account_out(result.status)
 
 
@@ -574,9 +588,9 @@ def post_tmdb_unlink(
     settings: SettingsDep,
     tmdb: OptionalTmdbDep,
 ) -> TmdbAccountOut:
-    """Revokes the TMDB session (best effort) and removes it from `.env`; only the
-    owning profile's unlink touches the session (others only drop their pending token)."""
-    owner = tmdb_account.link_owner(session, settings) == user.id
+    """Revokes the profile's own TMDB session (best effort) and removes it from `.env`;
+    other profiles' links are untouched."""
+    legacy = tmdb_account.legacy_owner(session, settings) == user.id
     try:
         st = tmdb_account.unlink(session, settings, tmdb, user_id=user.id)
     except (OSError, ValueError) as exc:
@@ -585,8 +599,10 @@ def post_tmdb_unlink(
             status_code=500, detail=f"A .env nem írható ({type(exc).__name__})."
         ) from exc
     session.commit()
-    if owner:
-        _set_running_session(request, None)
+    after = tmdb_account.with_session(settings, user.id, None)
+    if legacy:
+        after = after.model_copy(update={"tmdb_session_id": None})
+    _set_running_session(request, after)
     return _tmdb_account_out(st)
 
 
@@ -594,10 +610,11 @@ def post_tmdb_unlink(
 def post_tmdb_resync(
     session: SessionDep, user: CurrentUserDep, settings: SettingsDep, tmdb: OptionalTmdbDep
 ) -> TmdbResyncOut:
-    """Pushes every local app rating of the profile to its linked account (synchronous)."""
+    """Pushes every local app rating of the profile to its own linked account
+    (synchronous)."""
     if tmdb is None:
         raise no_tmdb_key()
-    if tmdb_account.link_owner(session, settings) != user.id:
+    if tmdb_account.session_id_for(session, settings, user.id) is None:
         raise CodedHTTPException(409, "Nincs összekapcsolt TMDB-fiók.", "tmdb_not_linked")
     result = tmdb_account.resync_ratings(session, settings, tmdb, user_id=user.id)
     session.commit()

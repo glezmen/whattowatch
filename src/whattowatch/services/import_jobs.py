@@ -7,6 +7,10 @@ The registry is lost on restart; the `sync_runs` history is not.
 Each job belongs to the profile that uploaded it (`user_id`). A Netflix/Prime export can
 be imported into several profiles at once with `params["assign"]` (export profile ->
 user id); every pair writes its own `sync_runs` row, listed in `params["runs"]`.
+
+A job started from a stored household upload (`upload_id`, docs/multiuser.md
+"Háztartási megosztás") may import into another profile than the one that started it
+(`target_user_id`, admin only; checked in the API); its runs get `sync_runs.upload_id`.
 """
 
 from __future__ import annotations
@@ -79,6 +83,15 @@ class ImportJob:
     summary: dict[str, int] | None = None
     error: str | None = None
     sync_run_id: int | None = None
+    # Stored household upload the job imports (None: a plain upload not recorded yet).
+    upload_id: int | None = None
+    # The app profile the data goes to when not the starter's (household upload, admin).
+    target_user_id: int | None = None
+
+    @property
+    def owner_id(self) -> int:
+        """The app profile the import writes to (without an explicit `assign`)."""
+        return self.target_user_id if self.target_user_id is not None else self.user_id
 
 
 JobRunner = Callable[[ImportJob], "SyncRun | list[SyncRun] | None"]
@@ -95,7 +108,15 @@ class ImportJobRegistry:
         self._next_id = 1
 
     def create(
-        self, *, source: str, file_name: str, path: Path, params: dict[str, Any], user_id: int
+        self,
+        *,
+        source: str,
+        file_name: str,
+        path: Path,
+        params: dict[str, Any],
+        user_id: int,
+        upload_id: int | None = None,
+        target_user_id: int | None = None,
     ) -> ImportJob:
         with self._lock:
             job = ImportJob(
@@ -105,6 +126,8 @@ class ImportJobRegistry:
                 path=path,
                 user_id=user_id,
                 params=params,
+                upload_id=upload_id,
+                target_user_id=target_user_id,
             )
             self._next_id += 1
             self._jobs[job.id] = job
@@ -304,19 +327,37 @@ def _run_imdb(
         raise ImportJobError(f"Nem értelmezhető IMDb CSV: {exc}") from exc
     factory = _require_tmdb(tmdb_factory)
     with session_factory() as session, factory() as tmdb:
-        return import_imdb.run_import(
-            job.path, user_id=job.user_id, kind=kind, session=session, tmdb=tmdb
+        run = import_imdb.run_import(
+            job.path, user_id=job.owner_id, kind=kind, session=session, tmdb=tmdb
         )
+    _link_upload(job, session_factory, run, None)
+    return run
+
+
+def _link_upload(
+    job: ImportJob, session_factory: SessionFactory, run: SyncRun, profile: str | None
+) -> None:
+    """Runs of a job started from a household upload point back at it."""
+    if job.upload_id is None or run.id is None:
+        return
+    from whattowatch.services.import_uploads import link_runs
+
+    with session_factory() as session:
+        link_runs(session, [run.id], job.upload_id, profile)
+        session.commit()
+    run.upload_id = job.upload_id
+    run.profile_name = profile
 
 
 def _assignments(job: ImportJob, default_profile: str | None) -> dict[str, int]:
     """Export profile -> user id: `params["assign"]`, else the chosen profile -> the
-    uploader. Validated in the API (known users); empty when no profile is chosen."""
+    uploader (or the household upload's target profile). Validated in the API (known
+    users); empty when no profile is chosen."""
     raw = job.params.get("assign")
     if isinstance(raw, dict) and raw:
         return {str(k): int(v) for k, v in raw.items()}
     profile = job.params.get("profile_name") or default_profile
-    return {str(profile): job.user_id} if profile else {}
+    return {str(profile): job.owner_id} if profile else {}
 
 
 def _check_users(session: Session, user_ids: Iterable[int]) -> None:
@@ -343,7 +384,7 @@ def _run_netflix(
         raise ImportJobError(f"Nem olvasható Netflix-export (ZIP): {exc}") from exc
     names = [p.name for p in profiles]
     with session_factory() as session:
-        default = app_settings.effective_netflix_profile(session, settings, user_id=job.user_id)
+        default = app_settings.effective_netflix_profile(session, settings, user_id=job.owner_id)
         assign = _assignments(job, default)
         _check_users(session, [job.user_id, *assign.values()])
         if names:
@@ -384,7 +425,7 @@ def _run_prime(
     except (zipfile.BadZipFile, UnicodeDecodeError, OSError, ValueError) as exc:
         raise ImportJobError(f"Nem olvasható Prime Video-export (ZIP): {exc}") from exc
     with session_factory() as session:
-        default = app_settings.prime_profile_type(session, user_id=job.user_id)
+        default = app_settings.prime_profile_type(session, user_id=job.owner_id)
         requested = _assignments(job, default)
         _check_users(session, [job.user_id, *requested.values()])
         for uid in dict.fromkeys([job.user_id, *requested.values()]):
@@ -427,6 +468,7 @@ def _run_pairs(
     for profile, uid in assign.items():
         with session_factory() as session, tmdb_factory() as tmdb:
             run = run_one(profile, uid, session, tmdb)
+        _link_upload(job, session_factory, run, profile)
         runs.append(run)
         if "assign" in job.params:
             job.params.setdefault("runs", []).append(

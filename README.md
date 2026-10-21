@@ -127,6 +127,14 @@ personal exports under the gitignored `data/` directory. Exports uploaded throug
 are stored under `IMPORTS_DIR` (default `data/imports`) as `<source>/<utc>_<filename>` and
 imported on a background thread (`POST /api/import/upload`).
 
+Uploaded exports are shared by the household: the Import page lists every profile's uploads
+("Household exports") with the export profiles found in them and who imported what, and any
+profile can import a stored file into its **own** app profile without uploading it again
+(an admin can also import into another profile). Re-uploading the same file reuses the stored
+copy; the uploader or an admin can delete it (previous imports stay). Netflix/Prime profile
+lists in Settings come from all household uploads. API: `docs/api.md` (import section),
+decisions: `docs/multiuser.md` ("Háztartási megosztás").
+
 ## Profiles
 
 The app has household profiles (`docs/multiuser.md`). On the first start, create the first
@@ -189,13 +197,15 @@ Your in-app star ratings can be pushed to your TMDB account. Linking uses TMDB's
 v3 user authentication: the app requests a token, you approve it on themoviedb.org
 (Settings page, or `uv run wtw tmdb link`, which prints the approval URL and waits for
 Enter), and the app exchanges the approved token for a session. The app never asks for or
-stores your TMDB password. The session id is a secret and is written only to the
-gitignored `.env` as `TMDB_SESSION_ID` (never sent to the browser, never logged); the
-account name/id and the on/off switch for rating sync (default on) live in the database.
+stores your TMDB password. Every profile links its own TMDB account. The session id is a
+secret and is written only to the gitignored `.env` as `TMDB_SESSION_ID__<profile id>`
+(never sent to the browser, never logged; an older single `TMDB_SESSION_ID` is moved to its
+owner's key automatically); the account name/id and the on/off switch for rating sync
+(default on) live in the database, per profile.
 Sync is one-way: the local rating stays the source of truth (stars x 2 -> TMDB's 1-10),
 clearing a rating removes it on TMDB, and a TMDB error is shown on the card but never
 breaks the local save. Unlink from the Settings page or with `uv run wtw tmdb unlink`
-(revokes the session on TMDB and removes `TMDB_SESSION_ID` from `.env`); you can also
+(revokes the session on TMDB and removes the profile's `TMDB_SESSION_ID__<id>` from `.env`); you can also
 revoke access on themoviedb.org. API: `docs/api.md` ("TMDB-fiók").
 
 ## Daily refresh

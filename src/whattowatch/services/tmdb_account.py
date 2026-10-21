@@ -3,14 +3,16 @@
 Flow (docs/api.md "TMDB-fiók"): `start_link` asks TMDB for a request token and returns
 the approval URL; the user approves it on themoviedb.org (we never see a password);
 `finish_link` turns the approved token into a session id. The session id is a secret:
-it lives only in `.env` as `TMDB_SESSION_ID` (written via `update_env`), is never
-returned to a client and never logged. The account summary, the pending token and the
-`tmdb_rating_sync_enabled` switch are app settings.
+it lives only in `.env` as `TMDB_SESSION_ID__<user_id>` (written via `update_env`), is
+never returned to a client and never logged. The account summary, the pending token and
+the `tmdb_rating_sync_enabled` switch are per-user app settings.
 
-Profiles (A2): the account summary, pending token and sync switch are per user. The
-session id is still a single `.env` value, so one profile owns the link at a time: the
-profile holding `tmdb_account` (else, for a legacy `.env`-only link, the admin). Other
-profiles see "not linked", cannot start a link while it is owned, and never push to it.
+Profiles (docs/multiuser.md "Háztartási megosztás"): every profile may link its own TMDB
+account; status, link, unlink, rating push and resync always use the current profile's
+own session. A legacy single `TMDB_SESSION_ID` belongs to the profile holding the
+`tmdb_account` setting (else the admin); `migrate_legacy_session` moves it to that
+profile's key (until then `session_id_for` falls back to it for that profile only).
+The TMDB API key (catalog access) stays global.
 
 Rating sync is one-way: the local app rating is the source of truth and is pushed to
 TMDB (stars x 2 -> 1-10); nothing is read back. A TMDB failure never breaks the local
@@ -29,7 +31,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from whattowatch.adapters.tmdb import MediaType, RequestToken, TmdbAccount, TmdbClient, TmdbError
-from whattowatch.config import Settings, env_file_path
+from whattowatch.config import Settings, env_file_path, tmdb_session_env_key
 from whattowatch.db.models import AppSetting, Title, TitleRating
 from whattowatch.services import env_file
 from whattowatch.services.app_settings import get_setting, set_setting
@@ -119,21 +121,48 @@ def linked_account(session: Session, *, user_id: int) -> dict[str, Any] | None:
     return value if isinstance(value, dict) else None
 
 
-def link_owner(session: Session, settings: Settings) -> int | None:
-    """The profile that owns the `.env` TMDB session; None when nothing is linked."""
+def legacy_owner(session: Session, settings: Settings) -> int | None:
+    """The profile the legacy single `TMDB_SESSION_ID` belongs to: the first profile with a
+    `tmdb_account` summary and no own session key, else the admin; None without one."""
     if not settings.tmdb_session_id:
         return None
-    owner = session.scalar(
+    owners = session.scalars(
         select(AppSetting.user_id)
         .where(AppSetting.key == TMDB_ACCOUNT, AppSetting.user_id.is_not(None))
         .order_by(AppSetting.id)
-        .limit(1)
     )
-    return owner if owner is not None else default_user_id(session, create=False)
+    for owner in owners:
+        if owner is not None and owner not in settings.tmdb_session_ids:
+            return owner
+    return default_user_id(session, create=False)
 
 
-def _owns_link(session: Session, settings: Settings, user_id: int) -> bool:
-    return link_owner(session, settings) == user_id
+def session_id_for(session: Session, settings: Settings, user_id: int) -> str | None:
+    """The profile's own TMDB session id (never serialize it)."""
+    own = settings.tmdb_session_ids.get(user_id)
+    if own:
+        return own
+    if settings.tmdb_session_id and legacy_owner(session, settings) == user_id:
+        return settings.tmdb_session_id
+    return None
+
+
+def migrate_legacy_session(session: Session, settings: Settings) -> Settings:
+    """Move a legacy `TMDB_SESSION_ID` to its owner's `TMDB_SESSION_ID__<id>` in `.env`.
+
+    Returns the settings as they are afterwards (unchanged when there is nothing to move
+    or nobody to move it to)."""
+    owner = legacy_owner(session, settings)
+    if owner is None or not settings.tmdb_session_id:
+        return settings
+    ids = dict(settings.tmdb_session_ids)
+    values: dict[str, str | None] = {"TMDB_SESSION_ID": None}
+    if owner not in ids:
+        ids[owner] = settings.tmdb_session_id
+        values[tmdb_session_env_key(owner)] = settings.tmdb_session_id
+    env_file.update_env(env_file_path(), values)
+    log.info("legacy TMDB session moved to a profile key")
+    return settings.model_copy(update={"tmdb_session_id": None, "tmdb_session_ids": ids})
 
 
 def _pending_token(session: Session, now: datetime, user_id: int) -> str | None:
@@ -149,7 +178,7 @@ def _pending_token(session: Session, now: datetime, user_id: int) -> str | None:
 def status(
     session: Session, settings: Settings, now: datetime | None = None, *, user_id: int
 ) -> AccountStatus:
-    linked = _owns_link(session, settings, user_id)
+    linked = session_id_for(session, settings, user_id) is not None
     return AccountStatus(
         linked=linked,
         account=linked_account(session, user_id=user_id) if linked else None,
@@ -157,11 +186,6 @@ def status(
         pending=_pending_token(session, now or _now(), user_id) is not None,
         api_key_set=bool(settings.tmdb_api_key),
     )
-
-
-def linked_by_other(session: Session, settings: Settings, *, user_id: int) -> bool:
-    owner = link_owner(session, settings)
-    return owner is not None and owner != user_id
 
 
 # --- link / unlink ------------------------------------------------------------------------
@@ -175,11 +199,7 @@ def start_link(
     user_id: int,
     redirect_to: str | None = None,
 ) -> dict[str, str]:
-    """New request token -> pending app setting; returns `{approval_url, request_token}`.
-
-    Raises TmdbLinkError when another profile owns the current link."""
-    if linked_by_other(session, settings, user_id=user_id):
-        raise TmdbLinkError("A TMDB-fiókot egy másik profil kapcsolta össze.")
+    """New request token -> pending app setting; returns `{approval_url, request_token}`."""
     token = tmdb.new_request_token()
     expires = token.expires_at or (_now() + DEFAULT_TOKEN_TTL)
     set_setting(
@@ -202,13 +222,12 @@ def finish_link(
     *,
     user_id: int,
 ) -> LinkResult:
-    """Approved pending token -> session id in `.env`, account summary in app settings.
+    """Approved pending token -> the profile's session id in `.env`
+    (`TMDB_SESSION_ID__<user_id>`), account summary in its app settings.
 
     Raises TmdbLinkError when there is no live pending token or TMDB refuses it (the
     token is kept while it is still valid, so the user can approve and retry)."""
     now = now or _now()
-    if linked_by_other(session, settings, user_id=user_id):
-        raise TmdbLinkError("A TMDB-fiókot egy másik profil kapcsolta össze.")
     token = _pending_token(session, now, user_id)
     if token is None:
         set_setting(session, TMDB_PENDING_TOKEN, None, user_id=user_id)
@@ -220,7 +239,11 @@ def finish_link(
         raise TmdbLinkError(exc.message) from exc
     except httpx.HTTPError as exc:
         raise TmdbLinkError(f"A TMDB nem érhető el ({type(exc).__name__}).") from exc
-    env_file.update_env(env_file_path(), {SESSION_ENV_KEY: session_id})
+    values: dict[str, str | None] = {tmdb_session_env_key(user_id): session_id}
+    legacy = settings.tmdb_session_id and legacy_owner(session, settings) == user_id
+    if legacy:
+        values[SESSION_ENV_KEY] = None  # the legacy link of this profile is replaced
+    env_file.update_env(env_file_path(), values)
     set_setting(
         session,
         TMDB_ACCOUNT,
@@ -234,31 +257,49 @@ def finish_link(
     )
     set_setting(session, TMDB_PENDING_TOKEN, None, user_id=user_id)
     log.info("TMDB account linked")
-    linked = settings.model_copy(update={"tmdb_session_id": session_id})
+    linked = with_session(settings, user_id, session_id)
+    if legacy:
+        linked = linked.model_copy(update={"tmdb_session_id": None})
     return LinkResult(status=status(session, linked, now, user_id=user_id), session_id=session_id)
 
 
 def unlink(
     session: Session, settings: Settings, tmdb: TmdbAccountClient | None, *, user_id: int
 ) -> AccountStatus:
-    """Revoke the TMDB session (best effort), drop it from `.env`, clear the account.
-
-    Only the owning profile removes the session; for any other profile this only clears
-    its own pending token (the returned status says whether `.env` was touched via
-    `linked`)."""
-    session_id = settings.tmdb_session_id
-    if not _owns_link(session, settings, user_id):
+    """Revoke the profile's TMDB session (best effort), drop it from `.env`, clear the
+    account. Other profiles' links are untouched; without a link of its own this only
+    clears the pending token."""
+    session_id = session_id_for(session, settings, user_id)
+    if session_id is None:
         set_setting(session, TMDB_PENDING_TOKEN, None, user_id=user_id)
+        set_setting(session, TMDB_ACCOUNT, None, user_id=user_id)
         return status(session, settings, user_id=user_id)
-    if session_id and tmdb is not None:
+    legacy = user_id not in settings.tmdb_session_ids
+    if tmdb is not None:
         try:
             tmdb.delete_session(session_id)
         except (TmdbError, httpx.HTTPError) as exc:
             log.info("TMDB session revoke failed: %s", type(exc).__name__)
-    env_file.update_env(env_file_path(), {SESSION_ENV_KEY: None})
+    values: dict[str, str | None] = {tmdb_session_env_key(user_id): None}
+    if legacy:
+        values[SESSION_ENV_KEY] = None
+    env_file.update_env(env_file_path(), values)
     set_setting(session, TMDB_ACCOUNT, None, user_id=user_id)
     set_setting(session, TMDB_PENDING_TOKEN, None, user_id=user_id)
-    return status(session, settings.model_copy(update={"tmdb_session_id": None}), user_id=user_id)
+    after = with_session(settings, user_id, None)
+    if legacy:
+        after = after.model_copy(update={"tmdb_session_id": None})
+    return status(session, after, user_id=user_id)
+
+
+def with_session(settings: Settings, user_id: int, session_id: str | None) -> Settings:
+    """A settings copy with the profile's session id set (or removed)."""
+    ids = dict(settings.tmdb_session_ids)
+    if session_id:
+        ids[user_id] = session_id
+    else:
+        ids.pop(user_id, None)
+    return settings.model_copy(update={"tmdb_session_ids": ids})
 
 
 # --- rating sync --------------------------------------------------------------------------
@@ -310,18 +351,19 @@ def sync_rating(
     has no row any more, so it is only returned)."""
     rating = _app_rating(session, title.id, user_id) if stars is not None else None
     value = stars * 2 if stars is not None else None
+    session_id = session_id_for(session, settings, user_id)
     if not rating_sync_enabled(session, user_id=user_id):
         result = _record(rating, "skipped", value=value, reason="disabled")
-    elif not settings.tmdb_session_id or not _owns_link(session, settings, user_id):
+    elif session_id is None:
         result = _record(rating, "skipped", value=value, reason="not_linked")
     elif tmdb is None:
         result = _record(rating, "skipped", value=value, reason="no_tmdb_key")
     else:
         try:
             if value is None:
-                tmdb.unrate(title.media_type, title.tmdb_id, settings.tmdb_session_id)
+                tmdb.unrate(title.media_type, title.tmdb_id, session_id)
             else:
-                tmdb.rate(title.media_type, title.tmdb_id, value, settings.tmdb_session_id)
+                tmdb.rate(title.media_type, title.tmdb_id, value, session_id)
             result = _record(rating, "ok", value=value)
         except TmdbError as exc:
             result = _record(rating, "error", value=value, error=exc.message)

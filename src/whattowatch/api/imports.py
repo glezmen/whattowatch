@@ -19,16 +19,29 @@ from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from whattowatch.adapters.tmdb import TmdbClient
-from whattowatch.api.deps import CurrentUserDep, SessionDep, SettingsDep, _factory
+from whattowatch.api.deps import (
+    CodedHTTPException,
+    CurrentUserDep,
+    SessionDep,
+    SettingsDep,
+    _factory,
+)
 from whattowatch.api.schemas import (
     ImportJobOut,
     ImportSourceOut,
     ImportSummary,
+    ImportUploadOut,
+    ImportUploadsOut,
     NetflixProfileOut,
     NetflixProfilesOut,
+    ProviderProfileOut,
+    UploadRunIn,
+    UploadRunOut,
+    UserRefOut,
 )
-from whattowatch.db.models import User
-from whattowatch.services import subscriptions
+from whattowatch.config import Settings
+from whattowatch.db.models import ImportUpload, User
+from whattowatch.services import import_uploads, subscriptions
 from whattowatch.services.import_jobs import (
     IMPORT_SOURCES,
     SOURCES_BY_KEY,
@@ -87,6 +100,8 @@ def _job_out(job: ImportJob) -> ImportJobOut:
         error=job.error,
         sync_run_id=job.sync_run_id,
         params=dict(job.params),
+        upload_id=job.upload_id,
+        target_user_id=job.target_user_id,
     )
 
 
@@ -178,9 +193,16 @@ def upload(
         raise HTTPException(
             status_code=422, detail="Az `assign` csak Netflix- és Prime Video-exportnál adható."
         )
-    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+    now = datetime.now(UTC)
+    stamp = now.strftime("%Y%m%dT%H%M%S%fZ")
     target = Path(settings.imports_dir) / source / f"{stamp}_{sanitize_file_name(original)}"
     _save(file, target)
+    # Household library: the same file (source + SHA-256) reuses the stored copy.
+    stored, _reused = import_uploads.record_upload(
+        session, source=source, file_name=original, path=target, user_id=user.id, now=now
+    )
+    session.commit()
+    target = Path(stored.stored_path)
     params: dict[str, Any] = {}
     chosen = profile_type if source == "prime_video_export" and profile_type else profile_name
     if chosen and chosen.strip():
@@ -188,12 +210,167 @@ def upload(
     if assignment is not None:
         params["assign"] = assignment
     job = registry.create(
-        source=source, file_name=original, path=target, params=params, user_id=user.id
+        source=source,
+        file_name=original,
+        path=target,
+        params=params,
+        user_id=user.id,
+        upload_id=stored.id,
     )
     registry.start(job.id, make_runner(session_factory, settings, tmdb_factory))
     current = registry.get(job.id)
     assert current is not None
     return _job_out(current)
+
+
+# --- household export library -------------------------------------------------------------
+
+
+def _upload_out(view: import_uploads.UploadView, user: User) -> ImportUploadOut:
+    u = view.upload
+    return ImportUploadOut(
+        id=u.id,
+        source=u.source,
+        file_name=u.file_name,
+        uploaded_by=UserRefOut(id=u.uploaded_by, name=view.uploaded_by_name)
+        if u.uploaded_by is not None and view.uploaded_by_name is not None
+        else None,
+        uploaded_at=u.uploaded_at,
+        size_bytes=u.size_bytes,
+        profiles=[
+            ProviderProfileOut(
+                name=str(p["name"]), primary_lang=p.get("primary_lang"), rows=p.get("rows")
+            )
+            for p in u.profiles
+            if p.get("name")
+        ]
+        if u.profiles is not None
+        else None,
+        runs=[
+            UploadRunOut(
+                user_id=r.user_id,
+                user_name=r.user_name,
+                profile_name=r.profile_name,
+                finished_at=r.finished_at,
+                status=r.status,
+            )
+            for r in view.runs
+        ],
+        can_delete=import_uploads.can_delete(u, user),
+        file_present=Path(u.stored_path).is_file(),
+    )
+
+
+@router.get("/uploads", response_model=ImportUploadsOut)
+def list_uploads(session: SessionDep, user: CurrentUserDep) -> ImportUploadsOut:
+    """Every stored export of the household (all profiles), newest first."""
+    views = import_uploads.list_uploads(session)
+    session.commit()  # lazily parsed export profiles
+    return ImportUploadsOut(items=[_upload_out(v, user) for v in views])
+
+
+def _upload_or_404(session: Session, upload_id: int) -> ImportUpload:
+    upload = import_uploads.get_upload(session, upload_id)
+    if upload is None:
+        raise HTTPException(status_code=404, detail=f"Nincs ilyen feltöltött export: {upload_id}")
+    return upload
+
+
+def _check_export_profile(session: Session, upload: ImportUpload, name: str | None) -> str:
+    """The export profile to import (Netflix profile name / Prime profile type); 422 with
+    the available names when missing or unknown."""
+    from whattowatch.services.app_settings import PRIME_PROFILE_TYPES
+
+    found = [str(p["name"]) for p in import_uploads.ensure_profiles(session, upload) or []]
+    if upload.source == "prime_video_export":
+        found = found or list(PRIME_PROFILE_TYPES)
+    clean = (name or "").strip()
+    if upload.source == "prime_video_export":
+        clean = clean.upper()
+    if not clean:
+        raise CodedHTTPException(
+            422,
+            "Válassz exportprofilt. Az exportban: " + (", ".join(found) or "—"),
+            "export_profile_required",
+            extra={"profiles": found},
+        )
+    if found and clean not in found:
+        raise CodedHTTPException(
+            422,
+            f"Ismeretlen exportprofil: {clean}. Az exportban: {', '.join(found)}",
+            "export_profile_unknown",
+            extra={"profiles": found},
+        )
+    return clean
+
+
+@router.post("/uploads/{upload_id}/run", response_model=ImportJobOut)
+def run_upload(
+    upload_id: int,
+    body: UploadRunIn,
+    session: SessionDep,
+    user: CurrentUserDep,
+    settings: SettingsDep,
+    registry: RegistryDep,
+    session_factory: Annotated[SessionFactory, Depends(job_session_factory_dep)],
+    tmdb_factory: Annotated[TmdbFactory | None, Depends(import_tmdb_factory_dep)],
+) -> ImportJobOut:
+    """Import a stored household export into the current profile (an admin may name
+    another profile with `user_id`). Netflix/Prime need `profile_name`."""
+    upload = _upload_or_404(session, upload_id)
+    target = body.user_id if body.user_id is not None else user.id
+    if target != user.id:
+        if not user.is_admin:
+            raise CodedHTTPException(
+                403, "Más profilba csak adminisztrátor importálhat.", "admin_required"
+            )
+        if session.get(User, target) is None:
+            raise HTTPException(status_code=422, detail=f"Ismeretlen profil: {target}")
+    info = SOURCES_BY_KEY.get(upload.source)
+    if info is None or not info.supported:
+        raise HTTPException(
+            status_code=422, detail=f"Ehhez a forráshoz nincs import: {upload.source}"
+        )
+    params: dict[str, Any] = {}
+    if upload.source in import_uploads.PROFILE_SOURCES:
+        params["profile_name"] = _check_export_profile(session, upload, body.profile_name)
+    path = Path(upload.stored_path)
+    if not path.is_file():
+        raise CodedHTTPException(
+            409, "A feltöltött fájl már nincs meg a szerveren.", "upload_file_missing"
+        )
+    session.commit()
+    job = registry.create(
+        source=upload.source,
+        file_name=upload.file_name,
+        path=path,
+        params=params,
+        user_id=user.id,
+        upload_id=upload.id,
+        target_user_id=target if target != user.id else None,
+    )
+    registry.start(job.id, make_runner(session_factory, settings, tmdb_factory))
+    current = registry.get(job.id)
+    assert current is not None
+    return _job_out(current)
+
+
+def _imports_root(settings: Settings) -> Path:
+    return Path(settings.imports_dir)
+
+
+@router.delete("/uploads/{upload_id}", status_code=204)
+def delete_upload(
+    upload_id: int, session: SessionDep, user: CurrentUserDep, settings: SettingsDep
+) -> None:
+    """Removes the stored file and the library entry (uploader or admin); runs stay."""
+    upload = _upload_or_404(session, upload_id)
+    if not import_uploads.can_delete(upload, user):
+        raise CodedHTTPException(
+            403, "Csak a feltöltő vagy adminisztrátor törölheti.", "upload_not_owner"
+        )
+    import_uploads.delete_upload(session, upload, _imports_root(settings))
+    session.commit()
 
 
 @router.get("/jobs", response_model=list[ImportJobOut])

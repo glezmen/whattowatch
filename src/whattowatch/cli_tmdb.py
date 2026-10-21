@@ -239,9 +239,6 @@ def unlink(user: UserOption = None) -> None:
     key = settings.tmdb_api_key
     with _db_session() as session:
         uid = user_id_for(session, user)
-        if tmdb_account.link_owner(session, settings) not in (None, uid):
-            typer.echo("Hiba: a TMDB-fiókot egy másik profil kapcsolta össze.", err=True)
-            raise typer.Exit(code=1)
         if key:
             with TmdbClient(key) as client:
                 tmdb_account.unlink(session, settings, client, user_id=uid)
@@ -259,7 +256,7 @@ def resync_ratings(user: UserOption = None) -> None:
     settings = get_settings()
     with _client() as client, _db_session() as session:
         uid = user_id_for(session, user)
-        if tmdb_account.link_owner(session, settings) != uid:
+        if tmdb_account.session_id_for(session, settings, uid) is None:
             typer.echo("Hiba: nincs összekapcsolt TMDB-fiók (wtw tmdb link).", err=True)
             raise typer.Exit(code=2)
         result = tmdb_account.resync_ratings(session, settings, client, user_id=uid)

@@ -1,4 +1,5 @@
 import os
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -8,6 +9,30 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Overrides the `.env` location (e.g. `/app/data/.env` in Docker, on the data volume).
 ENV_FILE_VAR = "WTW_ENV_FILE"
+# Per-profile TMDB v3 user sessions: `TMDB_SESSION_ID__<user_id>` (docs/multiuser.md).
+TMDB_SESSION_PREFIX = "TMDB_SESSION_ID__"
+_SESSION_KEY = re.compile(r"^TMDB_SESSION_ID__(\d+)$", re.IGNORECASE)
+
+
+def tmdb_session_env_key(user_id: int) -> str:
+    return f"{TMDB_SESSION_PREFIX}{user_id}"
+
+
+def _session_ids(env_file: Any) -> dict[int, str]:
+    """`TMDB_SESSION_ID__<n>` values from the dotenv file (if any), then the environment."""
+    from whattowatch.services.env_file import read_env
+
+    found: dict[int, str] = {}
+    sources: list[dict[str, str]] = []
+    if isinstance(env_file, (str, Path)):
+        sources.append(read_env(Path(env_file)))
+    sources.append(dict(os.environ))
+    for values in sources:
+        for key, value in values.items():
+            match = _SESSION_KEY.match(key)
+            if match and value:
+                found[int(match.group(1))] = value
+    return found
 
 
 class Settings(BaseSettings):
@@ -17,11 +42,18 @@ class Settings(BaseSettings):
         # `WTW_ENV_FILE` is read at instantiation; an explicit `_env_file` (tests) still wins.
         if "_env_file" not in values and os.environ.get(ENV_FILE_VAR):
             values["_env_file"] = env_file_path()
+        if "tmdb_session_ids" not in values:
+            env_file = values.get("_env_file", self.model_config.get("env_file"))
+            values["tmdb_session_ids"] = _session_ids(env_file)
         super().__init__(**values)
 
     tmdb_api_key: str | None = None
-    # TMDB v3 user session; written by the app when the TMDB account is linked. Secret.
+    # Legacy single TMDB v3 user session (before per-profile links); moved to the owning
+    # profile's `TMDB_SESSION_ID__<user_id>` on first use. Secret.
     tmdb_session_id: str | None = None
+    # Per-profile TMDB sessions (user id -> session id), read from `TMDB_SESSION_ID__<n>`
+    # in `.env` / the environment; written by the app when a profile links. Secret.
+    tmdb_session_ids: dict[int, str] = Field(default_factory=dict)
     streaming_availability_api_key: str | None = None
     database_url: str = "sqlite:///data/whattowatch.db"
     lm_studio_base_url: str = "http://localhost:1234/v1"

@@ -127,6 +127,9 @@ oszlop az előfizetések kapcsolója.
 | `POST /import/netflix/profiles` multipart `file` **vagy** `{job_id}` | az exportban talált profilnevek: `{profiles: [{name, primary_lang, viewing_rows}]}` (nem indít importot) |
 | `POST /import/prime/profiles` multipart `file` **vagy** `{job_id}` | Prime Video-export: a két profiltípus sorszámmal, `{profiles: [{name: "ADULT"|"CHILD", primary_lang: null, viewing_rows}]}`; eltárolja (`prime_profiles` app-beállítás, `prime_video` szolgáltatósor); nem indít importot |
 | `GET /import/jobs?limit=` | `ImportJob[]` legfrissebb elöl |
+| `GET /import/uploads` | **Háztartás exportjai** (minden profil látja): `{items: [{id, source, file_name, uploaded_by: {id, name}|null, uploaded_at, size_bytes, profiles: [{name, primary_lang?, rows}]|null, runs: [{user_id, user_name, profile_name, finished_at, status}], can_delete, file_present}]}`, legújabb elöl |
+| `POST /import/uploads/{id}/run` `{profile_name?, user_id?}` | a tárolt exportot importálja az aktuális profilba (admin `user_id`-val másikba; nem admin más `user_id`-val → 403 `admin_required`, ismeretlen profil → 422); Netflix/Prime-nál `profile_name` kötelező: hiányzik → 422 `export_profile_required`, ismeretlen → 422 `export_profile_unknown` (mindkettő `profiles: [...]` mezővel); hiányzó fájl → 409 `upload_file_missing`; válasz `ImportJob` |
+| `DELETE /import/uploads/{id}` | a feltöltő vagy admin (különben 403 `upload_not_owner`): törli a fájlt és a sort, a korábbi futások megmaradnak (`upload_id` → `null`); `204` |
 | `GET /import/jobs/{id}` | egy feladat |
 | `GET /import/sources` | mely forrásokhoz van import: `[{source, label_key, accepts: ".csv"|".zip", supported: bool, note_key}]` — a nem támogatott szolgáltatói exportok (Disney+, HBO Max, Apple, SkyShowtime) `supported: false`, `note_key` a frontend i18n kulcsa a magyarázathoz |
 
@@ -166,6 +169,17 @@ mezője mellett `detail_code` is jöhet, ahol van értelme (pl. `no_tmdb_key`).
 - A feltöltés mappája az `IMPORTS_DIR` (alap `data/imports`); a fájlnév ASCII-re tisztítva
   (`[A-Za-z0-9._-]`, más karakter → `_`). `422`: ismeretlen vagy nem támogatott `source`,
   rossz kiterjesztés. TMDB-kulcs nélkül a feladat `failed` (a címfeloldáshoz kell).
+- **Háztartás exportjai** (migráció 0014, `services/import_uploads.py`): minden
+  `POST /import/upload` rögzít egy `import_uploads` sort (forrás, eredeti név, tárolt út,
+  méret, SHA-256, feltöltő, idő, Netflix/Prime-nál a talált profilok). Ugyanaz a fájl
+  (forrás + SHA-256) újrafeltöltve a meglévő sort és fájlt használja (az új másolat
+  törlődik). A tárolt exportból indított import futásai (`sync_runs.upload_id`,
+  `sync_runs.profile_name`) adják a `runs` listát. Az `ImportJob` új mezői: `upload_id`,
+  `target_user_id` (admin más profilba importált). A migráció a meglévő
+  `IMPORTS_DIR/<source>/<utc>_<név>` fájlokat visszamenőleg felveszi (feltöltő: admin; a
+  profilokat az első listázás olvassa be), a korábbi futásokat SHA-256 alapján köti.
+  A Netflix/Prime szolgáltatósor `profiles` listája a profil saját listájának és a
+  háztartás feltöltéseiben talált profiloknak az uniója; a `selected_profile` profilonkénti.
 - `POST /import/netflix/profiles` és `/import/prime/profiles`: olvashatatlan ZIP (Prime-nál
   `Viewing History.csv` nélküli ZIP is) `422`, ismeretlen `job_id` `404`, más forrású
   feladat `422`; a feladat maga is eltárolja a talált profilokat (`netflix_profiles` /
@@ -232,9 +246,15 @@ app-beállítás, alapértéke `ADULT`, `PUT` csak `ADULT`/`CHILD` értéket fog
 Hivatalos TMDB v3 felhasználói hitelesítés: az app request tokent kér
 (`GET /authentication/token/new`), a felhasználó a themoviedb.org oldalán hagyja jóvá
 (`https://www.themoviedb.org/authenticate/{token}`), majd az app session-azonosítót kér
-(`POST /authentication/session/new`). **Jelszót az app nem kér és nem tárol.** A
-session-azonosító titok: csak a `.env` `TMDB_SESSION_ID` sorába kerül, a kliens soha nem
-kapja meg, naplóba nem kerül. Az `app_settings` tárolja: `tmdb_account`
+(`POST /authentication/session/new`). **Jelszót az app nem kér és nem tárol.**
+**Profilonként**: minden profil a saját TMDB-fiókját kötheti össze (nincs „másik profil
+már összekötötte” tiltás); minden végpont az aktuális profil saját munkamenetével dolgozik.
+A session-azonosító titok: csak a `.env` `TMDB_SESSION_ID__<user_id>` sorába kerül, a kliens
+soha nem kapja meg, naplóba nem kerül. Régi, egyetlen `TMDB_SESSION_ID` a tulajdonosé (a
+`tmdb_account` beállítással rendelkező profil, különben az admin): az első
+`GET /settings/tmdb-account` átírja `TMDB_SESSION_ID__<id>`-re, addig is csak annak a
+profilnak számít összekötöttnek. A TMDB API-kulcs (katalógus) közös marad. Az
+`app_settings` profilonként tárolja: `tmdb_account`
 (`{id, username, name, linked_at}`), `tmdb_pending_token` (`{request_token, expires_at}`),
 `tmdb_rating_sync_enabled` (alap: `true`). Kód: `services/tmdb_account.py`.
 
@@ -244,7 +264,7 @@ kapja meg, naplóba nem kerül. Az `app_settings` tárolja: `tmdb_account`
 | `PUT /settings/tmdb-account` `{rating_sync_enabled: bool}` | válasz `TmdbAccount` |
 | `POST /settings/tmdb-account/link/start` `{redirect_to?: "http(s)://…"}` (törzs opcionális) | `{approval_url}`; a tokent függőként menti; nincs TMDB-kulcs → 409 `no_tmdb_key`; TMDB-hiba → 502 `tmdb_unreachable` |
 | `POST /settings/tmdb-account/link/finish` | a jóváhagyott tokenből session → `.env`, fiókadatok → `app_settings`; válasz `TmdbAccount`. Nem jóváhagyott/lejárt/hiányzó token → 422 `detail_code: tmdb_link_failed`, a `detail` a TMDB üzenetével (a még érvényes függő token megmarad, újrapróbálható); nincs kulcs → 409 `no_tmdb_key` |
-| `POST /settings/tmdb-account/unlink` | `DELETE /authentication/session` (hibája csak naplózva), `TMDB_SESSION_ID` törlése a `.env`-ből, fiókadatok törlése; válasz `TmdbAccount` |
+| `POST /settings/tmdb-account/unlink` | `DELETE /authentication/session` (hibája csak naplózva), a profil `TMDB_SESSION_ID__<user_id>` sorának törlése a `.env`-ből (más profilok kapcsolata marad), fiókadatok törlése; válasz `TmdbAccount` |
 | `POST /settings/tmdb-account/resync` | minden helyi app-értékelés újraküldése (szinkron); válasz `{total, ok, error, skipped}`; nincs kulcs → 409 `no_tmdb_key`, nincs összekapcsolt fiók → 409 `tmdb_not_linked` |
 
 **Értékelés-szinkron (egyirányú).** A helyi app-értékelés az igazságforrás; a TMDB-ről

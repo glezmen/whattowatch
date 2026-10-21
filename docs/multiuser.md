@@ -94,11 +94,8 @@ hálózaton**. Az A szakasz úgy épül, hogy a B ne igényeljen újabb sémamó
   sor (`params.runs`), ismeretlen profil → 422. A Prime watchlist és értékelés nem
   profiltípushoz kötött, ezért `assign` esetén minden hozzárendelt profilba bekerül.
   A `sync_runs` listában a globális futások és a saját importok látszanak.
-- **TMDB-fiók**: a munkamenet-azonosító továbbra is egyetlen `.env`-érték (B-ben
-  profilonkénti, titkosított tárolás). Egyszerre egy profil birtokolja (akinek a
-  `tmdb_account` beállítása van; régi, csak `.env`-es kapcsolatnál az admin); a többi
-  profilnak „nincs összekapcsolva”, nem indíthat új kapcsolást
-  (`409 tmdb_linked_by_other_profile`), és az értékelése nem megy fel a fiókba.
+- **TMDB-fiók**: ~~egyetlen `.env`-érték, egy profil birtokolja~~ — felváltotta a
+  profilonkénti kapcsolat, lásd „Háztartási megosztás”.
 - **Profilok**: `services/users.py` — `create_user` (az első profil mindig admin),
   `rename_user`, `set_password`/`clear_password`/`verify_password` (argon2id,
   `argon2-cffi`, elavult hash cseréje ellenőrzéskor), `delete_user` (minden személyes
@@ -108,6 +105,32 @@ hálózaton**. Az A szakasz úgy épül, hogy a B ne igényeljen újabb sémamó
 - Teszt: `tests/test_user_isolation.py` (két profil ugyanazon a címen, minden
   személyes végpont A-ként és B-ként, előfizetés-unió, `assign`-import, admin-végpontok,
   argon2, kaszkád, utolsó admin).
+
+#### Háztartási megosztás — elkészült (2026-10-21), döntések
+
+- **Exportkönyvtár** (migráció 0014, `import_uploads`, `services/import_uploads.py`): minden
+  feltöltött export a háztartásé. Bármely profil látja (`GET /import/uploads`), és
+  bármelyiket importálhatja a **saját** app-profiljába (`POST /import/uploads/{id}/run`);
+  más profilba csak admin (`user_id`). Az importált adat (nézési események, értékelések,
+  importsorok) mindig a célprofilé, a feltöltés maga nem személyes adat. Törlés: a feltöltő
+  vagy admin; a fájl törlődik, a futások maradnak. Profil törlésekor a feltöltései
+  gazdátlanul megmaradnak (`uploaded_by` → `NULL`).
+- **Duplikáció**: (forrás, SHA-256) egyedi; ugyanaz a fájl újrafeltöltve a meglévő sort
+  használja. Az import maga eddig is idempotens volt.
+- **Futások**: `sync_runs.upload_id` és `sync_runs.profile_name` (az exportprofil) köti a
+  futást a feltöltéshez; a lista ebből mutatja, ki melyik exportprofilt importálta.
+- **Visszamenőleges feltöltés**: a migráció az `IMPORTS_DIR` meglévő fájljait felveszi
+  (feltöltő: admin), a Netflix/Prime-profilokat az első listázás olvassa be.
+- **Szolgáltatósor-profilok**: a Netflix/Prime `profiles` lista a háztartás feltöltéseiben
+  talált profilok és a profil saját listájának uniója; a kiválasztott profil profilonkénti.
+- **TMDB-fiók profilonként**: a háztartás minden tagja a saját TMDB-fiókját kötheti össze.
+  A munkamenet-azonosító a `.env`-ben `TMDB_SESSION_ID__<user_id>` (soha nem megy a
+  kliensnek, nem naplózzuk); az állapot, az összekötés, a leválasztás, az értékelés-küldés és
+  az újraszinkron mindig a saját munkamenetet használja, a `409 tmdb_linked_by_other_profile`
+  megszűnt. Régi egyetlen `TMDB_SESSION_ID` a `tmdb_account`-tal rendelkező profilé (különben
+  az adminé); az első állapotlekérés átírja a profil kulcsára. A TMDB API-kulcs közös.
+  (Elvetett alternatíva: egy közös, megosztott fiók — a felhasználó a profilonkénti
+  kapcsolatot választotta, így senki értékelése nem keveredik másikéval.)
 
 ### A3. Felület
 

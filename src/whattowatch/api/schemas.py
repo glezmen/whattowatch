@@ -444,6 +444,44 @@ class ImportJobOut(BaseModel):
     error: str | None = None
     sync_run_id: int | None = None
     params: dict[str, Any] = Field(default_factory=dict)
+    # Household export library (docs/api.md "Háztartás exportjai").
+    upload_id: int | None = None
+    target_user_id: int | None = None
+
+
+class UserRefOut(BaseModel):
+    id: int
+    name: str
+
+
+class UploadRunOut(BaseModel):
+    user_id: int | None = None
+    user_name: str | None = None
+    profile_name: str | None = None
+    finished_at: datetime | None = None
+    status: str
+
+
+class ImportUploadOut(BaseModel):
+    id: int
+    source: str
+    file_name: str
+    uploaded_by: UserRefOut | None = None
+    uploaded_at: datetime
+    size_bytes: int
+    profiles: list[ProviderProfileOut] | None = None
+    runs: list[UploadRunOut] = Field(default_factory=list)
+    can_delete: bool = False
+    file_present: bool = True
+
+
+class ImportUploadsOut(BaseModel):
+    items: list[ImportUploadOut]
+
+
+class UploadRunIn(BaseModel):
+    profile_name: str | None = Field(default=None, max_length=200)
+    user_id: int | None = None
 
 
 class NetflixProfileOut(BaseModel):
