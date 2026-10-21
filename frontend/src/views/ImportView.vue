@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api, type ImportJob, type ImportSource, type NetflixProfile } from '../api/client'
 import { appSettings, loadAppSettings, loadSubscriptions, subscriptions } from '../appSettings'
+import FilePicker from '../components/FilePicker.vue'
 import ProviderBadge from '../components/ProviderBadge.vue'
 import { fmtDateTime } from '../format'
 import { PROVIDER_BY_KEY } from '../providers'
@@ -123,10 +124,9 @@ function schedulePoll() {
   if (!unmounted && jobs.value.some(isActive)) timer = setTimeout(() => void loadJobs(true), POLL_MS)
 }
 
-async function onFile(source: string, e: Event) {
+async function onFile(source: string, f: File | null) {
   const s = st(source)
-  const input = e.target as HTMLInputElement
-  s.file = input.files?.[0] ?? null
+  s.file = f
   s.profiles = null
   const readProfiles = PROFILE_SOURCES[source]
   if (!s.file || !readProfiles) return
@@ -222,16 +222,16 @@ onBeforeUnmount(() => {
     <section v-for="src in supported" :key="src.source" class="card source">
       <h2>{{ labelOf(src) }}</h2>
       <p v-if="hintOf(src.source)" class="small muted">{{ hintOf(src.source) }}</p>
-      <label class="file">
-        <span class="small">{{ t('import.chooseFile', { ext: src.accepts }) }}</span>
-        <input
+      <div class="pick-row">
+        <FilePicker
           :key="st(src.source).inputKey"
-          type="file"
+          :model-value="st(src.source).file"
           :accept="src.accepts"
+          :label="t('import.chooseFile', { ext: src.accepts })"
           :disabled="st(src.source).uploading"
-          @change="onFile(src.source, $event)"
+          @update:model-value="onFile(src.source, $event)"
         />
-      </label>
+      </div>
       <template v-if="hasProfiles(src.source) && st(src.source).file">
         <p v-if="st(src.source).profilesLoading" class="small muted"><span class="spinner"></span> {{ t('import.readingProfiles') }}</p>
         <p v-else-if="st(src.source).profiles && !st(src.source).profiles!.length" class="small warn">{{ t('import.noProfiles') }}</p>
@@ -320,14 +320,16 @@ onBeforeUnmount(() => {
   box-shadow: none;
   background: var(--surface-2);
 }
-.file,
+.pick-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
 .field {
   display: flex;
   flex-direction: column;
   gap: 4px;
-}
-.file input {
-  max-width: 100%;
 }
 .jobs-title {
   font-size: 1.15rem;

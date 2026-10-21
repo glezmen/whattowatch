@@ -23,6 +23,11 @@
     "search": "Search on the provider's site",
     "none": "No link available"
   },
+  "filePicker": {
+    "choose": "Choose file",
+    "none": "No file selected",
+    "clear": "Clear file"
+  },
   "common": {
     "loading": "Loading…",
     "save": "Save",

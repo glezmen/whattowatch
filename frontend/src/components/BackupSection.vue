@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ApiError, api, type BackupInfo, type BackupItem, type RestoreResult } from '../api/client'
+import FilePicker from './FilePicker.vue'
 import { fmtDateTime, fmtInt } from '../format'
 import { pushToast } from '../toast'
 
@@ -17,7 +18,6 @@ const listLoaded = ref(false)
 const listFailed = ref(false)
 
 const file = ref<File | null>(null)
-const fileInput = ref<HTMLInputElement | null>(null)
 const info = ref<BackupInfo | null>(null)
 const inspecting = ref(false)
 const restoring = ref(false)
@@ -68,13 +68,11 @@ function errorFor(e: unknown): string {
   return t('settings.backup.failed')
 }
 
-function onFile(ev: Event) {
-  const input = ev.target as HTMLInputElement
-  file.value = input.files?.[0] ?? null
+watch(file, () => {
   info.value = null
   error.value = ''
   result.value = null
-}
+})
 
 async function inspect() {
   if (!file.value) return
@@ -111,7 +109,6 @@ async function restore() {
     closeConfirm()
     file.value = null
     info.value = null
-    if (fileInput.value) fileInput.value.value = ''
     pushToast(t('settings.backup.restored'))
     void loadList()
     emit('restored')
@@ -157,7 +154,7 @@ async function restore() {
   <h3>{{ t('settings.backup.restoreTitle') }}</h3>
   <p class="small muted">{{ t('settings.backup.restoreHint') }}</p>
   <div class="controls">
-    <input ref="fileInput" type="file" accept=".db" :aria-label="t('settings.backup.file')" @change="onFile" />
+    <FilePicker v-model="file" accept=".db" :label="t('filePicker.choose')" :disabled="inspecting || restoring" />
     <button type="button" :disabled="!file || inspecting || restoring" @click="inspect">
       <span v-if="inspecting" class="spinner" aria-hidden="true"></span>
       {{ t('settings.backup.inspect') }}

@@ -23,6 +23,11 @@
     "search": "Keresés a szolgáltatónál",
     "none": "Nincs elérhető link"
   },
+  "filePicker": {
+    "choose": "Fájl kiválasztása",
+    "none": "Nincs fájl kiválasztva",
+    "clear": "Fájl törlése"
+  },
   "common": {
     "loading": "Betöltés…",
     "save": "Mentés",
