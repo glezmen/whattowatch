@@ -203,6 +203,23 @@ Két út:
    Háztartási fiók: az export minden profil adatát tartalmazza, ezért az
    import **profilnév szerint szűrjön**, konfigurálható alapértelmezéssel.
 
+   Címminták a vizsgált exportban (egy profil, előzetesek nélkül, ~7000 sor):
+   - ~90%: `Sorozat: N. évad: Epizódcím (M. epizód)` — sorozatszintre
+     aggregálandó a `Sorozat` részen;
+   - ~8%: egyszerű cím (film vagy önálló különkiadás); ezek ~40%-a 10 percnél
+     rövidebb lejátszás — félbehagyás vagy jelöletlen előzetes;
+   - ~1,5%: `Főcím: Alcím` (kettőspontos filmcím, pl. „Az éhezők viadala:
+     Énekesmadarak és kígyók balladája”) — először a teljes címmel, majd a
+     kettőspont előtti résszel kell keresni;
+   - ritka: `Film N. rész: Alcím`, „Így készült…” extrák, évadjelölés
+     epizódszám nélkül.
+   - Az `Attributes` mező `Autoplayed: user action: None` értéke automatikus
+     lejátszást jelez felhasználói beavatkozás nélkül — gyenge jel, önmagában
+     ne számítson megnézettnek.
+   - **A `ViewingActivity` magyar, a `MyList` és a `Ratings` viszont angol
+     (eredeti) címeket tartalmaz**, ezért utóbbiak feloldása angol nyelvű
+     TMDB-kereséssel megbízhatóbb.
+
 Megjegyzés: ha a felhasználó csak profiltulajdonos, nem fióktulajdonos, a
 `privacy@netflix.com` címre kell írni, és a profilhoz e-mail címnek kell
 tartoznia; a fióktulajdonos értesítést kap.
