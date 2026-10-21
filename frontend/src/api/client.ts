@@ -436,7 +436,7 @@ export interface ImportJob {
   } | null
   error?: string | null
   sync_run_id?: number | null
-  params?: { profile_name?: string | null } | null
+  params?: { profile_name?: string | null; assign?: Record<string, number> | null } | null
 }
 
 export interface NetflixProfile {
@@ -464,6 +464,26 @@ export class ApiError extends Error {
     this.status = status
     this.code = code
   }
+}
+
+/** GET /users item (M8/A): readable without a session, for the profile picker. */
+export interface UserProfile {
+  id: number
+  name: string
+  avatar_color: string | null
+  has_password: boolean
+  is_admin: boolean
+  last_active_at?: string | null
+}
+
+/** GET /auth/me: the profile behind the session cookie. */
+export type Me = Omit<UserProfile, 'last_active_at'>
+
+let noProfileHandler: (() => void) | null = null
+
+/** Called on any `401 no_profile` (missing/invalid session cookie); the request throws without a toast. */
+export function onNoProfile(handler: () => void): void {
+  noProfileHandler = handler
 }
 
 export interface BackupItem {
@@ -565,10 +585,16 @@ async function requestWithHeaders<T>(
   }
   if (!res.ok) {
     const msg = errorMessage(res.status, data)
-    if (!quiet) pushError(msg)
-    const code =
+    const raw =
       data && typeof data === 'object' && 'detail_code' in data ? (data as { detail_code: unknown }).detail_code : null
-    throw new ApiError(res.status, msg, typeof code === 'string' ? code : null)
+    const code = typeof raw === 'string' ? raw : null
+    if (res.status === 401 && code === 'no_profile') {
+      // No toast: the auth module sends the user to the profile picker.
+      noProfileHandler?.()
+    } else if (!quiet) {
+      pushError(msg)
+    }
+    throw new ApiError(res.status, msg, code)
   }
   return { data: data as T, headers: res.headers }
 }
@@ -712,11 +738,13 @@ export const api = {
   getImportJobs: (limit = 20, quiet = false) =>
     request<ImportJob[]>('GET', `/import/jobs${qs({ limit })}`, undefined, quiet),
   getImportJob: (id: number | string) => request<ImportJob>('GET', `/import/jobs/${enc(String(id))}`),
-  uploadImport: (source: string, file: File, profileName?: string | null) => {
+  /** `assign`: Netflix/Prime export profile -> app user id (several profiles in one upload). */
+  uploadImport: (source: string, file: File, profileName?: string | null, assign?: Record<string, number> | null) => {
     const fd = new FormData()
     fd.set('source', source)
     fd.set('file', file)
     if (profileName) fd.set('profile_name', profileName)
+    if (assign && Object.keys(assign).length) fd.set('assign', JSON.stringify(assign))
     return request<ImportJob>('POST', '/import/upload', fd)
   },
   netflixProfiles: (file: File) => {
@@ -747,6 +775,21 @@ export const api = {
     fd.set('confirm', confirm)
     return request<RestoreResult>('POST', '/backup/restore', fd, true)
   },
+
+  // Profiles and session (M8/A). Quiet: the profile views show errors inline.
+  listUsers: () => request<{ items: UserProfile[] }>('GET', '/users', undefined, true),
+  getMe: () => request<Me>('GET', '/auth/me', undefined, true),
+  selectProfile: (user_id: number, password?: string | null) =>
+    request<unknown>('POST', '/auth/select', password ? { user_id, password } : { user_id }, true),
+  logout: () => request<unknown>('POST', '/auth/logout', undefined, true),
+  createUser: (body: { name: string; avatar_color?: string | null; password?: string | null }) =>
+    request<UserProfile | Me>('POST', '/users', body, true),
+  updateMe: (body: { name?: string; avatar_color?: string | null }) =>
+    request<Me | unknown>('PUT', '/users/me', body, true),
+  setPassword: (body: { current_password?: string | null; new_password: string | null }) =>
+    request<unknown>('PUT', '/users/me/password', body, true),
+  deleteUser: (id: number, confirm: string) => request<unknown>('DELETE', `/users/${id}`, { confirm }, true),
+  resetUserPassword: (id: number) => request<unknown>('POST', `/users/${id}/password/reset`, undefined, true),
 
   health: () => request<unknown>('GET', '/health', undefined, true),
 }

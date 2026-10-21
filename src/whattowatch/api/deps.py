@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Iterator
-from datetime import UTC, datetime
-from typing import Annotated
+from datetime import UTC, datetime, timedelta
+from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from sqlalchemy import Engine
@@ -23,11 +23,20 @@ NO_TMDB_KEY = "Ehhez a művelethez TMDB API-kulcs kell (TMDB_API_KEY a .env-ben)
 
 class CodedHTTPException(HTTPException):
     """HTTPException whose JSON body also carries a stable `detail_code` for the UI
-    (rendered by the handler in `api/app.py`): `{"detail": ..., "detail_code": ...}`."""
+    (rendered by the handler in `api/app.py`): `{"detail": ..., "detail_code": ...}`,
+    plus the `extra` fields (e.g. `retry_after`)."""
 
-    def __init__(self, status_code: int, detail: str, detail_code: str) -> None:
-        super().__init__(status_code=status_code, detail=detail)
+    def __init__(
+        self,
+        status_code: int,
+        detail: str,
+        detail_code: str,
+        headers: dict[str, str] | None = None,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(status_code=status_code, detail=detail, headers=headers)
         self.detail_code = detail_code
+        self.extra = extra or {}
 
 
 def no_tmdb_key() -> CodedHTTPException:
@@ -119,20 +128,60 @@ def recommender_config_dep(settings: SettingsDep) -> RecommenderConfig:
 RecommenderConfigDep = Annotated[RecommenderConfig, Depends(recommender_config_dep)]
 
 
-def current_user_dep(session: SessionDep) -> User:
-    """The profile every personal endpoint acts for (the only place that decides it).
+def now_dep() -> datetime:
+    """Current UTC time (a dependency so tests can pin the freshness clock)."""
+    return datetime.now(UTC)
 
-    A2 interim: replaced by the session cookie in part 2 (docs/api.md "Profilok és
-    munkamenet"); until then it is the admin (else the first) profile, created on an
-    empty database like the A1 default."""
-    from whattowatch.services.users import default_user_id
 
-    uid = default_user_id(session, create=False)
+NowDep = Annotated[datetime, Depends(now_dep)]
+
+
+LAST_ACTIVE_EVERY = timedelta(minutes=10)
+
+
+def no_profile(request: Request | None = None) -> CodedHTTPException:
+    """401 `no_profile`; with `request`, the response also deletes the session cookie."""
+    exc = CodedHTTPException(401, "Válassz profilt.", "no_profile")
+    if request is not None:
+        from whattowatch.api.auth import clear_cookie_header
+
+        exc.headers = clear_cookie_header(request)
+    return exc
+
+
+def optional_user_dep(request: Request, session: SessionDep, now: NowDep) -> User | None:
+    """The profile of a valid session cookie, else None (an unknown profile -> 401 that
+    clears the cookie). `last_active_at` is touched at most every 10 minutes."""
+    from whattowatch.api.auth import read_session
+
+    uid = read_session(request)
     if uid is None:
-        uid = default_user_id(session)
-        session.commit()
+        return None
     user = session.get(User, uid)
-    assert user is not None
+    if user is None:
+        raise no_profile(request)
+    last = user.last_active_at
+    if last is not None and last.tzinfo is None:
+        last = last.replace(tzinfo=UTC)
+    if last is None or now - last >= LAST_ACTIVE_EVERY:
+        from whattowatch.services.users import touch_last_active
+
+        touch_last_active(session, user, now)
+        session.commit()
+    return user
+
+
+OptionalUserDep = Annotated[User | None, Depends(optional_user_dep)]
+
+
+def current_user_dep(user: OptionalUserDep) -> User:
+    """The profile every personal endpoint acts for (the only place that decides it):
+    the `wtw_session` cookie's; missing, invalid or expired -> 401 `no_profile`.
+
+    `api/app.py` adds it to every `/api` route except the public ones (health, profile
+    list, `/auth/*`, first-profile creation)."""
+    if user is None:
+        raise no_profile()
     return user
 
 
@@ -153,11 +202,3 @@ def get_title_or_404(session: Session, title_id: int) -> Title:
     if title is None:
         raise HTTPException(status_code=404, detail=f"Nincs ilyen cím: {title_id}")
     return title
-
-
-def now_dep() -> datetime:
-    """Current UTC time (a dependency so tests can pin the freshness clock)."""
-    return datetime.now(UTC)
-
-
-NowDep = Annotated[datetime, Depends(now_dep)]

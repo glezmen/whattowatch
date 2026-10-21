@@ -4,7 +4,17 @@ import HomeView from './views/HomeView.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
+  // Only hash links (e.g. Settings → #profil); other navigations keep the previous behaviour.
+  scrollBehavior(to) {
+    if (to.hash) return { el: to.hash, top: 64 }
+    return false
+  },
   routes: [
+    {
+      path: '/profil',
+      component: () => import('./views/ProfileView.vue'),
+      meta: { titleKey: 'profile.pickerTitle', bare: true },
+    },
     { path: '/', component: HomeView, meta: { titleKey: 'nav.home' } },
     { path: '/felfedezes', component: () => import('./views/DiscoverView.vue'), meta: { titleKey: 'nav.discover' } },
     { path: '/beszelgetes', component: () => import('./views/ChatView.vue'), meta: { titleKey: 'nav.chat' } },

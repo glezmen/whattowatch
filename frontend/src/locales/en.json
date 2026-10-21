@@ -92,7 +92,11 @@
     "serverDetail": "Server error ({status}): {detail}",
     "code": {
       "no_tmdb_key": "No TMDB API key is configured (set TMDB_API_KEY in .env).",
-      "invalid_tmdb_key": "TMDB rejected the API key."
+      "invalid_tmdb_key": "TMDB rejected the API key.",
+      "no_profile": "No profile selected.",
+      "wrong_password": "Wrong password.",
+      "too_many_attempts": "Too many attempts, wait 30 s.",
+      "admin_required": "This needs an admin profile."
     }
   },
   "pagination": {
@@ -225,13 +229,14 @@
     "intro": "Three quick steps and recommendations will fit your services and your taste.",
     "dismiss": "Hide",
     "step1": "Which services do you subscribe to?",
-    "step1Hint": "We only recommend from these. You can change them later in Settings.",
+    "step1Hint": "We only recommend from these for this profile; you can change them later in Settings.",
     "step2": "Upload your watch history and ratings",
     "step2Link": "Open Import",
-    "step2Hint": "IMDb ratings, IMDb watchlist and the Netflix data export. Optional: you can also mark titles with “Seen it” on any card.",
+    "step2Hint": "IMDb ratings, IMDb watchlist, Netflix and Prime Video exports (export profiles can be assigned to app profiles). Optional: you can also use “Seen it” on the cards.",
     "step3": "Done",
     "step3Hint": "Finish the introduction when you're ready.",
-    "done": "Done"
+    "done": "Done",
+    "introProfile": "Hi {name}! This profile gets its own recommendations, watchlist and history. Three steps and the recommender adapts to your subscriptions and taste."
   },
   "subscriptions": {
     "title": "Subscriptions",
@@ -392,8 +397,15 @@
         "skipped": "skipped",
         "unresolved": "unmatched",
         "ambiguous": "uncertain"
-      }
-    }
+      },
+      "assigned": "Assigned: {list}"
+    },
+    "assignNetflix": "Assign Netflix profiles",
+    "assignPrime": "Assign Prime Video profile types",
+    "assignHint": "Pick an app profile for each export profile; one upload can import into several profiles.",
+    "assignMe": "{name} (you)",
+    "assignSkip": "do not import",
+    "assignNone": "Assign at least one profile."
   },
   "settings": {
     "title": "Settings",
@@ -570,5 +582,61 @@
     "noProfileData": "No profile data",
     "profileHint": "Profiles come from the uploaded export",
     "rows": "{n} row | {n} rows"
+  },
+  "profile": {
+    "pickerTitle": "Choose profile",
+    "who": "Who is watching?",
+    "welcome": "Welcome! Create the first profile",
+    "firstIntro": "Each profile gets its own recommendations, watchlist, history and ratings. A password is optional.",
+    "firstIsAdmin": "This is the first profile, so it will also be the admin: it manages API keys, backups and the other profiles.",
+    "admin": "admin",
+    "hasPassword": "Password protected",
+    "password": "Password",
+    "enter": "Sign in",
+    "cancel": "Cancel",
+    "retry": "Retry",
+    "wrongPassword": "Wrong password.",
+    "tooMany": "Too many attempts, wait {n} s.",
+    "tooManyShort": "Too many attempts, wait 30 s.",
+    "new": "New profile",
+    "create": "Create and sign in",
+    "name": "Name",
+    "nameRequired": "Enter a name.",
+    "color": "Colour",
+    "colorN": "Colour {n}",
+    "passwordOptional": "Password (optional)",
+    "passwordConfirm": "Repeat password",
+    "passwordMismatch": "The passwords do not match.",
+    "passwordHint": "Without a password anyone on this machine can open this profile. You can change it later in Settings.",
+    "createNeedsSession": "New profiles can be created from an existing profile.",
+    "menuLabel": "Profile: {name}",
+    "signedInAs": "Signed in as {name}",
+    "switch": "Switch profile",
+    "settingsLink": "Settings → Profile",
+    "sectionTitle": "Profile",
+    "passwordTitle": "Password",
+    "passwordSwitch": "Password protection",
+    "passwordSwitchHint": "When off, anyone can open this profile from the picker. Turning it on asks for the new password twice.",
+    "changePassword": "Change password",
+    "currentPassword": "Current password",
+    "newPassword": "New password",
+    "removeHint": "Enter the current password to remove it.",
+    "removePassword": "Remove password",
+    "savePassword": "Save password",
+    "passwordSaved": "Password saved.",
+    "passwordRemoved": "Password removed.",
+    "profilesTitle": "Profiles",
+    "noOthers": "No other profiles.",
+    "resetPassword": "Clear password",
+    "resetDone": "Password of {name} cleared.",
+    "adminOnlyNote": "API keys, backup/restore and the manual refresh are available to admin profiles only.",
+    "deleteTitle": "Delete profile",
+    "deleteHint": "All personal data of the profile (history, ratings, watchlist, recommendations) is deleted permanently. The last admin cannot be deleted.",
+    "deleteOwn": "Delete profile",
+    "deleteOwnTitle": "Delete your profile",
+    "deleteOtherTitle": "Delete profile “{name}”",
+    "deleteBody": "This cannot be undone.",
+    "confirmLabel": "Type {word} to confirm",
+    "deleted": "Profile “{name}” deleted."
   }
 }

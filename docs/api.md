@@ -305,23 +305,34 @@ LinksResult {
 
 ## Profilok és munkamenet (M8/A)
 
-Minden `/api/*` végpont — kivéve `/health`, `/users` (lista), `/auth/*` —
-aláírt sütit vár (`wtw_session`, `HttpOnly`, `SameSite=Lax`, 30 nap; titok:
-`SESSION_SECRET` a `.env`-ben, első induláskor generálva). Süti nélkül vagy
-érvénytelen sütivel `401 {detail, detail_code: "no_profile"}`. A frontend
-ilyenkor a profilválasztóra irányít.
+Minden `/api/*` végpont — kivéve `/health`, `GET /users` (lista), az első profil
+`POST /users`-e, `POST /auth/select` és `POST /auth/logout` — aláírt sütit vár
+(`wtw_session`: `itsdangerous`-szal aláírt `{uid, iat}`, `HttpOnly`, `SameSite=Lax`,
+`Path=/`, 30 nap; `Secure` csak `WTW_NETWORK_MODE=true` esetén; titok: `SESSION_SECRET`
+a `.env`-ben, első induláskor generálva). Süti nélkül, érvénytelen vagy lejárt sütivel
+`401 {detail, detail_code: "no_profile"}`; ha a süti már nem létező profilra mutat, a
+válasz a sütit is törli. A frontend ilyenkor a profilválasztóra irányít. A
+`last_active_at` legfeljebb 10 percenként frissül. Egy teszt (`tests/test_auth.py`)
+végigmegy az összes `/api` úton, és ellenőrzi, hogy a fenti kivételeken kívül mind a
+`current_user_dep`-től függ.
+
+`Me` = `{id, name, avatar_color, has_password, is_admin}`; `User` = `Me` +
+`last_active_at`. `password_hash` sosem kerül a válaszba. Profilnév: szóközök
+összevonva, 1–40 karakter (`422 invalid_name`), egyedi (`422 name_taken`). Szín:
+`#rrggbb` (`422 invalid_avatar_color`, kisbetűsítve tárolva). Jelszó: legalább 4
+karakter (`422 invalid_password`).
 
 | Metódus, út | Leírás |
 |---|---|
-| `GET /users` | `{items: [{id, name, avatar_color, has_password, is_admin, last_active_at}]}` — süti nélkül is elérhető (a választóhoz) |
-| `POST /auth/select` `{user_id, password?}` | beállítja a sütit; jelszavas profilnál hibás/hiányzó jelszó → `401 wrong_password`; 5 hibás próba után profilonként 30 mp várakozás (`429 too_many_attempts`) |
-| `POST /auth/logout` | törli a sütit |
-| `GET /auth/me` | `{id, name, avatar_color, has_password, is_admin}` |
-| `POST /users` `{name, avatar_color?, password?}` | új profil; süti nélkül csak akkor engedett, ha még nincs egyetlen profil sem (első indítás), egyébként admin vagy bármely bejelentkezett profil hozhat létre újat (háztartás) |
-| `PUT /users/me` `{name?, avatar_color?}` | saját profil |
-| `PUT /users/me/password` `{current_password?, new_password: string|null}` | jelszó beállítása (null = törlés); meglévő jelszónál a `current_password` kötelező |
-| `DELETE /users/{id}` `{confirm: "DELETE"}` | saját profil törlése, vagy adminként bármelyiké (az utolsó admin nem törölhető); minden személyes adat törlődik |
-| `POST /users/{id}/password/reset` | csak admin: törli a másik profil jelszavát (elfelejtett jelszó) |
+| `GET /users` | `{items: [User]}` — süti nélkül is elérhető (a választóhoz) |
+| `POST /auth/select` `{user_id, password?}` | beállítja a sütit, válasz: `Me`; ismeretlen profil → `404 user_not_found`; jelszavas profilnál hibás/hiányzó jelszó → `401 wrong_password`; 10 percen belül 5 hibás próba után profilonként 30 mp várakozás: `429 too_many_attempts`, `Retry-After` fejléc és `retry_after` mező a törzsben (a hátralévő másodpercek, az 5. hiba után 30); siker nullázza a számlálót (memóriabeli, újraindításkor törlődik) |
+| `POST /auth/logout` | törli a sütit; `{status: "ok"}` |
+| `GET /auth/me` | `Me` (süti kell) |
+| `POST /users` `{name, avatar_color?, password?}` | új profil, `201`, válasz: `User` (`Me` + `last_active_at`); süti nélkül csak akkor engedett, ha még nincs egyetlen profil sem (első indítás: a profil admin lesz, és a válasz be is jelentkezteti, sütit állít), egyébként bármely bejelentkezett profil hozhat létre újat (háztartás; a létrehozó bejelentkezve marad); süti nélkül, meglévő profilok mellett → `401 no_profile` |
+| `PUT /users/me` `{name?, avatar_color?}` | saját profil; válasz: `Me` |
+| `PUT /users/me/password` `{current_password?, new_password: string\|null}` | jelszó beállítása (null = törlés); válasz: `Me`; meglévő jelszónál a `current_password` kötelező, hiányzó/hibás → `401 wrong_password` (ugyanaz a 429-es korlát, mint a választásnál) |
+| `DELETE /users/{id}` `{confirm: "DELETE"}` | saját profil törlése, vagy adminként bármelyiké; más nem-adminként → `403 admin_required`; rossz megerősítés → `422 confirm_required`; az utolsó admin → `409 last_admin`; nincs ilyen → `404 user_not_found`; minden személyes adat törlődik; a saját profil törlése a sütit is törli; `{status: "ok"}` |
+| `POST /users/{id}/password/reset` | csak admin (`403 admin_required`): törli a profil jelszavát (elfelejtett jelszó; a saját profilra is működik), nullázza a hibás-próba számlálót; válasz: `User` |
 | `GET /settings/secrets`, `PUT /settings/secrets`, `POST /backup/*`, `POST /refresh` | csak admin (`403 admin_required`) |
 
 Személyes adatot adó végpontok (`/recommendations`, `/titles/*` felhasználói

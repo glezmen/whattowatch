@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api, type LlmProviderName, type LlmSettings, type LlmSettingsPatch, type LlmTestResult } from '../api/client'
+import { me } from '../auth'
 import { pushToast } from '../toast'
 import ToggleSwitch from './ToggleSwitch.vue'
 
@@ -180,7 +181,7 @@ function usageText(u: Record<string, number> | null | undefined): string {
     </template>
     <p v-if="keyMissing" class="small banner warn" role="status">
       {{ t('settings.llm.keyMissing', { provider: t(`settings.llm.providers.${s.provider}`) }) }}
-      <a href="#api-keys">{{ t('settings.llm.keyMissingLink') }}</a>
+      <a v-if="me?.is_admin" href="#api-keys">{{ t('settings.llm.keyMissingLink') }}</a>
     </p>
     <p v-if="isCloud" class="small muted">{{ t('settings.llm.cloudNote') }}</p>
 

@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { appSettings, enabledCount, loadSubscriptions, subscriptions, ui, updateAppSettings } from '../appSettings'
+import { me } from '../auth'
 import SubscriptionToggles from './SubscriptionToggles.vue'
 
 const emit = defineEmits<{ done: [] }>()
@@ -35,7 +36,7 @@ async function finish() {
       <h2>{{ t('onboarding.title') }}</h2>
       <button type="button" class="icon-btn" :aria-label="t('onboarding.dismiss')" :title="t('onboarding.dismiss')" @click="ui.onboardingDismissed = true">×</button>
     </header>
-    <p class="small muted">{{ t('onboarding.intro') }}</p>
+    <p class="small muted">{{ me ? t('onboarding.introProfile', { name: me.name }) : t('onboarding.intro') }}</p>
     <ol>
       <li>
         <strong>{{ t('onboarding.step1') }}</strong>

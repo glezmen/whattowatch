@@ -24,6 +24,7 @@ from whattowatch.db.models import (
     Title,
     TitleRating,
     TitleUserState,
+    User,
     WatchEvent,
     WatchlistItem,
 )
@@ -31,6 +32,7 @@ from whattowatch.db.seed import seed_providers
 from whattowatch.services.users import default_user_id
 
 NOW = datetime(2026, 10, 21, 12, 0, tzinfo=UTC)
+TEST_SESSION_SECRET = "test-session-secret"
 
 # tmdb_id, title_hu, language, genres, year, vote_average, vote_count, availability
 #   availability: netflix | hbo | estimated | none | stale
@@ -273,8 +275,12 @@ def make_api_client(
     tmdb_api_key: str | None = None,
     frontend_dist: Path | None = None,
     streaming_availability_api_key: str | None = None,
+    login: bool = True,
 ) -> TestClient:
-    """App over `session` with pinned clock and no .env (no TMDB key unless given)."""
+    """App over `session` with pinned clock and no .env (no TMDB key unless given).
+
+    With `login` (default) the default profile (admin, created on an empty DB) is signed
+    in via a real session cookie; `login_as` switches, `logout` drops it."""
     from whattowatch.api.app import create_app
     from whattowatch.api.deps import now_dep, session_dep
 
@@ -284,6 +290,7 @@ def make_api_client(
         tmdb_api_key=tmdb_api_key,
         streaming_availability_api_key=streaming_availability_api_key,
         frontend_dist=str(frontend_dist or Path("/nonexistent-dist")),
+        session_secret=TEST_SESSION_SECRET,
     )
     app = create_app(settings)
 
@@ -292,7 +299,26 @@ def make_api_client(
 
     app.dependency_overrides[session_dep] = _session
     app.dependency_overrides[now_dep] = lambda: NOW
-    return TestClient(app)
+    client = TestClient(app)
+    if login:
+        uid = default_user_id(session)
+        session.commit()
+        login_as(client, uid)
+    return client
+
+
+def login_as(client: TestClient, user: User | int) -> None:
+    """Give `client` a valid session cookie for `user` (replacing any other)."""
+    from whattowatch.api.auth import COOKIE_NAME, make_session_token
+
+    uid = user if isinstance(user, int) else user.id
+    client.cookies.clear()
+    secret: str = client.app.state.session_secret  # type: ignore[attr-defined]
+    client.cookies.set(COOKIE_NAME, make_session_token(secret, uid))
+
+
+def logout(client: TestClient) -> None:
+    client.cookies.clear()
 
 
 @pytest.fixture

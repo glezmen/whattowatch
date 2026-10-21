@@ -17,6 +17,7 @@ dependencies = [
     "python-multipart>=0.0.32",
     "claude-agent-sdk>=0.2.170",
     "argon2-cffi>=25.1.0",
+    "itsdangerous>=2.2.0",
 ]
 
 [project.scripts]

@@ -92,7 +92,11 @@
     "serverDetail": "Szerverhiba ({status}): {detail}",
     "code": {
       "no_tmdb_key": "Nincs beállítva TMDB API-kulcs (TMDB_API_KEY a .env fájlban).",
-      "invalid_tmdb_key": "A TMDB nem fogadta el az API-kulcsot."
+      "invalid_tmdb_key": "A TMDB nem fogadta el az API-kulcsot.",
+      "no_profile": "Nincs kiválasztott profil.",
+      "wrong_password": "Hibás jelszó.",
+      "too_many_attempts": "Túl sok próbálkozás, várj 30 mp-et.",
+      "admin_required": "Ehhez adminisztrátori profil kell."
     }
   },
   "pagination": {
@@ -225,13 +229,14 @@
     "intro": "Három lépés, és az ajánló a te előfizetéseidhez és ízlésedhez igazodik.",
     "dismiss": "Elrejtés",
     "step1": "Melyik szolgáltatókra fizetsz elő?",
-    "step1Hint": "Csak ezek kínálatából ajánlunk; később a Beállításokban módosíthatod.",
+    "step1Hint": "Csak ezek kínálatából ajánlunk ennek a profilnak; később a Beállításokban módosíthatod.",
     "step2": "Töltsd fel a nézési előzményeidet és értékeléseidet",
     "step2Link": "Import megnyitása",
-    "step2Hint": "IMDb-értékelések, IMDb-watchlist és Netflix-adatexport. Kihagyható: a kártyákon a „Már láttam” gombbal is jelölhetsz.",
+    "step2Hint": "IMDb-értékelések, IMDb-watchlist, Netflix- és Prime Video-export (az exportprofilok app-profilokhoz rendelhetők). Kihagyható: a kártyákon a „Már láttam” gombbal is jelölhetsz.",
     "step3": "Kész",
     "step3Hint": "Ha végeztél, zárd le a bevezetőt.",
-    "done": "Kész"
+    "done": "Kész",
+    "introProfile": "Szia, {name}! Ez a profil saját ajánlásokat, watchlistet és előzményeket kap. Három lépés, és az ajánló a te előfizetéseidhez és ízlésedhez igazodik."
   },
   "subscriptions": {
     "title": "Előfizetések",
@@ -392,8 +397,15 @@
         "skipped": "kihagyva",
         "unresolved": "feloldatlan",
         "ambiguous": "bizonytalan"
-      }
-    }
+      },
+      "assigned": "Hozzárendelés: {list}"
+    },
+    "assignNetflix": "Netflix-profilok hozzárendelése",
+    "assignPrime": "Prime Video-profiltípusok hozzárendelése",
+    "assignHint": "Minden exportprofilhoz választhatsz app-profilt; egy feltöltésből több profil is importálható.",
+    "assignMe": "{name} (te)",
+    "assignSkip": "nem importálom",
+    "assignNone": "Legalább egy profilt rendelj hozzá."
   },
   "settings": {
     "title": "Beállítások",
@@ -570,5 +582,61 @@
     "noProfileData": "Nincs profiladat",
     "profileHint": "Profilok a feltöltött exportból jönnek",
     "rows": "{n} sor | {n} sor"
+  },
+  "profile": {
+    "pickerTitle": "Profilválasztás",
+    "who": "Ki nézi?",
+    "welcome": "Üdv! Hozd létre az első profilt",
+    "firstIntro": "A profilok külön ajánlást, watchlistet, előzményt és értékelést kapnak. Jelszó nem kötelező.",
+    "firstIsAdmin": "Ez lesz az első profil, ezért adminisztrátor is: ő kezeli az API-kulcsokat, a mentéseket és a többi profilt.",
+    "admin": "admin",
+    "hasPassword": "Jelszóval védett",
+    "password": "Jelszó",
+    "enter": "Belépés",
+    "cancel": "Mégse",
+    "retry": "Újra",
+    "wrongPassword": "Hibás jelszó.",
+    "tooMany": "Túl sok próbálkozás, várj {n} mp.",
+    "tooManyShort": "Túl sok próbálkozás, várj 30 mp-et.",
+    "new": "Új profil",
+    "create": "Létrehozás és belépés",
+    "name": "Név",
+    "nameRequired": "Adj meg egy nevet.",
+    "color": "Szín",
+    "colorN": "{n}. szín",
+    "passwordOptional": "Jelszó (nem kötelező)",
+    "passwordConfirm": "Jelszó még egyszer",
+    "passwordMismatch": "A két jelszó nem egyezik.",
+    "passwordHint": "Jelszó nélkül bárki beléphet ebbe a profilba ezen a gépen. Később a Beállításokban módosítható.",
+    "createNeedsSession": "Új profilt egy meglévő profilba belépve lehet létrehozni.",
+    "menuLabel": "Profil: {name}",
+    "signedInAs": "Belépve: {name}",
+    "switch": "Profilváltás",
+    "settingsLink": "Beállítások → Profil",
+    "sectionTitle": "Profil",
+    "passwordTitle": "Jelszó",
+    "passwordSwitch": "Jelszavas védelem",
+    "passwordSwitchHint": "Kikapcsolva bárki beléphet a profilválasztóból. Bekapcsoláskor kétszer kérjük az új jelszót.",
+    "changePassword": "Jelszó módosítása",
+    "currentPassword": "Jelenlegi jelszó",
+    "newPassword": "Új jelszó",
+    "removeHint": "A jelszó törléséhez add meg a jelenlegi jelszót.",
+    "removePassword": "Jelszó törlése",
+    "savePassword": "Jelszó mentése",
+    "passwordSaved": "Jelszó elmentve.",
+    "passwordRemoved": "Jelszó törölve.",
+    "profilesTitle": "Profilok",
+    "noOthers": "Nincs más profil.",
+    "resetPassword": "Jelszó törlése",
+    "resetDone": "{name} jelszava törölve.",
+    "adminOnlyNote": "Az API-kulcsok, a mentés/visszaállítás és a kézi frissítés csak adminisztrátori profilból érhető el.",
+    "deleteTitle": "Profil törlése",
+    "deleteHint": "A profil minden személyes adata (előzmények, értékelések, watchlist, ajánlások) véglegesen törlődik. Az utolsó admin nem törölhető.",
+    "deleteOwn": "Profil törlése",
+    "deleteOwnTitle": "Saját profil törlése",
+    "deleteOtherTitle": "„{name}” profil törlése",
+    "deleteBody": "Ez nem vonható vissza.",
+    "confirmLabel": "A megerősítéshez írd be: {word}",
+    "deleted": "„{name}” profil törölve."
   }
 }

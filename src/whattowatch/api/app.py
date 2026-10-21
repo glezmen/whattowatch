@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+import logging
+import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import httpx
-from fastapi import APIRouter, FastAPI, HTTPException, Request
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy import Engine
 
 from whattowatch.adapters.tmdb import TmdbError
 from whattowatch.api import (
+    auth,
     backup,
     chat,
     history,
@@ -24,10 +27,14 @@ from whattowatch.api import (
     sync,
     titles,
     updates,
+    users,
     watchlist,
 )
-from whattowatch.api.deps import CodedHTTPException
-from whattowatch.config import Settings, get_settings
+from whattowatch.api.deps import CodedHTTPException, current_user_dep
+from whattowatch.config import Settings, env_file_path, get_settings
+from whattowatch.services import env_file
+
+log = logging.getLogger(__name__)
 
 
 def _health() -> dict[str, str]:
@@ -35,8 +42,13 @@ def _health() -> dict[str, str]:
 
 
 def _api_router() -> APIRouter:
+    """Public routes (health, profile list and first-profile creation, `/auth/*`), then
+    every other route behind `current_user_dep` (401 `no_profile` without a cookie)."""
     api = APIRouter(prefix="/api")
     api.add_api_route("/health", _health, methods=["GET"], tags=["health"])
+    api.include_router(auth.router)
+    api.include_router(users.router)
+    protected = APIRouter(dependencies=[Depends(current_user_dep)])
     for module in (
         recommendations,
         chat,
@@ -50,8 +62,9 @@ def _api_router() -> APIRouter:
         imports,
         backup,
     ):
-        api.include_router(module.router)
-    api.include_router(search.router)
+        protected.include_router(module.router)
+    protected.include_router(search.router)
+    api.include_router(protected)
     return api
 
 
@@ -60,7 +73,7 @@ def _install_error_handlers(app: FastAPI) -> None:
     async def _coded(_request: Request, exc: CodedHTTPException) -> JSONResponse:
         return JSONResponse(
             status_code=exc.status_code,
-            content={"detail": exc.detail, "detail_code": exc.detail_code},
+            content={**exc.extra, "detail": exc.detail, "detail_code": exc.detail_code},
             headers=exc.headers,
         )
 
@@ -102,6 +115,27 @@ def _mount_frontend(app: FastAPI, dist: Path) -> None:
         return FileResponse(index)
 
 
+def _session_secret(settings_override: Settings | None) -> str:
+    """`SESSION_SECRET`; when missing it is generated and written to `.env` (an explicit
+    settings override without one gets an in-memory secret, nothing is written)."""
+    settings = settings_override or get_settings()
+    if settings.session_secret:
+        return settings.session_secret
+    secret = secrets.token_urlsafe(32)
+    if settings_override is not None:
+        return secret
+    try:
+        env_file.update_env(env_file_path(), {"SESSION_SECRET": secret})
+    except (OSError, ValueError) as exc:
+        log.warning(
+            "SESSION_SECRET could not be saved to .env (%s); sessions end on restart",
+            type(exc).__name__,
+        )
+        return secret
+    log.warning("SESSION_SECRET was missing; generated a new one into .env")
+    return secret
+
+
 def create_app(settings_override: Settings | None = None) -> FastAPI:
     app_settings = settings_override or get_settings()
 
@@ -116,6 +150,8 @@ def create_app(settings_override: Settings | None = None) -> FastAPI:
     # Only an explicit override is pinned; otherwise every request reads `get_settings()`,
     # so keys saved from the UI into `.env` (cache cleared) take effect without a restart.
     app.state.settings = settings_override
+    app.state.session_secret = _session_secret(settings_override)
+    app.state.network_mode = app_settings.network_mode
     _install_error_handlers(app)
     app.add_api_route("/health", _health, methods=["GET"], include_in_schema=False)
     app.include_router(_api_router())

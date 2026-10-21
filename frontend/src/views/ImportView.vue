@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { api, type ImportJob, type ImportSource, type NetflixProfile } from '../api/client'
+import { api, type ImportJob, type ImportSource, type NetflixProfile, type UserProfile } from '../api/client'
 import { appSettings, loadAppSettings, loadSubscriptions, subscriptions } from '../appSettings'
+import { me } from '../auth'
 import FilePicker from '../components/FilePicker.vue'
 import ProviderBadge from '../components/ProviderBadge.vue'
 import { fmtDateTime } from '../format'
@@ -43,15 +44,44 @@ interface UploadState {
   uploading: boolean
   profiles: NetflixProfile[] | null
   profilesLoading: boolean
-  profile: string
+  /** Export profile -> app profile id, or '' = do not import (M8/A `assign`). */
+  assign: Record<string, number | ''>
 }
 const state = reactive<Record<string, UploadState>>({})
 
 function st(source: string): UploadState {
   if (!state[source]) {
-    state[source] = { file: null, inputKey: 0, uploading: false, profiles: null, profilesLoading: false, profile: '' }
+    state[source] = { file: null, inputKey: 0, uploading: false, profiles: null, profilesLoading: false, assign: {} }
   }
   return state[source]!
+}
+
+/** App profiles the export profiles can be assigned to (GET /users). */
+const appUsers = ref<UserProfile[]>([])
+
+async function loadUsers() {
+  try {
+    appUsers.value = (await api.listUsers()).items
+  } catch {
+    appUsers.value = []
+  }
+}
+
+/** Options for the assignment selects: every app profile, the current one first. */
+const userOptions = computed(() => {
+  const cur = me.value
+  const list = appUsers.value.length ? [...appUsers.value] : cur ? [{ ...cur }] : []
+  return list.sort((a, b) => (a.id === cur?.id ? -1 : b.id === cur?.id ? 1 : a.name.localeCompare(b.name)))
+})
+
+function userLabel(u: { id: number; name: string }): string {
+  return u.id === me.value?.id ? t('import.assignMe', { name: u.name }) : u.name
+}
+
+function assigned(source: string): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const [name, uid] of Object.entries(st(source).assign)) if (typeof uid === 'number') out[name] = uid
+  return out
 }
 
 const supported = computed(() => sources.value.filter((s) => s.supported))
@@ -137,8 +167,9 @@ async function onFile(source: string, f: File | null) {
     if (source === PRIME) void loadSubscriptions(true)
     const preferred = preferredProfile(source)
     const names = res.profiles.map((p) => p.name)
-    if (preferred && names.includes(preferred)) s.profile = preferred
-    else if (!names.includes(s.profile)) s.profile = names[0] ?? ''
+    // Default: the preferred (or first) export profile -> the current app profile, the rest skipped.
+    const chosen = preferred && names.includes(preferred) ? preferred : (names[0] ?? '')
+    s.assign = Object.fromEntries(names.map((n) => [n, n === chosen && me.value ? me.value.id : ''] as const))
   } catch {
     s.profiles = []
   } finally {
@@ -149,7 +180,7 @@ async function onFile(source: string, f: File | null) {
 function canUpload(source: string): boolean {
   const s = st(source)
   if (!s.file || s.uploading || s.profilesLoading) return false
-  if (hasProfiles(source) && s.profiles && s.profiles.length > 0 && !s.profile) return false
+  if (hasProfiles(source) && s.profiles && s.profiles.length > 0 && !Object.keys(assigned(source)).length) return false
   return true
 }
 
@@ -158,7 +189,15 @@ async function upload(source: string) {
   if (!s.file || !canUpload(source)) return
   s.uploading = true
   try {
-    const job = await api.uploadImport(source, s.file, hasProfiles(source) ? s.profile || null : null)
+    let profileName: string | null = null
+    let assign: Record<string, number> | null = null
+    if (hasProfiles(source) && s.profiles?.length) {
+      assign = assigned(source)
+      // profile_name stays for older job views: the one going to the current profile, else the first
+      const mine = Object.keys(assign).find((n) => assign![n] === me.value?.id)
+      profileName = mine ?? Object.keys(assign)[0] ?? null
+    }
+    const job = await api.uploadImport(source, s.file, profileName, assign)
     jobs.value = [job, ...jobs.value.filter((j) => j.id !== job.id)]
     pushToast(t('import.uploaded'))
     s.file = null
@@ -176,6 +215,12 @@ function profileText(p: NetflixProfile): string {
   return p.primary_lang
     ? t('import.profileOption', { name: p.name, lang: p.primary_lang, rows: p.viewing_rows })
     : t('import.profileOptionNoLang', { name: p.name, rows: p.viewing_rows })
+}
+
+function assignText(a: Record<string, number>): string {
+  return Object.entries(a)
+    .map(([name, uid]) => `${name} → ${appUsers.value.find((u) => u.id === uid)?.name ?? `#${uid}`}`)
+    .join(', ')
 }
 
 function statusText(status: string): string {
@@ -206,6 +251,7 @@ function needsResolution(j: ImportJob): boolean {
 onMounted(() => {
   void loadSources()
   void loadJobs()
+  void loadUsers()
 })
 onBeforeUnmount(() => {
   unmounted = true
@@ -235,12 +281,18 @@ onBeforeUnmount(() => {
       <template v-if="hasProfiles(src.source) && st(src.source).file">
         <p v-if="st(src.source).profilesLoading" class="small muted"><span class="spinner"></span> {{ t('import.readingProfiles') }}</p>
         <p v-else-if="st(src.source).profiles && !st(src.source).profiles!.length" class="small warn">{{ t('import.noProfiles') }}</p>
-        <label v-else-if="st(src.source).profiles" class="field">
-          <span class="small">{{ src.source === PRIME ? t('import.profilePrime') : t('import.profile') }}</span>
-          <select v-model="st(src.source).profile">
-            <option v-for="p in st(src.source).profiles" :key="p.name" :value="p.name">{{ profileText(p) }}</option>
-          </select>
-        </label>
+        <fieldset v-else-if="st(src.source).profiles" class="assign">
+          <legend class="small">{{ src.source === PRIME ? t('import.assignPrime') : t('import.assignNetflix') }}</legend>
+          <p class="small muted">{{ t('import.assignHint') }}</p>
+          <label v-for="p in st(src.source).profiles" :key="p.name" class="assign-row">
+            <span class="small">{{ profileText(p) }}</span>
+            <select v-model="st(src.source).assign[p.name]">
+              <option v-for="u in userOptions" :key="u.id" :value="u.id">{{ userLabel(u) }}</option>
+              <option value="">{{ t('import.assignSkip') }}</option>
+            </select>
+          </label>
+          <p v-if="!Object.keys(assigned(src.source)).length" class="small warn">{{ t('import.assignNone') }}</p>
+        </fieldset>
       </template>
       <div>
         <button type="button" class="primary" :disabled="!canUpload(src.source)" @click="upload(src.source)">
@@ -276,7 +328,10 @@ onBeforeUnmount(() => {
       <p class="small muted meta">
         <span v-if="j.started_at">{{ t('import.jobs.started', { date: fmtDateTime(j.started_at) }) }}</span>
         <span v-if="j.finished_at">{{ t('import.jobs.finished', { date: fmtDateTime(j.finished_at) }) }}</span>
-        <span v-if="j.params?.profile_name">{{ t('import.jobs.profile', { name: j.params.profile_name }) }}</span>
+        <span v-if="j.params?.assign && Object.keys(j.params.assign).length">
+          {{ t('import.jobs.assigned', { list: assignText(j.params.assign) }) }}
+        </span>
+        <span v-else-if="j.params?.profile_name">{{ t('import.jobs.profile', { name: j.params.profile_name }) }}</span>
       </p>
       <p v-if="summaryParts(j).length" class="small summary">
         <span v-for="p in summaryParts(j)" :key="p.key" class="chip">{{ t(`import.jobs.summary.${p.key}`) }}: {{ p.value }}</span>
@@ -326,10 +381,32 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 6px 10px;
 }
-.field {
+.assign {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.assign legend {
+  padding: 0 4px;
+  font-weight: 600;
+}
+.assign-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 4px 8px;
+}
+.assign-row span {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 400px) {
+  .assign-row {
+    grid-template-columns: 1fr;
+  }
 }
 .jobs-title {
   font-size: 1.15rem;

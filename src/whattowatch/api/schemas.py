@@ -587,3 +587,51 @@ class NotificationOut(BaseModel):
 
 class NotificationCount(BaseModel):
     unread: int
+
+
+# --- profiles and session (M8/A) ---------------------------------------------------------
+
+
+class StatusOut(BaseModel):
+    status: str
+
+
+class MeOut(BaseModel):
+    id: int
+    name: str
+    avatar_color: str
+    has_password: bool
+    is_admin: bool
+
+
+class UserOut(MeOut):
+    last_active_at: datetime | None
+
+
+class UsersOut(BaseModel):
+    items: list[UserOut]
+
+
+class AuthSelectIn(BaseModel):
+    user_id: int
+    password: str | None = None
+
+
+class UserCreateIn(BaseModel):
+    name: str
+    avatar_color: str | None = None
+    password: str | None = None
+
+
+class UserUpdateIn(BaseModel):
+    name: str | None = None
+    avatar_color: str | None = None
+
+
+class PasswordIn(BaseModel):
+    current_password: str | None = None
+    new_password: str | None
+
+
+class DeleteUserIn(BaseModel):
+    confirm: str

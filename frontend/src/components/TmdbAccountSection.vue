@@ -2,6 +2,7 @@
 import { onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ApiError, api, type TmdbAccountStatus } from '../api/client'
+import { me } from '../auth'
 import { pushToast } from '../toast'
 import ToggleSwitch from './ToggleSwitch.vue'
 
@@ -119,7 +120,7 @@ async function resync() {
     </p>
     <p v-if="!st.api_key_set" class="small muted">
       {{ t('settings.tmdb.needKey') }}
-      <a href="#api-keys">{{ t('settings.tmdb.toKeys') }} →</a>
+      <a v-if="me?.is_admin" href="#api-keys">{{ t('settings.tmdb.toKeys') }} →</a>
     </p>
 
     <div class="row">

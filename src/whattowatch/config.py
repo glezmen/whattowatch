@@ -3,7 +3,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from pydantic import field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Overrides the `.env` location (e.g. `/app/data/.env` in Docker, on the data volume).
@@ -46,6 +46,14 @@ class Settings(BaseSettings):
     anthropic_server_fallback: bool = True
     # Claude Code CLI model alias (sonnet | opus | haiku) when LLM_MODEL is empty.
     claude_code_model: str | None = None
+
+    # Profiles (docs/api.md "Profilok és munkamenet"): signs the `wtw_session` cookie;
+    # generated into `.env` on the first start when missing. Secret.
+    session_secret: str | None = None
+    # Future network accounts (docs/multiuser.md B): marks the session cookie `Secure`.
+    network_mode: bool = Field(
+        default=False, validation_alias=AliasChoices("WTW_NETWORK_MODE", "network_mode")
+    )
 
     @field_validator("leaving_notice_days")
     @classmethod

@@ -157,9 +157,18 @@ def test_restore_rejects_invalid_file(engine: Engine, settings: Settings, tmp_pa
 
 @pytest.fixture
 def client(settings: Settings) -> Iterator[TestClient]:
-    from whattowatch.api.app import create_app
+    from conftest import login_as
 
+    from whattowatch.api.app import create_app
+    from whattowatch.services.users import default_user_id
+
+    engine = create_engine_from_settings(settings)
+    with Session(engine) as s:
+        admin = default_user_id(s)
+        s.commit()
+    engine.dispose()
     with TestClient(create_app(settings)) as c:
+        login_as(c, admin)
         yield c
 
 

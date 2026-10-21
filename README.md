@@ -125,6 +125,18 @@ personal exports under the gitignored `data/` directory. Exports uploaded throug
 are stored under `IMPORTS_DIR` (default `data/imports`) as `<source>/<utc>_<filename>` and
 imported on a background thread (`POST /api/import/upload`).
 
+## Profiles
+
+The app has household profiles (`docs/multiuser.md`). On the first start, create the first
+profile in the web UI (it becomes the admin and is signed in) or with `wtw users add <name>`.
+A password per profile is optional (argon2id hash; at least 4 characters); an admin can clear
+a forgotten one. The browser keeps the choice in a signed, `HttpOnly` cookie (`wtw_session`,
+30 days); every `/api` call except health, the profile list, first-profile creation and
+`/api/auth/*` needs it. The signing key `SESSION_SECRET` is generated into `.env` on the
+first start when missing (changing it signs everyone out). `WTW_NETWORK_MODE=true` marks the
+cookie `Secure` (HTTPS only); it is meant for the later network-accounts mode, leave it off for
+local use.
+
 ## Backup and restore
 
 ```

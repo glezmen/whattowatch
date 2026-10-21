@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api, type RefreshSummary, type Settings } from '../api/client'
 import { DATA_RESTORED_EVENT, loadAppSettings, loadSubscriptions } from '../appSettings'
+import { me } from '../auth'
 import BackupSection from '../components/BackupSection.vue'
+import ProfileSection from '../components/ProfileSection.vue'
 import SyncLog from '../components/SyncLog.vue'
 import LanguageSwitch from '../components/LanguageSwitch.vue'
 import LlmSection from '../components/LlmSection.vue'
@@ -13,6 +15,8 @@ import SubscriptionToggles from '../components/SubscriptionToggles.vue'
 
 const { t } = useI18n()
 const s = ref<Settings | null>(null)
+/** API keys, backups and the manual refresh are admin-only (403 admin_required otherwise). */
+const isAdmin = computed(() => !!me.value?.is_admin)
 const refreshing = ref(false)
 const summary = ref<RefreshSummary | null>(null)
 
@@ -65,6 +69,11 @@ function show(v: unknown): string {
 <template>
   <h1>{{ t('settings.title') }}</h1>
 
+  <section id="profil" class="card">
+    <h2>{{ t('profile.sectionTitle') }}</h2>
+    <ProfileSection />
+  </section>
+
   <section class="card">
     <h2>{{ t('settings.streaming') }}</h2>
     <p class="small muted">{{ t('subscriptions.hint') }}</p>
@@ -75,7 +84,7 @@ function show(v: unknown): string {
     </p>
   </section>
 
-  <section id="api-keys" class="card">
+  <section v-if="isAdmin" id="api-keys" class="card">
     <h2>{{ t('settings.secrets.title') }}</h2>
     <SecretsSection @saved="onSecretsSaved" />
   </section>
@@ -90,7 +99,7 @@ function show(v: unknown): string {
     <LlmSection :reload-token="llmReload" />
   </section>
 
-  <section class="card">
+  <section v-if="isAdmin" class="card">
     <h2>{{ t('settings.backup.title') }}</h2>
     <BackupSection @restored="onRestored" />
   </section>
@@ -101,7 +110,7 @@ function show(v: unknown): string {
     <LanguageSwitch />
   </section>
 
-  <section class="card">
+  <section v-if="isAdmin" class="card">
     <h2>{{ t('settings.refresh.title') }}</h2>
     <div class="toolbar refresh">
       <button type="button" class="primary" :disabled="refreshing" @click="refreshNow">
@@ -175,7 +184,8 @@ section > p {
 section > p.after {
   margin: 10px 0 0;
 }
-#api-keys {
+#api-keys,
+#profil {
   scroll-margin-top: 16px;
 }
 h2 {
