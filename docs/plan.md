@@ -1,6 +1,6 @@
 # Implementációs terv és architektúradöntések
 
-Állapot: **M0 kész, M1 folyamatban** (2026-10-21). A specifikáció: `docs/spec.md`.
+Állapot: **M0–M1 kész, M2 folyamatban** (2026-10-21). A specifikáció: `docs/spec.md`.
 
 ## Architektúradöntések
 
@@ -59,11 +59,11 @@ Kulcskonvenciók:
 - [x] README, `.env.example`
 - [x] tesztek: health, settings betöltés, migráció üres DB-n
 
-### M1 — TMDB-validálás
-- TMDB adapter (search, details, external_ids, translations, watch/providers, discover, watch/providers/{movie,tv} lista HU-ra)
-- HU provider-id-k kiderítése a hat szolgáltatóra, `docs/adatforrasok.md` frissítése
-- `wtw tmdb probe <cím>` riport JSON-ban: talált / hiányzó / bizonytalan
-- kézi összevetés 10–20 watchlist-címen a szolgáltatói appokkal, eredmény dokumentálva
+### M1 — TMDB-validálás (kész, 2026-10-21)
+- [x] TMDB adapter (`adapters/tmdb.py`), fixture-alapú tesztek
+- [x] HU provider-id-k élőben, `providers.py` + `docs/adatforrasok.md`
+- [x] `wtw tmdb probe|providers|validate`, riport `data/reports/`
+- [ ] kézi összevetés 10–20 watchlist-címen a szolgáltatói appokkal (M2 import után, valós címekkel)
 
 ### M2 — séma és import
 - teljes séma (spec 10.) migrációval

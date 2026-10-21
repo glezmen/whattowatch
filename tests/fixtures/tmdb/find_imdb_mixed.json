@@ -1,0 +1,25 @@
+{
+  "movie_results": [
+    {
+      "id": 5,
+      "title": "Movie",
+      "original_title": "Movie",
+      "release_date": "2000-01-01",
+      "popularity": 1.0,
+      "vote_count": 1
+    }
+  ],
+  "person_results": [],
+  "tv_episode_results": [],
+  "tv_season_results": [],
+  "tv_results": [
+    {
+      "id": 6,
+      "name": "Show",
+      "original_name": "Show",
+      "first_air_date": "",
+      "popularity": 2.0,
+      "vote_count": 2
+    }
+  ]
+}

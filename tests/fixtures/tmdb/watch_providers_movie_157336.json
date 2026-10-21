@@ -1,0 +1,55 @@
+{
+  "id": 157336,
+  "results": {
+    "HU": {
+      "link": "https://www.themoviedb.org/movie/157336-interstellar/watch?locale=HU",
+      "flatrate": [
+        {
+          "logo_path": "/101.jpg",
+          "provider_id": 101,
+          "provider_name": "Netflix",
+          "display_priority": 1
+        },
+        {
+          "logo_path": "/102.jpg",
+          "provider_id": 102,
+          "provider_name": "Some Local Service",
+          "display_priority": 9
+        }
+      ],
+      "rent": [
+        {
+          "logo_path": "/103.jpg",
+          "provider_id": 103,
+          "provider_name": "Apple TV",
+          "display_priority": 3
+        }
+      ],
+      "buy": [
+        {
+          "logo_path": "/103.jpg",
+          "provider_id": 103,
+          "provider_name": "Apple TV",
+          "display_priority": 3
+        },
+        {
+          "logo_path": "/104.jpg",
+          "provider_id": 104,
+          "provider_name": "Amazon Video",
+          "display_priority": 4
+        }
+      ]
+    },
+    "US": {
+      "link": "https://example.invalid",
+      "flatrate": [
+        {
+          "logo_path": "/105.jpg",
+          "provider_id": 105,
+          "provider_name": "Paramount Plus",
+          "display_priority": 1
+        }
+      ]
+    }
+  }
+}

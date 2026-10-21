@@ -1,0 +1,51 @@
+{
+  "id": 999001,
+  "imdb_id": null,
+  "title": "Obscure Indie Film",
+  "original_title": "Obscure Indie Film",
+  "original_language": "en",
+  "release_date": "2023-05-01",
+  "runtime": 95,
+  "status": "Released",
+  "overview": "",
+  "genres": [
+    {
+      "id": 18,
+      "name": "Dráma"
+    }
+  ],
+  "external_ids": {
+    "imdb_id": null,
+    "wikidata_id": null
+  },
+  "translations": {
+    "translations": [
+      {
+        "iso_3166_1": "US",
+        "iso_639_1": "en",
+        "name": "English",
+        "english_name": "English",
+        "data": {
+          "title": "Obscure Indie Film",
+          "overview": "An English overview.",
+          "homepage": "",
+          "runtime": 95,
+          "tagline": ""
+        }
+      },
+      {
+        "iso_3166_1": "HU",
+        "iso_639_1": "hu",
+        "name": "Magyar",
+        "english_name": "Hungarian",
+        "data": {
+          "title": "",
+          "overview": "",
+          "homepage": "",
+          "runtime": 0,
+          "tagline": ""
+        }
+      }
+    ]
+  }
+}

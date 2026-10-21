@@ -1,0 +1,17 @@
+{
+  "movie_results": [],
+  "person_results": [],
+  "tv_episode_results": [],
+  "tv_season_results": [],
+  "tv_results": [
+    {
+      "id": 1396,
+      "name": "Breaking Bad - Totál szívás",
+      "original_name": "Breaking Bad",
+      "first_air_date": "2008-01-20",
+      "popularity": 400.5,
+      "vote_count": 15000,
+      "media_type": "tv"
+    }
+  ]
+}

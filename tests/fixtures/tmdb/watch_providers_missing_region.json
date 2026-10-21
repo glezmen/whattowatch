@@ -1,0 +1,16 @@
+{
+  "id": 999001,
+  "results": {
+    "US": {
+      "link": "https://example.invalid",
+      "flatrate": [
+        {
+          "logo_path": "/105.jpg",
+          "provider_id": 105,
+          "provider_name": "Paramount Plus",
+          "display_priority": 1
+        }
+      ]
+    }
+  }
+}

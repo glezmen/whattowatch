@@ -1,0 +1,38 @@
+{
+  "page": 1,
+  "total_pages": 1,
+  "total_results": 2,
+  "results": [
+    {
+      "adult": false,
+      "id": 157336,
+      "title": "Csillagok között",
+      "original_title": "Interstellar",
+      "original_language": "en",
+      "release_date": "2014-11-05",
+      "popularity": 180.2,
+      "vote_average": 8.4,
+      "vote_count": 36000,
+      "genre_ids": [
+        12,
+        18,
+        878
+      ],
+      "overview": "..."
+    },
+    {
+      "adult": false,
+      "id": 301959,
+      "title": "Interstellar: Nolan's Odyssey",
+      "original_title": "Interstellar: Nolan's Odyssey",
+      "original_language": "en",
+      "release_date": "",
+      "popularity": 3.1,
+      "vote_average": 7.8,
+      "vote_count": 120,
+      "genre_ids": [
+        99
+      ]
+    }
+  ]
+}

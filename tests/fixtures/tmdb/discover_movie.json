@@ -1,0 +1,23 @@
+{
+  "page": 1,
+  "total_pages": 12,
+  "total_results": 231,
+  "results": [
+    {
+      "id": 157336,
+      "title": "Csillagok között",
+      "original_title": "Interstellar",
+      "release_date": "2014-11-05",
+      "popularity": 180.2,
+      "vote_count": 36000
+    },
+    {
+      "id": 27205,
+      "title": "Eredet",
+      "original_title": "Inception",
+      "release_date": "2010-07-15",
+      "popularity": 120.0,
+      "vote_count": 37000
+    }
+  ]
+}

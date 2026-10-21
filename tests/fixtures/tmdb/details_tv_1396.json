@@ -1,0 +1,54 @@
+{
+  "id": 1396,
+  "name": "Breaking Bad - Totál szívás",
+  "original_name": "Breaking Bad",
+  "original_language": "en",
+  "first_air_date": "2008-01-20",
+  "number_of_seasons": 5,
+  "number_of_episodes": 62,
+  "status": "Ended",
+  "overview": "...",
+  "genres": [
+    {
+      "id": 18,
+      "name": "Dráma"
+    },
+    {
+      "id": 80,
+      "name": "Bűnügyi"
+    }
+  ],
+  "external_ids": {
+    "imdb_id": "tt0903747",
+    "tvdb_id": 81189,
+    "wikidata_id": "Q1079"
+  },
+  "translations": {
+    "translations": [
+      {
+        "iso_3166_1": "US",
+        "iso_639_1": "en",
+        "name": "English",
+        "english_name": "English",
+        "data": {
+          "name": "Breaking Bad",
+          "overview": "Walter White...",
+          "homepage": "",
+          "tagline": ""
+        }
+      },
+      {
+        "iso_3166_1": "HU",
+        "iso_639_1": "hu",
+        "name": "Magyar",
+        "english_name": "Hungarian",
+        "data": {
+          "name": "Breaking Bad - Totál szívás",
+          "overview": "Walter White kémiatanár...",
+          "homepage": "",
+          "tagline": ""
+        }
+      }
+    ]
+  }
+}

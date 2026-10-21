@@ -1,0 +1,24 @@
+{
+  "id": 1396,
+  "results": {
+    "HU": {
+      "link": "https://www.themoviedb.org/tv/1396-breaking-bad/watch?locale=HU",
+      "flatrate": [
+        {
+          "logo_path": "/101.jpg",
+          "provider_id": 101,
+          "provider_name": "Netflix",
+          "display_priority": 1
+        }
+      ],
+      "ads": [
+        {
+          "logo_path": "/106.jpg",
+          "provider_id": 106,
+          "provider_name": "Netflix basic with Ads",
+          "display_priority": 2
+        }
+      ]
+    }
+  }
+}

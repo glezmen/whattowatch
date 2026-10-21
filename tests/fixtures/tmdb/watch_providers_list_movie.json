@@ -1,0 +1,41 @@
+{
+  "results": [
+    {
+      "display_priorities": {
+        "HU": 1,
+        "US": 5
+      },
+      "display_priority": 5,
+      "logo_path": "/a.jpg",
+      "provider_name": "Netflix",
+      "provider_id": 101
+    },
+    {
+      "display_priorities": {
+        "HU": 4
+      },
+      "display_priority": 4,
+      "logo_path": "/b.jpg",
+      "provider_name": "Apple TV",
+      "provider_id": 103
+    },
+    {
+      "display_priorities": {
+        "HU": 6
+      },
+      "display_priority": 6,
+      "logo_path": "/c.jpg",
+      "provider_name": "Apple TV Plus",
+      "provider_id": 107
+    },
+    {
+      "display_priorities": {
+        "HU": 8
+      },
+      "display_priority": 8,
+      "logo_path": "/d.jpg",
+      "provider_name": "SkyShowtime",
+      "provider_id": 108
+    }
+  ]
+}

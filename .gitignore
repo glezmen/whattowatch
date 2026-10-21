@@ -46,3 +46,11 @@ imports/
 *.sqlite
 *.sqlite3
 .env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/

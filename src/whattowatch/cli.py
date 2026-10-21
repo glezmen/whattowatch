@@ -5,9 +5,12 @@ import uvicorn
 from alembic import command
 from alembic.config import Config
 
+from whattowatch.cli_tmdb import tmdb_app
+
 app = typer.Typer(help="whattowatch CLI", no_args_is_help=True)
 db_app = typer.Typer(help="Database commands", no_args_is_help=True)
 app.add_typer(db_app, name="db")
+app.add_typer(tmdb_app, name="tmdb")
 
 ROOT = Path(__file__).resolve().parents[2]
 

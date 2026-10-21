@@ -1,0 +1,75 @@
+{
+  "id": 157336,
+  "imdb_id": "tt0816692",
+  "title": "Csillagok között",
+  "original_title": "Interstellar",
+  "original_language": "en",
+  "release_date": "2014-11-05",
+  "runtime": 169,
+  "status": "Released",
+  "overview": "Hu overview",
+  "genres": [
+    {
+      "id": 12,
+      "name": "Kaland"
+    },
+    {
+      "id": 18,
+      "name": "Dráma"
+    },
+    {
+      "id": 878,
+      "name": "Sci-Fi"
+    }
+  ],
+  "external_ids": {
+    "imdb_id": "tt0816692",
+    "wikidata_id": "Q13417189",
+    "facebook_id": null,
+    "instagram_id": null,
+    "twitter_id": null
+  },
+  "translations": {
+    "translations": [
+      {
+        "iso_3166_1": "US",
+        "iso_639_1": "en",
+        "name": "English",
+        "english_name": "English",
+        "data": {
+          "title": "Interstellar",
+          "overview": "The adventures of a group of explorers...",
+          "homepage": "",
+          "runtime": 169,
+          "tagline": ""
+        }
+      },
+      {
+        "iso_3166_1": "HU",
+        "iso_639_1": "hu",
+        "name": "Magyar",
+        "english_name": "Hungarian",
+        "data": {
+          "title": "Csillagok között",
+          "overview": "Egy csapat felfedező...",
+          "homepage": "",
+          "runtime": 169,
+          "tagline": ""
+        }
+      },
+      {
+        "iso_3166_1": "DE",
+        "iso_639_1": "de",
+        "name": "Deutsch",
+        "english_name": "German",
+        "data": {
+          "title": "",
+          "overview": "Eine Gruppe...",
+          "homepage": "",
+          "runtime": 0,
+          "tagline": ""
+        }
+      }
+    ]
+  }
+}

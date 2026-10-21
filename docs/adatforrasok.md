@@ -69,7 +69,23 @@ Buktatók:
 - az „Apple TV” (kölcsönzés/vásárlás) és az „Apple TV+” (előfizetés), illetve az
   „Amazon Video” és a „Prime Video” külön provider; vannak reklámos és
   csatorna-variánsok is. A szűrés provider-id **és** `flatrate` együttes
-  feltétele legyen. A pontos HU provider-id-k ellenőrzése az M1 feladata.
+  feltétele legyen.
+
+HU provider-azonosítók, **élőben ellenőrizve 2026-10-21-én**
+(`wtw tmdb providers`):
+
+| Előfizetés | TMDB id | TMDB név | Megjegyzés |
+|---|---|---|---|
+| Netflix | 8 | Netflix | |
+| Disney+ | 337 | Disney Plus | |
+| HBO Max | 1899 | HBO Max | |
+| Prime Video | 119 | Amazon Prime Video | id 10 „Amazon Video” = kölcsönzés/vásárlás, kizárva |
+| Apple TV+ | 350 | **Apple TV** | id 2 „Apple TV Store” = bolt, kizárva; a TMDB a „+” nélküli nevet használja |
+| SkyShowtime | 1773 | SkyShowtime | |
+
+A „… Amazon Channel” variánsok (Lionsgate+, Crunchyroll, MUBI, Hayu) külön
+előfizetések, nem illesztjük. Netflix reklámos variáns a HU listában nem
+szerepel.
 
 Feltételek: ingyenes API-kulcs, nem kereskedelmi használat, TMDB-attribúció
 („This product uses the TMDB API but is not endorsed or certified by TMDB”).
@@ -338,7 +354,7 @@ négynél nincs adapter, amíg nincs kézben export.
 
 ## 4. Nyitott kérdések, igazolandó tételek
 
-- [ ] HU provider-id-k a TMDB-ben a hat szolgáltatóhoz (M1).
+- [x] HU provider-id-k a TMDB-ben a hat szolgáltatóhoz (2026-10-21, lásd 1.2).
 - [ ] Streaming Availability API: HU adatminőség és a `catalogs` id-k a hat
       szolgáltatóra; mennyire egyezik a TMDB-vel.
 - [x] Netflix teljes export tartalma és oszlopai (2026-10-20, lásd 2.1).
