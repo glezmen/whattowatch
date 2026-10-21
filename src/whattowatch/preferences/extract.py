@@ -286,11 +286,16 @@ def run_extraction(
     settings = settings or get_settings()
     with _session(session) as (db, owned):
         if extractor == LLM_EXTRACTOR:
-            if provider is None:
-                from whattowatch.llm.registry import get_provider
+            from whattowatch.llm.registry import (
+                apply_config,
+                effective_llm_config,
+                get_provider,
+            )
 
-                provider = get_provider(settings)
-            result = run_llm_extraction(db, provider, settings)
+            config = effective_llm_config(db, settings)
+            if provider is None:
+                provider = get_provider(settings, config=config)
+            result = run_llm_extraction(db, provider, apply_config(settings, config))
             if owned:
                 db.commit()
             skipped = ", ".join(f"{k}: {v}" for k, v in sorted(result.skipped.items()))

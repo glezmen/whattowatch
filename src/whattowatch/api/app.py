@@ -111,7 +111,9 @@ def create_app(settings_override: Settings | None = None) -> FastAPI:
             engine.dispose()
 
     app = FastAPI(title="whattowatch", lifespan=lifespan)
-    app.state.settings = app_settings
+    # Only an explicit override is pinned; otherwise every request reads `get_settings()`,
+    # so keys saved from the UI into `.env` (cache cleared) take effect without a restart.
+    app.state.settings = settings_override
     _install_error_handlers(app)
     app.add_api_route("/health", _health, methods=["GET"], include_in_schema=False)
     app.include_router(_api_router())

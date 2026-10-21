@@ -25,7 +25,7 @@ from whattowatch.api.schemas import (
     NetflixProfileOut,
     NetflixProfilesOut,
 )
-from whattowatch.services import app_settings
+from whattowatch.services import subscriptions
 from whattowatch.services.import_jobs import (
     IMPORT_SOURCES,
     SOURCES_BY_KEY,
@@ -35,6 +35,7 @@ from whattowatch.services.import_jobs import (
     TmdbFactory,
     make_runner,
     netflix_profiles,
+    profile_dicts,
 )
 
 router = APIRouter(prefix="/import", tags=["import"])
@@ -178,7 +179,7 @@ def _profiles_response(session: Session, path: Path) -> NetflixProfilesOut:
             status_code=422, detail=f"Nem olvasható Netflix-export (ZIP): {exc}"
         ) from exc
     if profiles:
-        app_settings.set_netflix_profiles(session, [p.name for p in profiles])
+        subscriptions.set_provider_profiles(session, "netflix", profile_dicts(profiles))
         session.commit()
     return NetflixProfilesOut(
         profiles=[

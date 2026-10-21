@@ -203,6 +203,13 @@ class NetflixProfile:
     viewing_rows: int
 
 
+def profile_dicts(profiles: list[NetflixProfile]) -> list[dict[str, Any]]:
+    """`providers.profiles` shape: `[{name, primary_lang, rows}]`."""
+    return [
+        {"name": p.name, "primary_lang": p.primary_lang, "rows": p.viewing_rows} for p in profiles
+    ]
+
+
 def netflix_profiles(path: Path) -> list[NetflixProfile]:
     """Profiles of a Netflix export (Profiles.csv + viewing-row counts); imports nothing."""
     from whattowatch.adapters.netflix_export import open_export
@@ -270,7 +277,7 @@ def _run_netflix(
 ) -> SyncRun:
     import zipfile
 
-    from whattowatch.services import app_settings, import_netflix
+    from whattowatch.services import app_settings, import_netflix, subscriptions
 
     try:
         profiles = netflix_profiles(job.path)
@@ -279,7 +286,7 @@ def _run_netflix(
     names = [p.name for p in profiles]
     with session_factory() as session:
         if names:
-            app_settings.set_netflix_profiles(session, names)
+            subscriptions.set_provider_profiles(session, "netflix", profile_dicts(profiles))
             session.commit()
         profile = job.params.get("profile_name") or app_settings.effective_netflix_profile(
             session, settings

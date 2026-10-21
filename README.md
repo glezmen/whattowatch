@@ -62,6 +62,19 @@ nélkül) először az app-beállításból, csak utána a `.env` `NETFLIX_PROFI
 részleteit a `docs/adatforrasok.md` írja le. Az ajánló súlyai a `RECOMMENDER_CONFIG_PATH`
 változóval megadott YAML-fájlból felülírhatók (`docs/recommender.md`).
 
+### Beállítások a felületen
+
+A webes Beállítások oldalon megadott API-kulcsok (`TMDB_API_KEY`,
+`STREAMING_AVAILABILITY_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) és az
+`LM_STUDIO_BASE_URL` a repó gyökerében lévő, gitignored `.env` fájlba íródnak (atomikus
+csere, `0600` jogosultság, a többi sor és a megjegyzések megmaradnak); a felület a kulcsot
+soha nem kapja vissza, csak azt, hogy be van-e állítva, és az utolsó 4 karakterét. Új
+TMDB-kulcsot mentés előtt egy `GET /configuration` hívással ellenőriz. Ha egy kulcs a
+folyamat környezeti változójaként is be van állítva, az erősebb a `.env`-nél. Az
+LLM-provider, a modell, a felhős szövegküldés és a fallback választása az adatbázisba
+(`app_settings`) kerül, és elsőbbséget élvez a `.env` `LLM_*` értékeivel szemben (a `wtw llm
+test` és a `wtw recommend extract --extractor llm` is ezt használja).
+
 ## Napi frissítés
 
 A `wtw refresh run` egy lépésben frissíti a katalógust (TMDB discover + ellenőrzés), behúzza a

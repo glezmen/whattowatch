@@ -96,6 +96,7 @@ class Provider(BaseModel):
     provider_id: int
     provider_name: str
     display_priority: int | None
+    logo_path: str | None = None
 
 
 class DiscoverHit(SearchHit):
@@ -336,6 +337,11 @@ class TmdbClient:
             fetched_at=datetime.now(UTC),
         )
 
+    def configuration(self) -> dict[str, Any]:
+        """`GET /configuration`: a cheap call that also validates the API key."""
+        data = self._get("/configuration")
+        return data if isinstance(data, dict) else {}
+
     def list_watch_providers(self, media_type: MediaType) -> list[Provider]:
         data = self._get(
             f"/watch/providers/{media_type}",
@@ -348,6 +354,7 @@ class TmdbClient:
                 display_priority=(p.get("display_priorities") or {}).get(
                     self.region, p.get("display_priority")
                 ),
+                logo_path=_nonempty(p.get("logo_path")),
             )
             for p in data.get("results", [])
         ]

@@ -75,22 +75,40 @@ function sortByProviders(items: SubscriptionItem[]): SubscriptionItem[] {
 
 let saveSeq = 0
 
-/** Optimistic toggle; the full enabled list is PUT, and a failure reloads the server state. */
-export async function setSubscription(key: string, enabled: boolean): Promise<void> {
+/**
+ * Optimistic per-provider update (enable flag and/or selected profile) via
+ * PUT /settings/subscriptions {items: [...]}; a failure rolls the row back.
+ */
+export async function updateSubscription(
+  key: string,
+  patch: { enabled?: boolean; selected_profile?: string | null },
+): Promise<boolean> {
   const item = subscriptions.items.find((s) => s.key === key)
-  if (!item) return
-  item.enabled = enabled
+  if (!item) return false
+  const prev = { enabled: item.enabled, selected_profile: item.selected_profile }
+  Object.assign(item, patch)
   const seq = ++saveSeq
   subscriptions.saving = true
   try {
-    const res = await api.putSubscriptions(subscriptions.items.filter((s) => s.enabled).map((s) => s.key))
+    const res = await api.putSubscriptions([{ key, ...patch }])
     if (seq === saveSeq && res && typeof res === 'object' && Array.isArray((res as { items?: unknown }).items)) {
       subscriptions.items = sortByProviders((res as { items: SubscriptionItem[] }).items)
     }
+    // The Netflix profile is the same thing as the app setting netflix_profile_name (backwards compatible).
+    if (key === 'netflix' && 'selected_profile' in patch && appSettings.data) {
+      appSettings.data.netflix_profile_name = patch.selected_profile ?? null
+    }
+    return true
   } catch {
+    const cur = subscriptions.items.find((s) => s.key === key)
+    if (cur) Object.assign(cur, prev)
     pushError(t('subscriptions.saveFailed'))
-    await loadSubscriptions(true)
+    return false
   } finally {
     if (seq === saveSeq) subscriptions.saving = false
   }
+}
+
+export function setSubscription(key: string, enabled: boolean): Promise<boolean> {
+  return updateSubscription(key, { enabled })
 }

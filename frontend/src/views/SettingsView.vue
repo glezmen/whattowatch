@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api, type RefreshSummary, type Settings } from '../api/client'
-import { appSettings, updateAppSettings } from '../appSettings'
 import LanguageSwitch from '../components/LanguageSwitch.vue'
+import LlmSection from '../components/LlmSection.vue'
+import SecretsSection from '../components/SecretsSection.vue'
 import SubscriptionToggles from '../components/SubscriptionToggles.vue'
 
 const { t } = useI18n()
@@ -31,12 +32,16 @@ onMounted(async () => {
   }
 })
 
-const netflixProfiles = computed(() => appSettings.data?.netflix_profiles ?? [])
-const netflixProfile = computed(() => appSettings.data?.netflix_profile_name ?? '')
+// Bumped after a key / base URL change so the LLM section re-reads key_set and the LM Studio model list.
+const llmReload = ref(0)
 
-function onProfile(e: Event) {
-  const v = (e.target as HTMLSelectElement).value
-  void updateAppSettings({ netflix_profile_name: v || null }, { toast: true })
+async function onSecretsSaved() {
+  llmReload.value++
+  try {
+    s.value = await api.getSettings()
+  } catch {
+    // toast already shown
+  }
 }
 
 function show(v: unknown): string {
@@ -50,35 +55,29 @@ function show(v: unknown): string {
   <h1>{{ t('settings.title') }}</h1>
 
   <section class="card">
-    <h2>{{ t('subscriptions.title') }}</h2>
+    <h2>{{ t('settings.streaming') }}</h2>
     <p class="small muted">{{ t('subscriptions.hint') }}</p>
     <SubscriptionToggles />
+    <p class="small muted after">
+      {{ t('settings.dataSourcesHint') }}
+      <RouterLink to="/import">{{ t('settings.openImport') }} →</RouterLink>
+    </p>
+  </section>
+
+  <section id="api-keys" class="card">
+    <h2>{{ t('settings.secrets.title') }}</h2>
+    <SecretsSection @saved="onSecretsSaved" />
   </section>
 
   <section class="card">
-    <h2>{{ t('settings.dataSources') }}</h2>
-    <p class="small muted">{{ t('settings.dataSourcesHint') }}</p>
-    <RouterLink to="/import">{{ t('settings.openImport') }} →</RouterLink>
+    <h2>{{ t('settings.llm.title') }}</h2>
+    <LlmSection :reload-token="llmReload" />
   </section>
 
   <section class="card">
     <h2>{{ t('settings.language') }}</h2>
     <p class="small muted">{{ t('settings.languageHint') }}</p>
     <LanguageSwitch />
-  </section>
-
-  <section class="card">
-    <h2>{{ t('settings.netflixProfile') }}</h2>
-    <p class="small muted">{{ t('settings.netflixProfileHint') }}</p>
-    <p v-if="!appSettings.loaded" class="small muted"><span class="spinner"></span> {{ t('common.loading') }}</p>
-    <p v-else-if="!netflixProfiles.length" class="small muted">
-      {{ t('settings.netflixProfileNone') }}
-      <template v-if="netflixProfile"> ({{ netflixProfile }})</template>
-    </p>
-    <select v-else :value="netflixProfile" :aria-label="t('settings.netflixProfile')" @change="onProfile">
-      <option value="">{{ t('settings.netflixProfileUnset') }}</option>
-      <option v-for="p in netflixProfiles" :key="p" :value="p">{{ p }}</option>
-    </select>
   </section>
 
   <section class="card">
@@ -148,6 +147,12 @@ section {
 }
 section > p {
   margin: 0 0 8px;
+}
+section > p.after {
+  margin: 10px 0 0;
+}
+#api-keys {
+  scroll-margin-top: 16px;
 }
 h2 {
   font-size: 1.1rem;

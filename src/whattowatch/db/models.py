@@ -130,6 +130,10 @@ class Provider(TimestampMixin, Base):
     kind: Mapped[ProviderKind] = mapped_column(String)
     tmdb_provider_ids: Mapped[list[int]] = mapped_column(JSON, default=list)
     enabled: Mapped[bool] = mapped_column(default=True)
+    # M7b: TMDB logo (cached from /watch/providers), export profiles and the chosen one.
+    logo_path: Mapped[str | None] = mapped_column(String)
+    selected_profile: Mapped[str | None] = mapped_column(String)
+    profiles: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON)
 
 
 class TitleResolution(TimestampMixin, Base):

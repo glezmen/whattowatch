@@ -78,7 +78,8 @@
     "server": "Szerverhiba ({status}).",
     "serverDetail": "Szerverhiba ({status}): {detail}",
     "code": {
-      "no_tmdb_key": "Nincs beállítva TMDB API-kulcs (TMDB_API_KEY a .env fájlban)."
+      "no_tmdb_key": "Nincs beállítva TMDB API-kulcs (TMDB_API_KEY a .env fájlban).",
+      "invalid_tmdb_key": "A TMDB nem fogadta el az API-kulcsot."
     }
   },
   "pagination": {
@@ -117,6 +118,9 @@
     "deleteSignal": "Jelzés törlése: {label}"
   },
   "card": {
+    "descToggle": "Leírás",
+    "noDescription": "Nincs leírás",
+    "huDescNote": "(magyar leírás)",
     "poster": "{title} plakát",
     "noHuTitle": "nincs magyar cím",
     "yearUnknown": "év ismeretlen",
@@ -345,10 +349,6 @@
     "openImport": "Import megnyitása",
     "language": "Nyelv",
     "languageHint": "A felület és a beszélgetős ajánló válaszainak nyelve.",
-    "netflixProfile": "Netflix-profil",
-    "netflixProfileHint": "Melyik profil előzményeit importáljuk a Netflix-exportból.",
-    "netflixProfileNone": "Még nincs feltöltött Netflix-export, ezért nincs választható profil.",
-    "netflixProfileUnset": "– nincs kiválasztva –",
     "saved": "Beállítás elmentve.",
     "refresh": {
       "title": "Katalógusfrissítés",
@@ -356,14 +356,71 @@
       "hint": "Lekéri az elérhetőség-változásokat, újdonságokat és értesítéseket. Akár egy percig is eltarthat."
     },
     "env": {
-      "title": "Környezet és LLM",
-      "hint": "Csak olvasható. Ezek a backend környezeti változóiból jönnek (lásd .env.example); titkos értékek nem jelennek meg.",
+      "title": "Diagnosztika",
+      "hint": "Csak olvasható állapot a backendtől; titkos értékek nem jelennek meg.",
       "tmdbKey": "TMDB API-kulcs beállítva",
       "lmStudio": "LM Studio alap-URL",
       "llmProvider": "Alapértelmezett LLM-szolgáltató",
       "leavingDays": "Kivezetési értesítés (nappal előtte)"
     },
-    "recommender": "Ajánló konfiguráció (súlyok)"
+    "recommender": "Ajánló konfiguráció (súlyok)",
+    "streaming": "Streaming-szolgáltatások",
+    "secrets": {
+      "title": "API-kulcsok",
+      "hint": "A kulcsok helyben, a szerver .env fájljában tárolódnak, és a böngésző soha többé nem kapja vissza őket – csak azt látod, be vannak-e állítva (és az utolsó 4 karaktert).",
+      "loadFailed": "A kulcsok állapotát nem sikerült betölteni.",
+      "set": "beállítva",
+      "unset": "nincs beállítva",
+      "placeholder": "Kulcs beillesztése",
+      "replacePlaceholder": "Új kulcs a régi helyett",
+      "saved": "Kulcs elmentve.",
+      "cleared": "Kulcs törölve.",
+      "saveFailed": "A mentés nem sikerült.",
+      "invalidTmdb": "A TMDB nem fogadta el ezt a kulcsot. Ellenőrizd, hogy az API-kulcsot (v3) másoltad-e be.",
+      "lmStudioUrl": "LM Studio alap-URL",
+      "lmStudioUrlHelp": "A helyi LM Studio OpenAI-kompatibilis szerverének címe. Ne tedd nyilvánosan elérhetővé.",
+      "label": {
+        "TMDB_API_KEY": "TMDB API-kulcs",
+        "STREAMING_AVAILABILITY_API_KEY": "Streaming Availability API-kulcs",
+        "ANTHROPIC_API_KEY": "Anthropic API-kulcs",
+        "OPENAI_API_KEY": "OpenAI API-kulcs"
+      },
+      "help": {
+        "TMDB_API_KEY": "Katalógus, magyar címek és elérhetőség. Igénylés:",
+        "STREAMING_AVAILABILITY_API_KEY": "Opcionális: távozási és érkezési dátumok. Igénylés (Movie of the Night, RapidAPI):",
+        "ANTHROPIC_API_KEY": "Claude modellekhez; külön számlázott API-hozzáférés (a Claude-előfizetés nem tartalmazza). Igénylés:",
+        "OPENAI_API_KEY": "OpenAI modellekhez; a ChatGPT-előfizetés nem jelent API-hozzáférést, külön számlázott. Igénylés:"
+      }
+    },
+    "llm": {
+      "title": "LLM",
+      "loadFailed": "Az LLM-beállításokat nem sikerült betölteni.",
+      "provider": "Szolgáltató",
+      "providers": {
+        "lmstudio": "LM Studio (helyi)",
+        "anthropic": "Anthropic (felhő)",
+        "openai": "OpenAI (felhő)"
+      },
+      "model": "Modell",
+      "modelDefault": "– alapértelmezett –",
+      "modelCustom": "Egyéni modellnév…",
+      "modelPlaceholder": "Modellazonosító",
+      "lmUnavailable": "Az LM Studio nem elérhető ezen a címen: {url}. Indítsd el a helyi szervert, vagy javítsd az alap-URL-t az API-kulcsoknál.",
+      "lmAvailable": "LM Studio: {url} – {n} betöltött modell.",
+      "keyMissing": "A(z) {provider} használatához nincs beállítva API-kulcs.",
+      "keyMissingLink": "Ugrás az API-kulcsokhoz",
+      "cloudNote": "Felhős modellnél csak a beszélgetéshez szükséges adatok mennek ki; a teljes előzmény helyben marad.",
+      "sendFeedback": "Szöveges vélemények küldése felhős modellnek",
+      "sendFeedbackHint": "A „Mi tetszett / mi nem tetszett” szövegeid kikerülhetnek a felhős szolgáltatóhoz. Kikapcsolva csak helyi modell dolgozza fel őket.",
+      "fallback": "Fallback másik providerre engedélyezve",
+      "fallbackHint": "Ha a kiválasztott szolgáltató nem elérhető, a rendszer automatikusan másikat próbálhat (akár felhőset is).",
+      "test": "Kapcsolat tesztelése",
+      "testHint": "Egy rövid, valódi kérést küld a kiválasztott modellnek.",
+      "testOk": "A kapcsolat működik.",
+      "testFailed": "A teszt nem sikerült.",
+      "reply": "Válasz",
+      "usage": "Tokenhasználat"
+    }
   },
   "chat": {
     "title": "Beszélgetős ajánló",
@@ -388,5 +445,12 @@
     "showAll": "Teljes beszélgetés ({n} üzenet)",
     "showLess": "Csak az utolsó váltás",
     "openFull": "Megnyitás teljes oldalon"
+  },
+  "providers": {
+    "profile": "{name} profil",
+    "noProfile": "– nincs kiválasztva –",
+    "noProfileData": "Nincs profiladat",
+    "profileHint": "Profilok a feltöltött exportból jönnek",
+    "rows": "{n} sor | {n} sor"
   }
 }

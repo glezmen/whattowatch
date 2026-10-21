@@ -223,6 +223,13 @@ class SettingsOut(BaseModel):
     recommender: dict[str, Any]
     ui_language: Literal["hu", "en"] = "hu"
     enabled_subscriptions: list[str] = Field(default_factory=list)
+    secrets_set: dict[str, bool] = Field(default_factory=dict)
+
+
+class ProviderProfileOut(BaseModel):
+    name: str
+    primary_lang: str | None = None
+    rows: int | None = None
 
 
 class SubscriptionItem(BaseModel):
@@ -230,14 +237,105 @@ class SubscriptionItem(BaseModel):
     display_name: str
     enabled: bool
     tmdb_provider_ids: list[int]
+    logo_url: str | None = None
+    profiles: list[ProviderProfileOut] = Field(default_factory=list)
+    selected_profile: str | None = None
+    profile_support: Literal["export", "none"] = "none"
 
 
 class SubscriptionsOut(BaseModel):
     items: list[SubscriptionItem]
 
 
+class SubscriptionItemIn(BaseModel):
+    """Missing `enabled` / `selected_profile` = unchanged; `selected_profile: null` clears."""
+
+    key: str
+    enabled: bool | None = None
+    selected_profile: str | None = Field(default=None, max_length=200)
+
+
 class SubscriptionsIn(BaseModel):
-    enabled: list[str]
+    """New form `{items: [...]}` (partial) or the M7 form `{enabled: [...]}` (exact set)."""
+
+    enabled: list[str] | None = None
+    items: list[SubscriptionItemIn] | None = None
+
+
+SecretKey = Literal[
+    "TMDB_API_KEY", "STREAMING_AVAILABILITY_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"
+]
+
+
+class SecretItem(BaseModel):
+    """Never carries the value: only whether it is set and its last 4 characters."""
+
+    key: SecretKey
+    set: bool
+    hint: str | None = None
+    label_key: str
+
+
+class SecretsOut(BaseModel):
+    items: list[SecretItem]
+    lm_studio_base_url: str
+
+
+class SecretsIn(BaseModel):
+    """`null` or "" deletes the key from `.env`; keys not listed are unchanged."""
+
+    values: dict[SecretKey, str | None] = Field(default_factory=dict)
+    lm_studio_base_url: str | None = Field(default=None, max_length=500)
+
+
+LlmProviderName = Literal["lmstudio", "anthropic", "openai"]
+
+
+class LmStudioOption(BaseModel):
+    available: bool
+    base_url: str
+    models: list[str] = Field(default_factory=list)
+
+
+class CloudLlmOption(BaseModel):
+    key_set: bool
+    models: list[str] = Field(default_factory=list)
+
+
+class LlmOptions(BaseModel):
+    lmstudio: LmStudioOption
+    anthropic: CloudLlmOption
+    openai: CloudLlmOption
+
+
+class LlmSettingsOut(BaseModel):
+    provider: LlmProviderName
+    model: str | None = None
+    options: LlmOptions
+    cloud_send_feedback_text: bool
+    fallback_allowed: bool
+
+
+class LlmSettingsIn(BaseModel):
+    """Partial update; `model: null` or "" clears the UI choice (provider default)."""
+
+    provider: LlmProviderName | None = None
+    model: str | None = Field(default=None, max_length=200)
+    cloud_send_feedback_text: bool | None = None
+    fallback_allowed: bool | None = None
+
+
+class LlmTestIn(BaseModel):
+    provider: LlmProviderName | None = None
+    model: str | None = Field(default=None, max_length=200)
+
+
+class LlmTestOut(BaseModel):
+    ok: bool
+    model: str | None = None
+    reply: str | None = None
+    usage: dict[str, int] = Field(default_factory=dict)
+    error: str | None = None
 
 
 class AppSettingsOut(BaseModel):

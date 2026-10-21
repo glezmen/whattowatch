@@ -1,18 +1,87 @@
 """Provider selection. Never falls back silently: `get_provider` returns exactly the
 requested provider or raises; `get_provider_with_fallback` tries other providers only
-when `Settings.llm_fallback_allowed` is true."""
+when `Settings.llm_fallback_allowed` is true.
+
+`effective_llm_config` merges the UI choice (`app_settings`, docs/api.md M7b) over the
+`.env` values; pass its result as `config=` so callers use what the user selected."""
 
 from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 from whattowatch.config import Settings
 from whattowatch.llm.anthropic_provider import AnthropicProvider
 from whattowatch.llm.base import LLMError, LLMProvider
 from whattowatch.llm.openai_compat import LMStudioProvider, OpenAIProvider
 
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
 PROVIDER_NAMES: tuple[str, ...] = ("lmstudio", "anthropic", "openai")
 
+# `app_settings` keys of the UI LLM choice.
+LLM_PROVIDER = "llm_provider"
+LLM_MODEL = "llm_model"
+LLM_CLOUD_SEND_FEEDBACK_TEXT = "llm_cloud_send_feedback_text"
+LLM_FALLBACK_ALLOWED = "llm_fallback_allowed"
 
-def get_provider(settings: Settings, override: str | None = None) -> LLMProvider:
+
+@dataclass(frozen=True)
+class LLMConfig:
+    provider: str
+    model: str | None
+    cloud_send_feedback_text: bool
+    fallback_allowed: bool
+
+
+def effective_llm_config(session: Session, settings: Settings) -> LLMConfig:
+    """App settings (set in the UI) first, then `.env`."""
+    from whattowatch.services.app_settings import get_setting
+
+    def pick(key: str, default: Any) -> Any:
+        return get_setting(session, key, default)
+
+    provider = pick(LLM_PROVIDER, None)
+    if not isinstance(provider, str) or provider not in PROVIDER_NAMES:
+        provider = settings.llm_provider
+    model = pick(LLM_MODEL, None)
+    if not isinstance(model, str) or not model.strip():
+        model = settings.llm_model
+    return LLMConfig(
+        provider=provider,
+        model=model or None,
+        cloud_send_feedback_text=bool(
+            pick(LLM_CLOUD_SEND_FEEDBACK_TEXT, settings.llm_cloud_send_feedback_text)
+        ),
+        fallback_allowed=bool(pick(LLM_FALLBACK_ALLOWED, settings.llm_fallback_allowed)),
+    )
+
+
+def apply_config(settings: Settings, config: LLMConfig | None) -> Settings:
+    """`settings` with the LLM fields replaced by `config` (unchanged when None)."""
+    if config is None:
+        return settings
+    return settings.model_copy(
+        update={
+            "llm_provider": config.provider,
+            "llm_model": config.model,
+            "llm_cloud_send_feedback_text": config.cloud_send_feedback_text,
+            "llm_fallback_allowed": config.fallback_allowed,
+        }
+    )
+
+
+def get_provider(
+    settings: Settings, override: str | None = None, *, config: LLMConfig | None = None
+) -> LLMProvider:
+    """The requested (`override`) or configured provider. With `config`, its model applies
+    only to its own provider: another `override` uses that provider's default model."""
+    if config is not None:
+        settings = apply_config(settings, config)
+        wanted = (override or "").strip().lower()
+        if wanted and wanted != config.provider:
+            settings = settings.model_copy(update={"llm_model": None})
     name = (override or settings.llm_provider or "").strip().lower()
     if name == "lmstudio":
         return LMStudioProvider(settings)
@@ -32,13 +101,38 @@ def fallback_order(settings: Settings, preferred: str | None = None) -> list[str
     return list(dict.fromkeys([first, *rest]))
 
 
-def get_provider_with_fallback(settings: Settings, preferred: str | None = None) -> LLMProvider:
+def get_provider_with_fallback(
+    settings: Settings, preferred: str | None = None, *, config: LLMConfig | None = None
+) -> LLMProvider:
     """First provider in `fallback_order` that is configured; raises the preferred one's
     error when none is. Without `llm_fallback_allowed` this equals `get_provider`."""
     errors: list[LLMError] = []
-    for name in fallback_order(settings, preferred):
+    effective = apply_config(settings, config)
+    for name in fallback_order(effective, preferred):
         try:
-            return get_provider(settings, name)
+            return get_provider(settings, name, config=config)
         except LLMError as exc:
             errors.append(exc)
     raise errors[0]
+
+
+def load_llm_config(settings: Settings) -> LLMConfig:
+    """`effective_llm_config` with its own short-lived session (CLI). An unreachable or
+    unmigrated database falls back to the `.env` values."""
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from whattowatch.db.engine import create_engine_from_settings, session_factory
+
+    engine = create_engine_from_settings(settings)
+    try:
+        with session_factory(engine)() as session:
+            return effective_llm_config(session, settings)
+    except SQLAlchemyError:
+        return LLMConfig(
+            provider=settings.llm_provider,
+            model=settings.llm_model,
+            cloud_send_feedback_text=settings.llm_cloud_send_feedback_text,
+            fallback_allowed=settings.llm_fallback_allowed,
+        )
+    finally:
+        engine.dispose()

@@ -6,13 +6,28 @@ provider without a DB row (unseeded DB) counts as enabled, matching the seeded d
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from whattowatch.config import Settings
 from whattowatch.db.models import Provider
 from whattowatch.providers import BY_KEY, SUBSCRIPTIONS, SubscriptionProvider
+from whattowatch.services import app_settings as app_cfg
+
+if TYPE_CHECKING:
+    from whattowatch.adapters.tmdb import TmdbClient
+
+log = logging.getLogger(__name__)
+
+TMDB_LOGO_BASE = "https://image.tmdb.org/t/p/w92"
+# Providers whose official data export lists viewing profiles (docs/api.md M7b).
+PROFILE_SUPPORT: dict[str, str] = {"netflix": "export"}
+UNSET: Any = object()
 
 
 def _flags(session: Session) -> dict[str, bool]:
@@ -38,28 +53,141 @@ def subscription_states(session: Session) -> list[tuple[SubscriptionProvider, bo
     return [(p, flags.get(p.key, True)) for p in SUBSCRIPTIONS]
 
 
-def set_enabled(session: Session, keys: Iterable[str]) -> list[str]:
-    """Enable exactly `keys` (others disabled); unknown keys raise ValueError. Flushes."""
-    wanted = set(keys)
-    unknown = sorted(wanted - set(BY_KEY))
+def _check_keys(keys: Iterable[str]) -> None:
+    unknown = sorted(set(keys) - set(BY_KEY))
     if unknown:
         raise ValueError(f"unknown provider key(s): {', '.join(unknown)}")
+
+
+def _rows(session: Session, *, create: bool = False) -> dict[str, Provider]:
+    """DB rows of the six subscriptions; `create` adds missing ones (enabled, like the seed)."""
     rows = {
         p.key: p for p in session.scalars(select(Provider).where(Provider.key.in_(list(BY_KEY))))
     }
+    if create:
+        for sub in SUBSCRIPTIONS:
+            if sub.key not in rows:
+                row = Provider(
+                    key=sub.key,
+                    display_name=sub.display_name,
+                    kind="streaming",
+                    tmdb_provider_ids=list(sub.tmdb_provider_ids),
+                    enabled=True,
+                )
+                session.add(row)
+                rows[sub.key] = row
+    return rows
+
+
+def set_enabled(session: Session, keys: Iterable[str]) -> list[str]:
+    """Enable exactly `keys` (others disabled); unknown keys raise ValueError. Flushes."""
+    wanted = set(keys)
+    _check_keys(wanted)
+    rows = _rows(session, create=True)
     for sub in SUBSCRIPTIONS:
-        row = rows.get(sub.key)
-        if row is None:
-            row = Provider(
-                key=sub.key,
-                display_name=sub.display_name,
-                kind="streaming",
-                tmdb_provider_ids=list(sub.tmdb_provider_ids),
-            )
-            session.add(row)
-        row.enabled = sub.key in wanted
+        rows[sub.key].enabled = sub.key in wanted
     session.flush()
     return [p.key for p in SUBSCRIPTIONS if p.key in wanted]
+
+
+@dataclass(frozen=True)
+class SubscriptionUpdate:
+    key: str
+    enabled: bool | None = None  # None: unchanged
+    selected_profile: Any = UNSET  # UNSET: unchanged; None/"": cleared
+
+
+def apply_updates(session: Session, updates: Iterable[SubscriptionUpdate]) -> None:
+    """Partial update of some rows; unknown keys raise ValueError before any change.
+
+    Netflix's `selected_profile` is kept in sync with the `netflix_profile_name` app
+    setting (the import's default profile filter). Flushes."""
+    items = list(updates)
+    _check_keys(u.key for u in items)
+    rows = _rows(session, create=True)
+    for u in items:
+        row = rows[u.key]
+        if u.enabled is not None:
+            row.enabled = u.enabled
+        if u.selected_profile is not UNSET:
+            value = (u.selected_profile or "").strip() or None
+            row.selected_profile = value
+            if u.key == "netflix":
+                app_cfg.set_netflix_profile_name(session, value)
+    session.flush()
+
+
+def set_provider_profiles(session: Session, key: str, profiles: list[dict[str, Any]]) -> None:
+    """Remember the profiles found in a provider export (`[{name, primary_lang?, rows?}]`)."""
+    _check_keys([key])
+    row = _rows(session, create=True)[key]
+    row.profiles = [dict(p) for p in profiles if p.get("name")]
+    if key == "netflix":
+        app_cfg.set_netflix_profiles(session, [str(p["name"]) for p in row.profiles])
+    session.flush()
+
+
+@dataclass(frozen=True)
+class SubscriptionRow:
+    provider: SubscriptionProvider
+    enabled: bool
+    logo_url: str | None
+    profiles: list[dict[str, Any]]
+    selected_profile: str | None
+    profile_support: str
+
+
+def subscription_rows(session: Session, settings: Settings) -> list[SubscriptionRow]:
+    """The six subscriptions with logo, export profiles and the selected profile."""
+    rows = _rows(session)
+    out: list[SubscriptionRow] = []
+    for sub in SUBSCRIPTIONS:
+        row = rows.get(sub.key)
+        profiles = list(row.profiles or []) if row is not None else []
+        selected = row.selected_profile if row is not None else None
+        if sub.key == "netflix":
+            if not profiles:
+                profiles = [{"name": n} for n in app_cfg.netflix_profiles(session)]
+            selected = app_cfg.effective_netflix_profile(session, settings)
+        logo = row.logo_path if row is not None else None
+        out.append(
+            SubscriptionRow(
+                provider=sub,
+                enabled=bool(row.enabled) if row is not None else True,
+                logo_url=f"{TMDB_LOGO_BASE}{logo}" if logo else None,
+                profiles=profiles,
+                selected_profile=selected,
+                profile_support=PROFILE_SUPPORT.get(sub.key, "none"),
+            )
+        )
+    return out
+
+
+def missing_logos(session: Session) -> bool:
+    """True when an enabled subscription has no cached logo yet."""
+    rows = _rows(session)
+    return any(
+        rows[s.key].logo_path is None if s.key in rows else True
+        for s in SUBSCRIPTIONS
+        if (rows[s.key].enabled if s.key in rows else True)
+    )
+
+
+def refresh_provider_logos(session: Session, tmdb: TmdbClient) -> int:
+    """Fill `providers.logo_path` from TMDB `/watch/providers/movie` (matched by TMDB id).
+
+    Returns the number of rows changed; flushes, does not commit."""
+    by_id = {p.provider_id: p.logo_path for p in tmdb.list_watch_providers("movie")}
+    rows = _rows(session, create=True)
+    changed = 0
+    for sub in SUBSCRIPTIONS:
+        logo = next((by_id[i] for i in sub.tmdb_provider_ids if by_id.get(i)), None)
+        row = rows[sub.key]
+        if logo and row.logo_path != logo:
+            row.logo_path = logo
+            changed += 1
+    session.flush()
+    return changed
 
 
 def enabled_tmdb_ids(session: Session) -> list[int]:

@@ -268,11 +268,73 @@ export interface NotificationItem {
   read_at?: string | null
 }
 
+export interface SubscriptionProfile {
+  name: string
+  primary_lang?: string | null
+  rows?: number | null
+}
+
 export interface SubscriptionItem {
   key: string
   display_name: string
   enabled: boolean
   tmdb_provider_ids: number[]
+  /** M7b: TMDB logo (w92), cached by the backend. */
+  logo_url?: string | null
+  /** M7b: profiles found in the uploaded export (currently Netflix only). */
+  profiles?: SubscriptionProfile[]
+  selected_profile?: string | null
+  profile_support?: 'export' | 'none'
+}
+
+export interface SubscriptionPatchItem {
+  key: string
+  enabled?: boolean
+  selected_profile?: string | null
+}
+
+export type SecretKey = 'TMDB_API_KEY' | 'STREAMING_AVAILABILITY_API_KEY' | 'ANTHROPIC_API_KEY' | 'OPENAI_API_KEY'
+
+export interface SecretItem {
+  key: SecretKey | string
+  set: boolean
+  /** Last 4 characters only; the value itself is never returned. */
+  hint?: string | null
+  label_key: string
+}
+
+export interface SecretsResponse {
+  items: SecretItem[]
+  lm_studio_base_url: string
+}
+
+export interface SecretsPatch {
+  values?: Partial<Record<SecretKey | string, string | null>>
+  lm_studio_base_url?: string
+}
+
+export interface LlmSettings {
+  provider: LlmProviderName
+  model: string | null
+  options: {
+    lmstudio: { available: boolean; base_url: string; models: string[] }
+    anthropic: { key_set: boolean; models: string[] }
+    openai: { key_set: boolean; models: string[] }
+  }
+  cloud_send_feedback_text: boolean
+  fallback_allowed: boolean
+}
+
+export type LlmSettingsPatch = Partial<
+  Pick<LlmSettings, 'provider' | 'model' | 'cloud_send_feedback_text' | 'fallback_allowed'>
+>
+
+export interface LlmTestResult {
+  ok: boolean
+  model?: string | null
+  reply?: string | null
+  usage?: Record<string, number> | null
+  error?: string | null
 }
 
 export interface AppSettings {
@@ -326,9 +388,12 @@ export type RefreshSummary = Record<string, number | string>
 
 export class ApiError extends Error {
   status: number
-  constructor(status: number, message: string) {
+  /** `detail_code` from the response body, when the backend sends one. */
+  code: string | null
+  constructor(status: number, message: string, code: string | null = null) {
     super(message)
     this.status = status
+    this.code = code
   }
 }
 
@@ -394,7 +459,9 @@ async function request<T>(method: string, path: string, body?: unknown, quiet = 
   if (!res.ok) {
     const msg = errorMessage(res.status, data)
     if (!quiet) pushError(msg)
-    throw new ApiError(res.status, msg)
+    const code =
+      data && typeof data === 'object' && 'detail_code' in data ? (data as { detail_code: unknown }).detail_code : null
+    throw new ApiError(res.status, msg, typeof code === 'string' ? code : null)
   }
   return data as T
 }
@@ -460,11 +527,20 @@ export const api = {
   postRefresh: () => request<RefreshSummary>('POST', '/refresh'),
 
   getSubscriptions: () => request<{ items: SubscriptionItem[] }>('GET', '/settings/subscriptions'),
-  putSubscriptions: (enabled: string[]) =>
-    request<{ items: SubscriptionItem[] } | unknown>('PUT', '/settings/subscriptions', { enabled }),
+  putSubscriptions: (items: SubscriptionPatchItem[]) =>
+    request<{ items: SubscriptionItem[] } | unknown>('PUT', '/settings/subscriptions', { items }),
   getAppSettings: (quiet = false) => request<AppSettings>('GET', '/settings/app', undefined, quiet),
   putAppSettings: (patch: AppSettingsPatch, quiet = false) =>
     request<AppSettings | unknown>('PUT', '/settings/app', patch, quiet),
+
+  getSecrets: () => request<SecretsResponse>('GET', '/settings/secrets'),
+  /** Quiet: the caller shows errors inline (e.g. invalid_tmdb_key). */
+  putSecrets: (patch: SecretsPatch) => request<SecretsResponse>('PUT', '/settings/secrets', patch, true),
+  getLlmSettings: () => request<LlmSettings>('GET', '/settings/llm'),
+  putLlmSettings: (patch: LlmSettingsPatch) => request<LlmSettings>('PUT', '/settings/llm', patch),
+  /** Runs one short real request against the provider: only on explicit user action. Quiet: shown inline. */
+  testLlm: (body: { provider?: LlmProviderName; model?: string | null } = {}) =>
+    request<LlmTestResult>('POST', '/settings/llm/test', body, true),
 
   getImportSources: () => request<ImportSource[]>('GET', '/import/sources'),
   getImportJobs: (limit = 20, quiet = false) =>

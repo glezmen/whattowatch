@@ -31,13 +31,15 @@ class ChatRequest(BaseModel):
     provider: str | None = Field(default=None, max_length=40)
 
 
-def provider_factory_dep(settings: SettingsDep) -> ProviderFactory:
+def provider_factory_dep(settings: SettingsDep, session: SessionDep) -> ProviderFactory:
     """Resolves the configured (or requested) LLM provider; tests override this.
 
-    Falls back to another provider only when `llm_fallback_allowed` is set."""
-    from whattowatch.llm.registry import get_provider_with_fallback
+    Uses the UI choice (`effective_llm_config`); falls back to another provider only when
+    `llm_fallback_allowed` is set."""
+    from whattowatch.llm.registry import effective_llm_config, get_provider_with_fallback
 
-    return lambda override: get_provider_with_fallback(settings, override)
+    config = effective_llm_config(session, settings)
+    return lambda override: get_provider_with_fallback(settings, override, config=config)
 
 
 @router.post("/chat", response_model=ChatResult)
@@ -52,6 +54,7 @@ def chat(
 ) -> ChatResult:
     """409: provider not configured; 502: the provider call failed."""
     from whattowatch.llm.base import LLMError
+    from whattowatch.llm.registry import effective_llm_config
 
     if body.messages[-1].role != "user":
         raise HTTPException(
@@ -69,7 +72,9 @@ def chat(
             provider=provider,
             config=cfg,
             now=now,
-            allow_cloud_feedback_text=settings.llm_cloud_send_feedback_text,
+            allow_cloud_feedback_text=effective_llm_config(
+                session, settings
+            ).cloud_send_feedback_text,
         )
     except LLMError as exc:
         raise HTTPException(status_code=502, detail=f"LLM-hiba: {exc}") from exc

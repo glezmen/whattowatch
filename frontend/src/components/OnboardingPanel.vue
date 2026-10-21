@@ -40,7 +40,7 @@ async function finish() {
       <li>
         <strong>{{ t('onboarding.step1') }}</strong>
         <p class="small muted">{{ t('onboarding.step1Hint') }}</p>
-        <SubscriptionToggles />
+        <SubscriptionToggles compact />
       </li>
       <li>
         <strong>{{ t('onboarding.step2') }}</strong>

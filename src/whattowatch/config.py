@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -54,6 +55,14 @@ def parse_notice_days(value: str) -> tuple[int, ...]:
     if not days:
         raise ValueError("leaving_notice_days must list at least one day")
     return tuple(sorted(days, reverse=True))
+
+
+def env_file_path() -> Path:
+    """The `.env` file `Settings` reads, resolved against the current directory."""
+    env_file = Settings.model_config.get("env_file") or ".env"
+    if isinstance(env_file, (list, tuple)):
+        env_file = env_file[0]
+    return Path(str(env_file)).resolve()
 
 
 @lru_cache

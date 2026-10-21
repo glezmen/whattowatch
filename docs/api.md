@@ -173,3 +173,25 @@ Naplóba nem kerülnek.
 A profilválasztó jelentése: a kiválasztott profil a szolgáltató exportjának
 importjánál az alapértelmezett szűrő (Netflixnél a `netflix_profile_name`
 app-beállítás ugyanez, visszafelé kompatibilisen).
+
+**Megvalósítási részletek (backend, M7b):**
+- `label_key` = `settings.secrets.label.<KEY>`. `hint` csak legalább 8 karakteres
+  értéknél jön (rövidebbnél `null`, hogy ne fedje fel a kulcs nagy részét).
+- `PUT /settings/secrets`: ismeretlen kulcs vagy nem `http(s)://` LM Studio-cím `422`.
+  A TMDB-próba: 401/403 → `422 invalid_tmdb_key`; más TMDB-hiba vagy hálózati hiba →
+  `502 tmdb_unreachable`; ilyenkor semmi sem íródik. A változatlan TMDB-kulcsot nem
+  ellenőrzi újra. A folyamat környezeti változója erősebb a `.env`-nél (ilyenkor csak
+  egy figyelmeztetés kerül a naplóba, kulcsnévvel, érték nélkül).
+- `PUT /settings/subscriptions` `items[]`: `enabled` is opcionális (hiányzik = változatlan);
+  `selected_profile: null`/`""` törli. Netflixnél a `selected_profile` olvasáskor a
+  `netflix_profile_name` app-beállításból (ill. `.env`) jön, íráskor mindkettő frissül;
+  a `PUT /settings/app` `netflix_profile_name` ugyanezt írja. Se `items`, se `enabled` → `422`.
+- A logók lusta feltöltése (`GET /settings/subscriptions`, ha egy bekapcsolt szolgáltatónak
+  nincs logója és van TMDB-kulcs) óránként legfeljebb egyszer próbálkozik; hibája nem
+  hat a válaszra.
+- `GET /settings` új mezője: `secrets_set: {KEY: bool}`; az `llm_*` mezők a régi `.env`
+  értékek maradnak (a hatályos választás a `GET /settings/llm`).
+- `PUT /settings/llm`: `model: null`/`""` törli a felülírást (`.env`/provider-alapértelmezés).
+  `POST /settings/llm/test`: mindig `200` (`ok: false, error` hibánál), kivéve ismeretlen
+  `provider` → `422`; ha a `provider` eltér a beállítottól és nincs `model`, a provider
+  alapértelmezett modellje fut.

@@ -14,16 +14,20 @@ TEST_PROMPT = "Válaszolj egyetlen rövid magyar mondatban: mi a kedvenc filmmű
 @app.command("test")
 def llm_test(
     provider: Annotated[
-        str | None, typer.Option(help="lmstudio | anthropic | openai (default: LLM_PROVIDER)")
+        str | None,
+        typer.Option(
+            help="lmstudio | anthropic | openai (default: the UI choice, else LLM_PROVIDER)"
+        ),
     ] = None,
 ) -> None:
     """Send a one-line Hungarian prompt and print model, reply and token usage."""
     from whattowatch.config import get_settings
     from whattowatch.llm.base import LLMError, Message
-    from whattowatch.llm.registry import get_provider
+    from whattowatch.llm.registry import get_provider, load_llm_config
 
+    settings = get_settings()
     try:
-        llm = get_provider(get_settings(), provider)
+        llm = get_provider(settings, provider, config=load_llm_config(settings))
         resp = llm.complete([Message(role="user", content=TEST_PROMPT)], max_tokens=200)
     except LLMError as exc:
         typer.echo(f"Hiba: {exc}", err=True)

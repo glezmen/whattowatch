@@ -17,7 +17,12 @@ def test_subscriptions_roundtrip(api: ApiEnv) -> None:
         "display_name": "Netflix",
         "enabled": True,
         "tmdb_provider_ids": [8],
+        "logo_url": None,
+        "profiles": [],
+        "selected_profile": None,
+        "profile_support": "export",
     }
+    assert all(i["profile_support"] == "none" for i in items[1:])
     r = api.client.put("/api/settings/subscriptions", json={"enabled": ["hbo_max", "netflix"]})
     assert r.status_code == 200
     assert [i["key"] for i in r.json()["items"] if i["enabled"]] == ["netflix", "hbo_max"]
@@ -69,3 +74,91 @@ def test_no_tmdb_key_has_detail_code(api: ApiEnv) -> None:
     r = api.client.get("/api/recommendations", params={"refresh": True})
     assert r.status_code == 409
     assert r.json()["detail_code"] == "no_tmdb_key" and "TMDB" in r.json()["detail"]
+
+
+def test_subscriptions_new_form_profiles_and_netflix_sync(api: ApiEnv) -> None:
+    from whattowatch.services import subscriptions
+
+    subscriptions.set_provider_profiles(
+        api.session,
+        "netflix",
+        [{"name": "Anna", "primary_lang": "hu", "rows": 12}, {"name": "Béla", "rows": 3}],
+    )
+    api.session.commit()
+    r = api.client.put(
+        "/api/settings/subscriptions",
+        json={
+            "items": [
+                {"key": "netflix", "selected_profile": "Anna"},
+                {"key": "skyshowtime", "enabled": False},
+            ]
+        },
+    )
+    assert r.status_code == 200, r.text
+    items = {i["key"]: i for i in r.json()["items"]}
+    assert not items["skyshowtime"]["enabled"] and items["netflix"]["enabled"]
+    assert items["netflix"]["selected_profile"] == "Anna"
+    assert items["netflix"]["profiles"] == [
+        {"name": "Anna", "primary_lang": "hu", "rows": 12},
+        {"name": "Béla", "primary_lang": None, "rows": 3},
+    ]
+    assert items["hbo_max"]["profiles"] == [] and items["hbo_max"]["profile_support"] == "none"
+    app = api.client.get("/api/settings/app").json()
+    assert app["netflix_profile_name"] == "Anna" and app["netflix_profiles"] == ["Anna", "Béla"]
+    # the old app endpoint writes the same value back
+    api.client.put("/api/settings/app", json={"netflix_profile_name": "Béla"})
+    netflix = api.client.get("/api/settings/subscriptions").json()["items"][0]
+    assert netflix["selected_profile"] == "Béla"
+    # clearing
+    r = api.client.put(
+        "/api/settings/subscriptions",
+        json={"items": [{"key": "netflix", "selected_profile": None}]},
+    )
+    assert r.json()["items"][0]["selected_profile"] is None
+    assert api.client.get("/api/settings/app").json()["netflix_profile_name"] is None
+    # unknown key in the new form -> 422, no change
+    r = api.client.put(
+        "/api/settings/subscriptions",
+        json={"items": [{"key": "hbo_max", "enabled": False}, {"key": "mubi", "enabled": True}]},
+    )
+    assert r.status_code == 422
+    assert api.client.get("/api/settings/subscriptions").json()["items"][2]["enabled"]
+    assert api.client.put("/api/settings/subscriptions", json={}).status_code == 422
+
+
+def test_subscriptions_logo_refresh(api_tmdb: ApiEnv) -> None:
+    import httpx
+    import respx
+
+    from whattowatch.adapters.tmdb import BASE_URL
+
+    results = [
+        {"provider_id": 8, "provider_name": "Netflix", "logo_path": "/nf.jpg"},
+        {"provider_id": 1899, "provider_name": "HBO Max", "logo_path": "/hbo.jpg"},
+        {"provider_id": 999, "provider_name": "Other", "logo_path": "/x.jpg"},
+    ]
+    with respx.mock:
+        route = respx.get(f"{BASE_URL}/watch/providers/movie").mock(
+            return_value=httpx.Response(200, json={"results": results})
+        )
+        items = api_tmdb.client.get("/api/settings/subscriptions").json()["items"]
+        assert route.call_count == 1
+        logos = {i["key"]: i["logo_url"] for i in items}
+        assert logos["netflix"] == "https://image.tmdb.org/t/p/w92/nf.jpg"
+        assert logos["hbo_max"] == "https://image.tmdb.org/t/p/w92/hbo.jpg"
+        assert logos["disney_plus"] is None
+        # still incomplete, but throttled: no second TMDB call
+        api_tmdb.client.get("/api/settings/subscriptions")
+        assert route.call_count == 1
+
+
+def test_subscriptions_logo_refresh_error_is_ignored(api_tmdb: ApiEnv) -> None:
+    import httpx
+    import respx
+
+    from whattowatch.adapters.tmdb import BASE_URL
+
+    with respx.mock:
+        respx.get(f"{BASE_URL}/watch/providers/movie").mock(return_value=httpx.Response(500))
+        r = api_tmdb.client.get("/api/settings/subscriptions")
+    assert r.status_code == 200 and all(i["logo_url"] is None for i in r.json()["items"])

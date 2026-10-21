@@ -78,7 +78,8 @@
     "server": "Server error ({status}).",
     "serverDetail": "Server error ({status}): {detail}",
     "code": {
-      "no_tmdb_key": "No TMDB API key is configured (set TMDB_API_KEY in .env)."
+      "no_tmdb_key": "No TMDB API key is configured (set TMDB_API_KEY in .env).",
+      "invalid_tmdb_key": "TMDB rejected the API key."
     }
   },
   "pagination": {
@@ -117,6 +118,9 @@
     "deleteSignal": "Remove signal: {label}"
   },
   "card": {
+    "descToggle": "Description",
+    "noDescription": "No description",
+    "huDescNote": "(Hungarian description)",
     "poster": "{title} poster",
     "noHuTitle": "no Hungarian title",
     "yearUnknown": "year unknown",
@@ -345,10 +349,6 @@
     "openImport": "Open Import",
     "language": "Language",
     "languageHint": "Language of the interface and of the chat's answers.",
-    "netflixProfile": "Netflix profile",
-    "netflixProfileHint": "Whose history to import from the Netflix export.",
-    "netflixProfileNone": "No Netflix export has been uploaded yet, so there are no profiles to choose from.",
-    "netflixProfileUnset": "– not selected –",
     "saved": "Setting saved.",
     "refresh": {
       "title": "Catalog refresh",
@@ -356,14 +356,71 @@
       "hint": "Fetches availability changes, new arrivals and notifications. This can take up to a minute."
     },
     "env": {
-      "title": "Environment and LLM",
-      "hint": "Read-only. These come from the backend's environment variables (see .env.example); secrets are never shown.",
+      "title": "Diagnostics",
+      "hint": "Read-only status from the backend; secret values are never shown.",
       "tmdbKey": "TMDB API key set",
       "lmStudio": "LM Studio base URL",
       "llmProvider": "Default LLM provider",
       "leavingDays": "Departure notice (days before)"
     },
-    "recommender": "Recommender configuration (weights)"
+    "recommender": "Recommender configuration (weights)",
+    "streaming": "Streaming services",
+    "secrets": {
+      "title": "API keys",
+      "hint": "Keys are stored locally in the server's .env file and are never sent back to the browser – you only see whether each one is set (and its last 4 characters).",
+      "loadFailed": "Couldn't load the key status.",
+      "set": "set",
+      "unset": "not set",
+      "placeholder": "Paste key",
+      "replacePlaceholder": "New key to replace the current one",
+      "saved": "Key saved.",
+      "cleared": "Key removed.",
+      "saveFailed": "Saving failed.",
+      "invalidTmdb": "TMDB rejected this key. Make sure you pasted the API key (v3).",
+      "lmStudioUrl": "LM Studio base URL",
+      "lmStudioUrlHelp": "Address of your local LM Studio OpenAI-compatible server. Don't expose it publicly.",
+      "label": {
+        "TMDB_API_KEY": "TMDB API key",
+        "STREAMING_AVAILABILITY_API_KEY": "Streaming Availability API key",
+        "ANTHROPIC_API_KEY": "Anthropic API key",
+        "OPENAI_API_KEY": "OpenAI API key"
+      },
+      "help": {
+        "TMDB_API_KEY": "Catalog, Hungarian titles and availability. Get one at",
+        "STREAMING_AVAILABILITY_API_KEY": "Optional: leaving and arriving dates. Get one from Movie of the Night (RapidAPI):",
+        "ANTHROPIC_API_KEY": "For Claude models; API access is billed separately (not included in a Claude subscription). Get one at",
+        "OPENAI_API_KEY": "For OpenAI models; a ChatGPT subscription doesn't include API access, which is billed separately. Get one at"
+      }
+    },
+    "llm": {
+      "title": "LLM",
+      "loadFailed": "Couldn't load the LLM settings.",
+      "provider": "Provider",
+      "providers": {
+        "lmstudio": "LM Studio (local)",
+        "anthropic": "Anthropic (cloud)",
+        "openai": "OpenAI (cloud)"
+      },
+      "model": "Model",
+      "modelDefault": "– default –",
+      "modelCustom": "Custom model name…",
+      "modelPlaceholder": "Model ID",
+      "lmUnavailable": "LM Studio isn't reachable at {url}. Start the local server or fix the base URL under API keys.",
+      "lmAvailable": "LM Studio: {url} – {n} model(s) loaded.",
+      "keyMissing": "No API key is set for {provider}.",
+      "keyMissingLink": "Go to API keys",
+      "cloudNote": "With a cloud model only the data the conversation needs is sent; your full history stays local.",
+      "sendFeedback": "Send written reviews to cloud models",
+      "sendFeedbackHint": "Your “What did you like / dislike” notes may be sent to the cloud provider. When off, only a local model processes them.",
+      "fallback": "Allow fallback to another provider",
+      "fallbackHint": "If the selected provider is unavailable, another one (possibly a cloud one) may be tried automatically.",
+      "test": "Test connection",
+      "testHint": "Sends one short, real request to the selected model.",
+      "testOk": "The connection works.",
+      "testFailed": "The test failed.",
+      "reply": "Reply",
+      "usage": "Token usage"
+    }
   },
   "chat": {
     "title": "Ask for ideas",
@@ -388,5 +445,12 @@
     "showAll": "Whole conversation ({n} messages)",
     "showLess": "Latest exchange only",
     "openFull": "Open full page"
+  },
+  "providers": {
+    "profile": "{name} profile",
+    "noProfile": "– not selected –",
+    "noProfileData": "No profile data",
+    "profileHint": "Profiles come from the uploaded export",
+    "rows": "{n} row | {n} rows"
   }
 }

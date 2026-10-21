@@ -37,10 +37,10 @@ def extract_preferences(
     settings = get_settings()
     llm = None
     if extractor == "llm":
-        from whattowatch.llm.registry import get_provider
+        from whattowatch.llm.registry import get_provider, load_llm_config
 
         try:
-            llm = get_provider(settings, provider)
+            llm = get_provider(settings, provider, config=load_llm_config(settings))
         except LLMError as exc:
             typer.echo(str(exc), err=True)
             raise typer.Exit(1) from exc

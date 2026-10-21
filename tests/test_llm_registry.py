@@ -44,3 +44,29 @@ def test_fallback_only_when_allowed() -> None:
     assert p.name == "lmstudio"
     s2 = settings(llm_fallback_allowed=True, lm_studio_base_url="", openai_api_key="o")
     assert get_provider_with_fallback(s2, "anthropic").name == "openai"
+
+
+def test_effective_config_prefers_app_settings(recommend_db: tuple[object, object]) -> None:
+    from sqlalchemy.orm import Session
+
+    from whattowatch.llm.registry import LLMConfig, effective_llm_config
+    from whattowatch.services.app_settings import set_setting
+
+    session = recommend_db[0]
+    assert isinstance(session, Session)
+    s = settings(llm_provider="lmstudio", llm_model="env-model", anthropic_api_key="a")
+    assert effective_llm_config(session, s) == LLMConfig("lmstudio", "env-model", False, False)
+    set_setting(session, "llm_provider", "anthropic")
+    set_setting(session, "llm_model", "claude-haiku-4-5")
+    set_setting(session, "llm_cloud_send_feedback_text", True)
+    set_setting(session, "llm_fallback_allowed", True)
+    config = effective_llm_config(session, s)
+    assert config == LLMConfig("anthropic", "claude-haiku-4-5", True, True)
+    p = get_provider(s, config=config)
+    assert isinstance(p, AnthropicProvider) and p.model == "claude-haiku-4-5"
+    # an explicit other provider does not inherit the Anthropic model
+    lms = get_provider(s, "lmstudio", config=config)
+    assert isinstance(lms, LMStudioProvider) and lms._model is None
+    # an invalid stored provider falls back to .env
+    set_setting(session, "llm_provider", "gemini")
+    assert effective_llm_config(session, s).provider == "lmstudio"
