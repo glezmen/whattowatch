@@ -165,6 +165,45 @@ class ResolutionCandidate(BaseModel):
     year: int | None = None
     score: float | None = None
     on_provider: bool | None = None
+    poster_path: str | None = None
+    overview: str | None = None
+    vote_average: float | None = None
+    vote_count: int | None = None
+    popularity: float | None = None
+    genre_ids: list[int] = Field(default_factory=list)
+    tmdb_url: str | None = None
+
+
+class ResolutionSeason(BaseModel):
+    season: int | None = None
+    episodes: int
+    episode_titles: list[str] = Field(default_factory=list)
+
+
+class ResolutionContext(BaseModel):
+    """What the linked import rows say (viewing: dates/duration/devices/seasons)."""
+
+    rows: int = 0
+    first_at: datetime | None = None
+    last_at: datetime | None = None
+    total_seconds: int | None = None
+    devices: list[str] = Field(default_factory=list)
+    seasons: list[ResolutionSeason] = Field(default_factory=list)
+    standalone: bool = False
+    source_profiles: list[str] = Field(default_factory=list)
+
+
+class CandidateDetails(BaseModel):
+    tmdb_id: int
+    media_type: MediaType
+    runtime: int | None = None
+    number_of_seasons: int | None = None
+    year: int | None = None
+    overview: str | None = None
+    poster_path: str | None = None
+    imdb_id: str | None = None
+    vote_count: int | None = None
+    error: str | None = None
 
 
 class ResolutionItem(BaseModel):
@@ -179,6 +218,7 @@ class ResolutionItem(BaseModel):
     candidates: list[ResolutionCandidate]
     title_id: int | None = None
     resolved_at: datetime | None = None
+    context: ResolutionContext = Field(default_factory=ResolutionContext)
 
 
 class ResolutionActionResponse(BaseModel):

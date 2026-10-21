@@ -13,6 +13,7 @@ from sqlalchemy import Engine
 
 from whattowatch.adapters.tmdb import TmdbError
 from whattowatch.api import (
+    backup,
     chat,
     history,
     imports,
@@ -47,6 +48,7 @@ def _api_router() -> APIRouter:
         settings,
         updates,
         imports,
+        backup,
     ):
         api.include_router(module.router)
     api.include_router(search.router)

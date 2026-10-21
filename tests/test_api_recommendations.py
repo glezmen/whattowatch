@@ -95,8 +95,9 @@ def test_reason_codes_in_latest_batch(api: ApiEnv) -> None:
         config=RecommenderConfig(),
         now=NOW,
         echo=False,
+        include_watchlist=True,
     )
-    items = api.client.get("/api/recommendations").json()
+    items = api.client.get("/api/recommendations", params={"include_watchlist": True}).json()
     assert items
     known = {
         "watchlist",
@@ -123,3 +124,30 @@ def test_reason_codes_in_latest_batch(api: ApiEnv) -> None:
     # old batches without codes still serialize
     _batch(api, "legacy", [102], at_offset_h=5)
     assert api.client.get("/api/recommendations").json()[0]["reason_codes"] == []
+
+
+def test_stored_batch_filters_watchlist_with_header(api: ApiEnv) -> None:
+    _batch(api, "b", [101, 107, 102, 108], at_offset_h=0)  # 107/108 are on the watchlist
+    r = api.client.get("/api/recommendations")
+    assert [i["rank"] for i in r.json()] == [1, 3]
+    assert r.headers["X-Filtered-Watchlist"] == "2"
+    assert all(not k.startswith("_") for i in r.json() for k in i["components"])
+    r = api.client.get("/api/recommendations", params={"include_watchlist": True})
+    assert len(r.json()) == 4 and r.headers["X-Filtered-Watchlist"] == "0"
+
+
+def test_refresh_passes_include_watchlist(
+    api_tmdb: ApiEnv, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_run(**kw: Any) -> list[Recommendation]:
+        calls.append(kw)
+        kw["tmdb"] = StubTmdb()
+        kw["config"] = RecommenderConfig()
+        return run_recommendations(**kw)
+
+    monkeypatch.setattr("whattowatch.services.recommend.engine.run_recommendations", fake_run)
+    api_tmdb.client.get("/api/recommendations", params={"refresh": True})
+    api_tmdb.client.get("/api/recommendations", params={"refresh": True, "include_watchlist": True})
+    assert [c["include_watchlist"] for c in calls] == [False, True]

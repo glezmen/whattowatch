@@ -76,6 +76,12 @@ def excluded_title_ids(session: Session) -> set[int]:
     return ids
 
 
+def active_watchlist_ids(session: Session) -> set[int]:
+    return set(
+        session.scalars(select(WatchlistItem.title_id).where(WatchlistItem.status == "active"))
+    )
+
+
 def verified_subscriptions(
     session: Session, title_ids: Iterable[int], *, now: datetime, max_age_days: int = 14
 ) -> dict[int, tuple[str, ...]]:
@@ -110,12 +116,18 @@ def load_candidates(
     pool: int = 500,
     now: datetime | None = None,
     max_age_days: int = 14,
+    exclude_watchlist: bool = False,
 ) -> list[Candidate]:
-    """Unseen, not-rejected titles with verified or estimated availability, by popularity."""
+    """Unseen, not-rejected titles with verified or estimated availability, by popularity.
+
+    ``exclude_watchlist`` also drops titles with an active watchlist item (any source).
+    """
     now = now or datetime.now(UTC)
     if not enabled_keys(session):
         return []  # no subscription switched on: nothing may be recommended
     excluded = excluded_title_ids(session)
+    if exclude_watchlist:
+        excluded |= active_watchlist_ids(session)
     verified = verified_subscriptions(
         session,
         session.scalars(

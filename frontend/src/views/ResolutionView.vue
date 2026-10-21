@@ -1,8 +1,18 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch } from 'vue'
-import { api, type MediaType, type Resolution, type SearchHit } from '../api/client'
+import {
+  api,
+  type CandidateDetails,
+  type MediaType,
+  type Resolution,
+  type ResolutionCandidate,
+  type ResolutionContext,
+  type SearchHit,
+} from '../api/client'
 import Pagination from '../components/Pagination.vue'
-import { mediaTypeLabel, sourceLabel } from '../format'
+import PosterWithOverview from '../components/PosterWithOverview.vue'
+import { fmtDate, fmtInt, mediaTypeLabel, sourceLabel } from '../format'
+import { genreNames } from '../genres'
 import { useI18n } from 'vue-i18n'
 import { pushToast } from '../toast'
 
@@ -27,6 +37,109 @@ const searches = reactive<Record<number, SearchState>>({})
 function searchFor(r: Resolution): SearchState {
   if (!searches[r.id]) searches[r.id] = { q: r.title_text ?? r.lookup_key, media_type: '', hits: null, loading: false }
   return searches[r.id]!
+}
+
+// --- import context -------------------------------------------------------------------
+const VIEWING_SOURCES = new Set(['netflix_viewing'])
+const LIST_SOURCES = new Set(['netflix_mylist', 'imdb_watchlist'])
+const RATING_SOURCES = new Set(['netflix_ratings', 'imdb_ratings'])
+
+function sameDay(a: string, b: string): boolean {
+  return fmtDate(a) === fmtDate(b)
+}
+
+function fmtDuration(seconds: number): string {
+  const totalMin = Math.round(seconds / 60)
+  const h = Math.floor(totalMin / 60)
+  const m = totalMin % 60
+  return h ? t('resolution.durationHm', { h, m }) : t('resolution.durationM', { m })
+}
+
+/** "Nézve: … · 14 alkalom · 9 ó 40 p" for viewing rows, else the list/rating date. */
+function contextLine(r: Resolution): string | null {
+  const c = r.context
+  if (!c || !c.rows) return null
+  if (VIEWING_SOURCES.has(r.source)) {
+    const parts: string[] = []
+    if (c.first_at && c.last_at) {
+      parts.push(
+        sameDay(c.first_at, c.last_at)
+          ? t('resolution.watchedOn', { date: fmtDate(c.first_at) })
+          : t('resolution.watchedRange', { from: fmtDate(c.first_at), to: fmtDate(c.last_at) }),
+      )
+    }
+    parts.push(t('resolution.times', { n: c.rows }, c.rows))
+    if (c.total_seconds) parts.push(fmtDuration(c.total_seconds))
+    return parts.join(' · ')
+  }
+  if (!c.first_at) return null
+  if (LIST_SOURCES.has(r.source)) return t('resolution.addedToList', { date: fmtDate(c.first_at) })
+  if (RATING_SOURCES.has(r.source)) return t('resolution.rated', { date: fmtDate(c.last_at ?? c.first_at) })
+  return null
+}
+
+function seasonsLine(c: ResolutionContext): string | null {
+  if (!c.seasons.length) return null
+  const nums = c.seasons.map((s) => s.season).filter((n): n is number => n != null)
+  const n = c.seasons.reduce((sum, s) => sum + s.episodes, 0)
+  let range = '–'
+  if (nums.length) {
+    const lo = Math.min(...nums)
+    const hi = Math.max(...nums)
+    range = lo === hi ? String(lo) : `${lo}–${hi}`
+  }
+  return t('resolution.seasonsSeen', { range, n })
+}
+
+/** Average minutes per viewing for standalone (movie-like) items; null otherwise. */
+function watchedMinutes(r: Resolution): number | null {
+  const c = r.context
+  if (!c || !c.standalone || c.seasons.length || !c.rows || !c.total_seconds) return null
+  return c.total_seconds / c.rows / 60
+}
+
+// --- candidates ---------------------------------------------------------------------
+function posterSource(c: ResolutionCandidate) {
+  return { original_title: c.title, poster_path: c.poster_path, overview_hu: c.overview }
+}
+
+function candidateMeta(c: ResolutionCandidate): string[] {
+  const parts = [c.year != null ? String(c.year) : '–', mediaTypeLabel(c.media_type)]
+  const genres = genreNames(c.media_type, c.genre_ids)
+  if (genres.length) parts.push(genres.join(', '))
+  return parts
+}
+
+interface DetailsState {
+  loading: boolean
+  failed: boolean
+  byKey: Record<string, CandidateDetails>
+}
+const details = reactive<Record<number, DetailsState>>({})
+const candKey = (c: { media_type: MediaType; tmdb_id: number }) => `${c.media_type}:${c.tmdb_id}`
+
+async function loadDetails(r: Resolution) {
+  const existing = details[r.id]
+  if (existing && (existing.loading || Object.keys(existing.byKey).length)) return
+  details[r.id] = { loading: true, failed: false, byKey: {} }
+  const st = details[r.id]!
+  try {
+    for (const d of await api.getCandidateDetails(r.id)) st.byKey[candKey(d)] = d
+  } catch {
+    st.failed = true
+  } finally {
+    st.loading = false
+  }
+}
+
+function detailFor(r: Resolution, c: ResolutionCandidate): CandidateDetails | undefined {
+  return details[r.id]?.byKey[candKey(c)]
+}
+
+function runtimeMatches(r: Resolution, d: CandidateDetails): boolean {
+  const watched = watchedMinutes(r)
+  if (watched == null || !d.runtime) return false
+  return Math.abs(watched - d.runtime) <= d.runtime * 0.1
 }
 
 async function load() {
@@ -115,32 +228,95 @@ function goto(o: number) {
   <div v-else class="list">
     <section v-for="r in items" :key="r.id" class="card res">
       <header>
-        <div>
+        <div class="head-main">
           <strong>{{ r.title_text ?? r.lookup_key }}</strong>
           <p v-if="r.title_text && r.title_text !== r.lookup_key" class="small muted">{{ t('resolution.key', { key: r.lookup_key }) }}</p>
           <p v-if="r.import_rows" class="small muted">{{ t('resolution.importRows', { n: r.import_rows }) }}</p>
         </div>
-        <span class="tag">{{ sourceLabel(r.source) }} · {{ r.source }}</span>
+        <div class="head-ctx">
+          <span class="tag">{{ sourceLabel(r.source) }} · {{ r.source }}</span>
+          <p v-if="contextLine(r)" class="small">{{ contextLine(r) }}</p>
+          <p v-if="r.context?.source_profiles.length" class="small muted">
+            {{ t('resolution.profiles', { names: r.context.source_profiles.join(', ') }) }}
+          </p>
+          <div v-if="r.context?.devices.length" class="chips" :aria-label="t('resolution.devices')">
+            <span v-for="d in r.context.devices" :key="d" class="tag">{{ d }}</span>
+          </div>
+        </div>
       </header>
 
-      <table v-if="r.candidates && r.candidates.length" class="small">
-        <thead>
-          <tr><th>{{ t('resolution.candidate') }}</th><th>{{ t('resolution.year') }}</th><th>{{ t('common.type') }}</th><th>{{ t('resolution.score') }}</th><th></th></tr>
-        </thead>
-        <tbody>
-          <tr v-for="c in r.candidates" :key="c.media_type + c.tmdb_id">
-            <td>
-              {{ c.title }}
-              <span v-if="c.original_title && c.original_title !== c.title" class="muted"> · {{ c.original_title }}</span>
-              <span v-if="c.on_provider" class="tag conf-verified">{{ t('resolution.onProvider') }}</span>
-            </td>
-            <td>{{ c.year ?? '–' }}</td>
-            <td>{{ mediaTypeLabel(c.media_type) }}</td>
-            <td>{{ c.score != null ? c.score.toFixed(2) : '–' }}</td>
-            <td><button type="button" :disabled="busy === r.id" @click="choose(r, c.media_type, c.tmdb_id)">{{ t('common.thisOne') }}</button></td>
-          </tr>
-        </tbody>
-      </table>
+      <details v-if="r.context && seasonsLine(r.context)" class="seasons small">
+        <summary>{{ seasonsLine(r.context) }}<template v-if="r.context.standalone"> · {{ t('resolution.standaloneToo') }}</template></summary>
+        <ul>
+          <li v-for="s in r.context.seasons" :key="s.season ?? 'none'">
+            <strong>{{ s.season != null ? t('resolution.seasonN', { n: s.season }) : t('resolution.seasonNone') }}:</strong>
+            {{ s.episode_titles.join(' · ') || '–' }}
+            <span v-if="s.episodes > s.episode_titles.length" class="muted">
+              {{ t('resolution.episodesMore', { n: s.episodes - s.episode_titles.length }) }}
+            </span>
+          </li>
+        </ul>
+      </details>
+
+      <template v-if="r.candidates && r.candidates.length">
+        <div class="cand-head">
+          <span class="small muted">{{ t('resolution.candidate') }}</span>
+          <button
+            type="button"
+            class="small"
+            :title="t('resolution.detailsHint')"
+            :disabled="details[r.id]?.loading || !!(details[r.id] && Object.keys(details[r.id]!.byKey).length)"
+            @click="loadDetails(r)"
+          >
+            {{ t('resolution.details') }}
+          </button>
+          <span v-if="details[r.id]?.loading" class="spinner"></span>
+          <span v-else-if="details[r.id]?.failed" class="small muted">{{ t('resolution.detailsError') }}</span>
+        </div>
+        <ul class="cands">
+          <li v-for="c in r.candidates" :key="c.media_type + c.tmdb_id" class="cand">
+            <PosterWithOverview :title="posterSource(c)" small hide-lang-note />
+            <div class="cand-body">
+              <div>
+                <strong>{{ c.title }}</strong>
+                <span v-if="c.original_title && c.original_title !== c.title" class="muted"> · {{ c.original_title }}</span>
+              </div>
+              <div class="small muted meta">
+                <span>{{ candidateMeta(c).join(' · ') }}</span>
+                <span v-if="c.score != null">· {{ t('resolution.score') }} {{ c.score.toFixed(2) }}</span>
+                <span v-if="c.vote_count != null">{{ t('resolution.votes', { n: fmtInt(c.vote_count) }) }}</span>
+              </div>
+              <div class="small badges">
+                <span v-if="c.on_provider" class="tag conf-verified">{{ t('resolution.onProvider') }}</span>
+                <a
+                  v-if="c.tmdb_url"
+                  :href="c.tmdb_url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  :aria-label="t('resolution.tmdbLinkLabel', { title: c.title })"
+                >{{ t('resolution.tmdbLink') }} ↗</a>
+              </div>
+              <div v-if="detailFor(r, c)" class="small">
+                <span v-if="detailFor(r, c)!.error" class="muted">{{ t('resolution.detailsError') }}</span>
+                <template v-else-if="c.media_type === 'movie' && detailFor(r, c)!.runtime">
+                  <span :class="{ match: runtimeMatches(r, detailFor(r, c)!) }">
+                    {{ t('resolution.runtime', { n: detailFor(r, c)!.runtime }) }}
+                  </span>
+                  <span
+                    v-if="runtimeMatches(r, detailFor(r, c)!)"
+                    class="tag conf-verified"
+                    :title="t('resolution.runtimeMatchTitle', { n: Math.round(watchedMinutes(r) ?? 0) })"
+                  >{{ t('resolution.runtimeMatch') }}</span>
+                </template>
+                <span v-else-if="c.media_type === 'tv' && detailFor(r, c)!.number_of_seasons">
+                  {{ t('resolution.seasonsCount', { n: detailFor(r, c)!.number_of_seasons }, detailFor(r, c)!.number_of_seasons!) }}
+                </span>
+              </div>
+            </div>
+            <button type="button" class="pick" :disabled="busy === r.id" @click="choose(r, c.media_type, c.tmdb_id)">{{ t('common.thisOne') }}</button>
+          </li>
+        </ul>
+      </template>
       <p v-else class="small muted">{{ t('resolution.noCandidates') }}</p>
 
       <details>
@@ -186,7 +362,7 @@ function goto(o: number) {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  overflow-x: auto;
+  min-width: 0;
 }
 .res header {
   display: flex;
@@ -196,6 +372,80 @@ function goto(o: number) {
 }
 .res header p {
   margin: 2px 0 0;
+}
+.head-main {
+  min-width: 0;
+}
+.head-ctx {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  text-align: right;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+}
+.seasons ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+.cand-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cands {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cand {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.cand-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-wrap: anywhere;
+}
+.meta,
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  align-items: center;
+}
+.match {
+  font-weight: 600;
+}
+.pick {
+  flex-shrink: 0;
+}
+@media (max-width: 600px) {
+  .head-ctx {
+    align-items: flex-start;
+    text-align: left;
+  }
+  .chips {
+    justify-content: flex-start;
+  }
+  .cand {
+    flex-wrap: wrap;
+  }
+  .pick {
+    margin-left: 70px;
+  }
 }
 .search {
   margin: 8px 0;

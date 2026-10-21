@@ -152,8 +152,13 @@ def run_recommendations(
     config: RecommenderConfig | None = None,
     now: datetime | None = None,
     echo: bool = True,
+    include_watchlist: bool = False,
 ) -> list[Recommendation]:
-    """Generate, persist and print one recommendation batch; returns its rows by rank."""
+    """Generate, persist and print one recommendation batch; returns its rows by rank.
+
+    Titles on an active watchlist are excluded unless ``include_watchlist``; the flag is
+    stored in each row's ``components`` under ``_include_watchlist``.
+    """
     if media_type is not None and media_type not in get_args(MediaType):
         raise ValueError(f"media_type must be one of {get_args(MediaType)}, got {media_type!r}")
     cfg = config or load_config(get_settings())
@@ -165,6 +170,7 @@ def run_recommendations(
             pool=cfg.candidate_pool,
             now=now,
             max_age_days=cfg.verified_max_age_days,
+            exclude_watchlist=not include_watchlist,
         )
         if cands:
             label_fn = _label_fn()
@@ -210,7 +216,7 @@ def run_recommendations(
                 title_id=x.cand.title.id,
                 rank=rank,
                 score=x.breakdown.total,
-                components=x.breakdown.components,
+                components={**x.breakdown.components, "_include_watchlist": include_watchlist},
                 weighted=x.breakdown.weighted,
                 reasons=why.texts,
                 reason_codes=why.codes,

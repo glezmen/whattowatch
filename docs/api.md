@@ -45,8 +45,19 @@ FeedbackResponse { user: UserState, signals: Signal[] }
 WatchlistEntry { title: TitleCard, sources: { source, added_at? }[], added_at? }   // címenként egy, csak aktív tételek
 HistoryEntry { title: TitleCard, events: { source, status, first_watched_at?, last_watched_at?, total_seconds?, episode_count? }[], last_watched_at? }
 ResolutionItem { id, source, lookup_key, title_text?, import_rows: int, status, method?, confidence?,
-                 candidates: { media_type, tmdb_id, title, original_title?, year?, score?, on_provider? }[],
-                 title_id?, resolved_at? }
+                 candidates: ResolutionCandidate[], title_id?, resolved_at?, context: ResolutionContext }
+ResolutionCandidate { media_type, tmdb_id, title, original_title?, year?, score?, on_provider?,
+                      poster_path?, overview? (≤300 karakter), vote_average?, vote_count?, popularity?,
+                      genre_ids: int[] (TMDB műfaj-id), tmdb_url? }
+  // a TMDB-keresés találatából, a feloldás idején; régebbi sorokon hiányozhatnak, amíg a
+  // következő import vagy a `wtw resolve refresh-candidates` újra nem értékeli őket
+ResolutionContext { rows: int, first_at?, last_at?, total_seconds?, devices: string[],
+                    seasons: { season?, episodes: int, episode_titles: string[] (≤5) }[],
+                    standalone: bool, source_profiles: string[] }
+  // a kapcsolt import-sorokból: netflix_viewing = Start Time, Duration, Device Type, évad/epizód;
+  // netflix_mylist/netflix_ratings/imdb_* = csak rows + a listára tétel/értékelés dátuma (first_at/last_at)
+CandidateDetails { tmdb_id, media_type, runtime?, number_of_seasons?, year?, overview?, poster_path?,
+                   imdb_id?, vote_count?, error? }
 SearchHit { media_type, tmdb_id, title, original_title, year?, popularity, vote_count, title_id? }  // title_id: már a helyi katalógusban
 SyncRun { id, source, started_at, finished_at?, status, processed, created, updated, skipped, errors: any[] }
 Settings { tmdb_api_key_set: bool, netflix_profile_name?, lm_studio_base_url, recommender: {weights, cold_start, ...} }
@@ -56,7 +67,7 @@ Settings { tmdb_api_key_set: bool, netflix_profile_name?, lm_studio_base_url, re
 
 | Metódus, út | Leírás |
 |---|---|
-| `GET /recommendations?limit=20&media_type=&refresh=false` | `RecommendationItem[]` a legutóbbi batch-ből (`generated_at` szerint); `refresh=true` új batch-et generál (lassú lehet: TMDB-ellenőrzés; TMDB-kulcs nélkül 409) |
+| `GET /recommendations?limit=20&media_type=&refresh=false` | `RecommendationItem[]` a legutóbbi batch-ből (`generated_at` szerint); `refresh=true` új batch-et generál (lassú lehet: TMDB-ellenőrzés; TMDB-kulcs nélkül 409); `include_watchlist=false` (alap) kihagyja az aktív watchlistes címeket (stored batch: utószűrés, `X-Filtered-Watchlist: <n>` fejléc a kihagyottak számával; a batch-flag a `components._include_watchlist` kulcsban, az API nem adja vissza), `true` bennehagyja |
 | `POST /recommendations/{batch_id}/{title_id}/feedback` `{feedback: "clicked"|"dismissed"|"watched"}` | ajánlás-visszajelzés; válasz `{batch_id, title_id, feedback, feedback_at}` |
 | `GET /titles/{id}` | `TitleDetail` (`TitleCard` + `resolutions`: honnan jött) |
 | `GET /titles?q=&media_type=&provider=&genre=&seen=&include_unverified=false&limit=50&offset=0` | `Page<TitleCard>`; helyi katalógus, alapból csak friss verified flatrate a hatból; `q` a magyar/eredeti/angol címben (kis-nagybetű független, csak ASCII-re), `provider` = szolgáltatókulcs, `genre` = pontos műfajnév; népszerűség szerint csökkenő |
@@ -72,6 +83,8 @@ Settings { tmdb_api_key_set: bool, netflix_profile_name?, lm_studio_base_url, re
 | `GET /search/tmdb?q=&media_type=` | `SearchHit[]` (TMDB, hu-HU) |
 | `POST /titles/ensure` `{media_type, tmdb_id}` | cím beemelése TMDB-ből (details), válasz `TitleCard` |
 | `GET /resolutions?status=ambiguous|unresolved&source=&limit=50&offset=0` | `Page<ResolutionItem>`; status nélkül mindkettő |
+| `GET /resolutions/{id}` | `ResolutionItem` (bármely státuszban); 404 ha nincs |
+| `GET /resolutions/{id}/candidates/details` | `CandidateDetails[]` az első 5 jelöltre, élő TMDB `details` hívással (hu-HU); nem ment címet; jelöltenkénti hiba az `error` mezőben (a többi jelölt ettől még jön); TMDB-kulcs nélkül 409 |
 | `POST /resolutions/{id}/set` `{media_type, tmdb_id}` / `POST /resolutions/{id}/reject` | kézi feloldás; válasz `{resolution: ResolutionItem, reimport_needed}`; `set` után a kapcsolódó import újraépítése nem automatikus (`reimport_needed: true`), `reject`-nél `false` |
 | `GET /sync/runs?limit=50` | `SyncRun[]`, legújabb elöl |
 | `POST /chat` `{messages: [{role: "user"\|"assistant", content}], provider?: "lmstudio"\|"anthropic"\|"openai"}` | beszélgetős ajánló (docs/llm.md 2.2); válasz `ChatResult {reply, tool_trace: [{name, arguments, result_summary, error, title_ids}], provider, model, usage, rounds_exhausted}`; az utolsó üzenet `user`; a modell csak a hét típusos eszközt hívhatja (max. 6 kör, utána eszköz nélküli zárás); a `title_ids` a `get_recommendations`/`search_titles` helyi találatai a kártyákhoz. `409` ha a provider nincs beállítva, `502` ha a provider hívása hibázik. A `get_recommendations` eszköz új ajánlás-batch-et ment (ez lesz a legutóbbi); szűrőkkel nagyobb (max. 50) batch-et kér és utószűr, a `mood_labels` csak előre sorol (a cím műfajaiból képzett szótárcímkék egyezése szerint), nem szűr |
@@ -195,3 +208,19 @@ app-beállítás ugyanez, visszafelé kompatibilisen).
   `POST /settings/llm/test`: mindig `200` (`ok: false, error` hibánál), kivéve ismeretlen
   `provider` → `422`; ha a `provider` eltér a beállítottól és nincs `model`, a provider
   alapértelmezett modellje fut.
+
+## Mentés és visszaállítás
+
+A mentés egyetlen SQLite-fájl (`whattowatch-backup-YYYYMMDDTHHMMSSZ.db`), amelyet a
+sqlite3 online backup API készít, így futó alkalmazás mellett is konzisztens. A fájlok a
+`BACKUPS_DIR` (alap: `data/backups`, gitignored `data/` alatt) könyvtárba kerülnek.
+**Nincs benne:** a `.env` titkai (API-kulcsok) és a `data/imports` alá feltöltött
+exportfájlok; a válaszok `note` mezője ezt jelzi. Kód: `services/backup.py`, CLI:
+`wtw backup export|restore|list`.
+
+| Metódus, út | Leírás |
+|---|---|
+| `GET /backup/export` | friss pillanatkép, `BACKUPS_DIR`-ben is megmarad; válasz `application/vnd.sqlite3` csatolmány (`Content-Disposition: attachment; filename="whattowatch-backup-…db"`) |
+| `GET /backup/list` | `{backups_dir, items: [{name, size_bytes, created_at}], note}`, legújabb elöl |
+| `POST /backup/inspect` multipart `file` | ellenőrzés visszaállítás nélkül (csak olvasva): SQLite-fejléc, `quick_check`, `alembic_version` tábla, ismert revízió; válasz `BackupInfo {alembic_revision, tables, titles, watch_events, size_bytes, note}`; érvénytelen fájl → 422 `detail_code: invalid_backup` |
+| `POST /backup/restore` multipart `file` + `confirm: "RESTORE"` | előbb biztonsági mentés a jelenlegi adatbázisról `BACKUPS_DIR`-be, majd atomikus fájlcsere (`-wal`/`-shm` törlése), `alembic upgrade head` (régebbi sémájú mentés is visszaállítható) és szolgáltató-seed; a szerver motor-/session-cache-e újraépül. Válasz `{previous_backup, revision_before (a feltöltött fájlé), revision_after, restored: BackupInfo, note}`. Hiányzó/hibás `confirm` → 422 `detail_code: confirm_required`; érvénytelen fájl → 422 `invalid_backup` |

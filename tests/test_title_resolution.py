@@ -16,12 +16,14 @@ from whattowatch.adapters.tmdb import BASE_URL, TmdbClient
 from whattowatch.cli import ROOT
 from whattowatch.config import Settings
 from whattowatch.db.engine import create_engine_from_settings
-from whattowatch.db.models import Availability, Provider, Title, TitleResolution
+from whattowatch.db.models import Availability, ImportRow, Provider, Title, TitleResolution
 from whattowatch.db.seed import seed_providers
 from whattowatch.services.title_resolution import (
     ResolveRequest,
     build_lookup_key,
     normalize,
+    refresh_resolution,
+    request_for_rows,
     resolve_title,
 )
 
@@ -145,7 +147,22 @@ def test_ambiguous_keeps_candidates_and_creates_no_title(
         "original_title",
         "year",
         "score",
+        "poster_path",
+        "overview",
+        "vote_average",
+        "vote_count",
+        "popularity",
+        "genre_ids",
+        "tmdb_url",
     }
+    first = next(c for c in r.candidates if c["tmdb_id"] == 1001)
+    assert first["poster_path"] == "/thing2011.jpg" and first["genre_ids"] == [27, 878]
+    assert len(first["overview"]) == 300 and first["overview"].endswith("…")
+    assert first["vote_average"] == 6.2 and first["vote_count"] == 2500
+    assert first["tmdb_url"] == "https://www.themoviedb.org/movie/1001"
+    other = next(c for c in r.candidates if c["tmdb_id"] == 1002)
+    assert other["poster_path"] is None and other["overview"] is None
+    assert other["genre_ids"] == []
     assert title_count(session) == 0
 
 
@@ -409,3 +426,59 @@ def test_punctuation_retry_on_zero_hits(session: Session, tmdb: TmdbClient) -> N
     r = resolve_title(session, tmdb, ResolveRequest("netflix_viewing", "Don't Move", "movie"))
     assert route.call_count == 2
     assert r.status == "resolved" and tmdb_id_of(session, r) == 2
+
+
+@respx.mock
+def test_refresh_resolution_fills_candidate_fields(session: Session, tmdb: TmdbClient) -> None:
+    respx.get(f"{BASE_URL}/search/movie").mock(return_value=ok("search_movie_ambiguous.json"))
+    req = ResolveRequest("imdb_ratings", "The Thing", "movie", language="en")
+    old = TitleResolution(
+        source="imdb_ratings",
+        lookup_key=build_lookup_key(req),
+        status="ambiguous",
+        candidates=[{"media_type": "movie", "tmdb_id": 1001, "title": "The Thing"}],
+    )
+    session.add(old)
+    session.flush()
+    session.add(
+        ImportRow(
+            source="imdb_ratings",
+            file_sha256="f",
+            row_hash="r1",
+            raw={},
+            title_text="The Thing",
+            parsed={"imdb_id": None, "year": None},
+            resolution_id=old.id,
+        )
+    )
+    session.flush()
+    row = refresh_resolution(session, tmdb, old.id)
+    assert row is not None and row.id == old.id and row.status == "ambiguous"
+    assert row.candidates is not None and len(row.candidates) == 3
+    assert all("tmdb_url" in c for c in row.candidates)
+    old.status = "rejected"
+    assert refresh_resolution(session, tmdb, old.id) is None
+
+
+def test_request_for_rows_netflix_viewing() -> None:
+    req = ResolveRequest(
+        "netflix_viewing",
+        "Dark",
+        "tv",
+        language="hu",
+        max_year=2019,
+        expected_provider_key="netflix",
+    )
+    res = TitleResolution(source="netflix_viewing", lookup_key=build_lookup_key(req))
+    rows = [
+        ImportRow(
+            source="netflix_viewing",
+            title_text=f"Dark: 1. évad: Ep {i}",
+            parsed={"display_title": "Dark", "kind": "episode", "start_time": f"{y}-05-01T10:00"},
+        )
+        for i, y in ((1, 2020), (2, 2019))
+    ]
+    assert request_for_rows(res, rows) == req
+    assert request_for_rows(res, []) is None
+    res.lookup_key = "other|tv|"
+    assert request_for_rows(res, rows) is None

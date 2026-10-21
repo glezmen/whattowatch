@@ -133,7 +133,46 @@ export interface ResolutionCandidate {
   original_title?: string
   year?: number | null
   score?: number
-  on_provider?: boolean
+  on_provider?: boolean | null
+  poster_path?: string | null
+  overview?: string | null
+  vote_average?: number | null
+  vote_count?: number | null
+  popularity?: number | null
+  genre_ids?: number[]
+  tmdb_url?: string | null
+}
+
+export interface ResolutionSeason {
+  season: number | null
+  episodes: number
+  episode_titles: string[]
+}
+
+/** What the linked import rows say (viewing: dates, duration, devices, seasons). */
+export interface ResolutionContext {
+  rows: number
+  first_at: string | null
+  last_at: string | null
+  total_seconds: number | null
+  devices: string[]
+  seasons: ResolutionSeason[]
+  standalone: boolean
+  source_profiles: string[]
+}
+
+/** Live TMDB details of a candidate (not persisted); `error` if that lookup failed. */
+export interface CandidateDetails {
+  tmdb_id: number
+  media_type: MediaType
+  runtime: number | null
+  number_of_seasons: number | null
+  year: number | null
+  overview: string | null
+  poster_path: string | null
+  imdb_id: string | null
+  vote_count: number | null
+  error: string | null
 }
 
 export interface Resolution {
@@ -148,6 +187,7 @@ export interface Resolution {
   candidates: ResolutionCandidate[] | null
   title_id?: number | null
   resolved_at?: string | null
+  context?: ResolutionContext
 }
 
 export interface ResolutionActionResponse {
@@ -511,6 +551,7 @@ export const api = {
   setResolution: (id: number, media_type: MediaType, tmdb_id: number) =>
     request<ResolutionActionResponse>('POST', `/resolutions/${id}/set`, { media_type, tmdb_id }),
   rejectResolution: (id: number) => request<ResolutionActionResponse>('POST', `/resolutions/${id}/reject`),
+  getCandidateDetails: (id: number) => request<CandidateDetails[]>('GET', `/resolutions/${id}/candidates/details`),
 
   getSyncRuns: (limit = 50) => request<SyncRun[] | Page<SyncRun>>('GET', `/sync/runs${qs({ limit })}`),
   getSettings: () => request<Settings>('GET', '/settings'),

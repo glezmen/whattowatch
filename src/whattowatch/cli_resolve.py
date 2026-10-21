@@ -10,11 +10,15 @@ import typer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from whattowatch.adapters.tmdb import TmdbClient
+from whattowatch.adapters.tmdb import TmdbClient, TmdbError
 from whattowatch.config import get_settings
 from whattowatch.db.engine import create_engine_from_settings, session_factory
 from whattowatch.db.models import ImportRow, MediaType, Title, TitleResolution
-from whattowatch.services.title_resolution import reject_resolution, set_manual_resolution
+from whattowatch.services.title_resolution import (
+    refresh_resolution,
+    reject_resolution,
+    set_manual_resolution,
+)
 
 resolve_app = typer.Typer(help="Review and fix title resolutions", no_args_is_help=True)
 
@@ -59,6 +63,44 @@ def list_cmd(
                     f" / {c.get('original_title')} ({c.get('year') or '?'})  {c['score']:.2f}"
                 )
         typer.echo(f"{len(rows)} nyitott feloldás.")
+
+
+@resolve_app.command("refresh-candidates")
+def refresh_candidates_cmd(
+    status: Annotated[
+        Literal["ambiguous", "unresolved"] | None, typer.Option(help="ambiguous | unresolved")
+    ] = None,
+) -> None:
+    """Re-run resolution for open rows (fills candidate posters, overviews, votes)."""
+    key = get_settings().tmdb_api_key
+    if not key:
+        typer.echo("Hiba: a TMDB_API_KEY nincs beállítva (.env).", err=True)
+        raise typer.Exit(code=2)
+    statuses = [status] if status else ["ambiguous", "unresolved"]
+    counts: dict[str, int] = {}
+    with _session() as session, TmdbClient(key) as tmdb:
+        ids = list(
+            session.scalars(
+                select(TitleResolution.id)
+                .where(TitleResolution.status.in_(statuses))
+                .order_by(TitleResolution.id)
+            )
+        )
+        for rid in ids:
+            try:
+                row = refresh_resolution(session, tmdb, rid)
+            except TmdbError as exc:
+                session.rollback()
+                typer.echo(f"#{rid}: TMDB-hiba: {exc}", err=True)
+                counts["error"] = counts.get("error", 0) + 1
+                continue
+            outcome = row.status if row is not None else "skipped"
+            counts[outcome] = counts.get(outcome, 0) + 1
+            session.commit()
+    summary = ", ".join(f"{k}: {v}" for k, v in sorted(counts.items())) or "nincs nyitott sor"
+    typer.echo(f"{len(ids)} feloldás újraértékelve ({summary}).")
+    if counts.get("resolved"):
+        typer.echo("Új feloldások: futtasd újra az importot az adatok átvételéhez.")
 
 
 @resolve_app.command("set")

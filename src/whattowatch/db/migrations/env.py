@@ -5,7 +5,8 @@ from whattowatch.db.engine import create_engine_from_settings
 from whattowatch.db.models import Base
 
 target_metadata = Base.metadata
-settings = Settings()
+# `db/migrate.py` passes the target settings; plain `alembic` falls back to the environment.
+settings: Settings = context.config.attributes.get("settings") or Settings()
 
 
 def run_migrations_offline() -> None:

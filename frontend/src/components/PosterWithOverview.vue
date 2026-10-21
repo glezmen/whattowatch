@@ -1,12 +1,19 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { TitleCard } from '../api/client'
-import { displayTitle } from '../titles'
+import { displayTitle, type TitleNames } from '../titles'
 
 const IMG_BASE = 'https://image.tmdb.org/t/p/w342'
+const IMG_BASE_SMALL = 'https://image.tmdb.org/t/p/w154'
 
-const props = defineProps<{ title: TitleCard }>()
+/** Anything with names, a poster and a (Hungarian) overview: a TitleCard or a search candidate. */
+export interface PosterSource extends TitleNames {
+  poster_path?: string | null
+  overview_hu?: string | null
+}
+
+// small: 60px thumbnail (e.g. resolution candidates); hideLangNote: overview language is mixed.
+const props = defineProps<{ title: PosterSource; small?: boolean; hideLangNote?: boolean }>()
 const { t: tr, locale } = useI18n()
 const mainTitle = computed(() => displayTitle(props.title))
 const overview = computed(() => props.title.overview_hu?.trim() || '')
@@ -17,8 +24,8 @@ function onPosterTap() {
 </script>
 
 <template>
-  <div class="poster-wrap" :class="{ 'tap-open': tapOpen }" @click="onPosterTap">
-    <img v-if="title.poster_path" class="poster" :src="IMG_BASE + title.poster_path" :alt="tr('card.poster', { title: mainTitle })" loading="lazy" />
+  <div class="poster-wrap" :class="{ 'tap-open': tapOpen, small }" @click="onPosterTap">
+    <img v-if="title.poster_path" class="poster" :src="(small ? IMG_BASE_SMALL : IMG_BASE) + title.poster_path" :alt="tr('card.poster', { title: mainTitle })" loading="lazy" />
     <div v-else class="poster placeholder" aria-hidden="true">
       <svg viewBox="0 0 24 24" width="32" height="32">
         <path d="M4 5h16v14H4zM4 9h16M8 5v4M12 5v4M16 5v4" fill="none" stroke="currentColor" stroke-width="1.5" />
@@ -27,7 +34,7 @@ function onPosterTap() {
     <div class="poster-overlay small" aria-hidden="true">
       <template v-if="overview">
         {{ overview }}
-        <span v-if="locale === 'en'" class="muted note">{{ tr('card.huDescNote') }}</span>
+        <span v-if="locale === 'en' && !hideLangNote" class="muted note">{{ tr('card.huDescNote') }}</span>
       </template>
       <template v-else>{{ tr('card.noDescription') }}</template>
     </div>
@@ -48,6 +55,20 @@ function onPosterTap() {
   width: var(--poster-width, 92px);
   align-self: flex-start;
 }
+.poster-wrap.small {
+  --poster-width: 60px;
+}
+.poster-wrap.small svg {
+  width: 20px;
+  height: 20px;
+}
+.poster-wrap.small .poster-overlay {
+  width: 240px;
+  inset: 0 auto auto 0;
+  max-height: 200px;
+  z-index: 5;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.25);
+}
 .poster-overlay {
   position: absolute;
   inset: 0;
@@ -62,12 +83,40 @@ function onPosterTap() {
   pointer-events: none;
   transition: opacity 0.2s ease;
 }
-.poster-wrap.tap-open .poster-overlay {
+.poster-wrap.tap-open .poster-wrap.small {
+  --poster-width: 60px;
+}
+.poster-wrap.small svg {
+  width: 20px;
+  height: 20px;
+}
+.poster-wrap.small .poster-overlay {
+  width: 240px;
+  inset: 0 auto auto 0;
+  max-height: 200px;
+  z-index: 5;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.25);
+}
+.poster-overlay {
   opacity: 1;
   pointer-events: auto;
 }
 @media (hover: hover) {
-  .poster-wrap:hover .poster-overlay {
+  .poster-wrap:hover .poster-wrap.small {
+  --poster-width: 60px;
+}
+.poster-wrap.small svg {
+  width: 20px;
+  height: 20px;
+}
+.poster-wrap.small .poster-overlay {
+  width: 240px;
+  inset: 0 auto auto 0;
+  max-height: 200px;
+  z-index: 5;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.25);
+}
+.poster-overlay {
     opacity: 1;
     pointer-events: auto;
   }

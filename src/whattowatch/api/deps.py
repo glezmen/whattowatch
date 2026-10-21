@@ -7,7 +7,8 @@ from collections.abc import Iterator
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
+from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from whattowatch.adapters.tmdb import TmdbClient
@@ -49,6 +50,25 @@ def _factory(request: Request, settings: Settings) -> sessionmaker[Session]:
             factory = session_factory(state.engine)
             state.session_factory = factory
     return factory
+
+
+def app_engine(request: Request, settings: Settings) -> Engine:
+    """The app's cached engine (created on first use)."""
+    _factory(request, settings)
+    engine: Engine = request.app.state.engine
+    return engine
+
+
+def reset_engine(app: FastAPI) -> None:
+    """Dispose and forget the cached engine/session factory (e.g. after a DB restore);
+    the next request builds fresh ones."""
+    state = app.state
+    with _lock:
+        engine: Engine | None = getattr(state, "engine", None)
+        if engine is not None:
+            engine.dispose()
+        state.engine = None
+        state.session_factory = None
 
 
 def session_dep(

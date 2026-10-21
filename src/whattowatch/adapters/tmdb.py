@@ -38,6 +38,10 @@ class SearchHit(BaseModel):
     year: int | None
     popularity: float
     vote_count: int
+    genre_ids: list[int] = []
+    vote_average: float | None = None
+    poster_path: str | None = None
+    overview: str | None = None
 
 
 class EpisodeAir(BaseModel):
@@ -100,10 +104,7 @@ class Provider(BaseModel):
 
 
 class DiscoverHit(SearchHit):
-    genre_ids: list[int] = []
-    vote_average: float | None = None
-    poster_path: str | None = None
-    overview: str | None = None
+    """Discover results carry the same fields as search hits."""
 
 
 class DiscoverPage(BaseModel):
@@ -125,6 +126,10 @@ def _nonempty(value: Any) -> str | None:
     return None
 
 
+def _opt_float(value: Any) -> float | None:
+    return float(value) if value is not None else None
+
+
 def _hit(item: Mapping[str, Any], media_type: MediaType) -> SearchHit:
     if media_type == "movie":
         title, original, date = item.get("title"), item.get("original_title"), "release_date"
@@ -138,19 +143,15 @@ def _hit(item: Mapping[str, Any], media_type: MediaType) -> SearchHit:
         year=_year(item.get(date)),
         popularity=float(item.get("popularity") or 0.0),
         vote_count=int(item.get("vote_count") or 0),
+        genre_ids=[int(g) for g in item.get("genre_ids") or []],
+        vote_average=_opt_float(item.get("vote_average")),
+        poster_path=_nonempty(item.get("poster_path")),
+        overview=_nonempty(item.get("overview")),
     )
 
 
 def _discover_hit(item: Mapping[str, Any], media_type: MediaType) -> DiscoverHit:
-    base = _hit(item, media_type)
-    vote_average = item.get("vote_average")
-    return DiscoverHit(
-        **base.model_dump(),
-        genre_ids=[int(g) for g in item.get("genre_ids") or []],
-        vote_average=float(vote_average) if vote_average is not None else None,
-        poster_path=_nonempty(item.get("poster_path")),
-        overview=_nonempty(item.get("overview")),
-    )
+    return DiscoverHit(**_hit(item, media_type).model_dump())
 
 
 def _episode(value: Any) -> EpisodeAir | None:
@@ -176,10 +177,6 @@ def _translation(
         if t.get("iso_3166_1") == prefer_country:
             return t
     return matches[0] if matches else None
-
-
-def _opt_float(value: Any) -> float | None:
-    return float(value) if value is not None else None
 
 
 def parse_details(data: Mapping[str, Any], media_type: MediaType) -> TitleDetails:

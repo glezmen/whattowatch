@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from whattowatch.adapters.tmdb import AvailabilitySnapshot, SearchHit, TmdbClient, TmdbError
 from whattowatch.db.models import (
+    ImportRow,
     ImportSource,
     MediaType,
     ResolutionMethod,
@@ -39,7 +40,9 @@ __all__ = [
     "ResolveRequest",
     "build_lookup_key",
     "normalize",
+    "refresh_resolution",
     "reject_resolution",
+    "request_for_rows",
     "resolve_title",
     "set_manual_resolution",
 ]
@@ -59,6 +62,7 @@ POPULARITY_MIN_VOTES = 50
 POPULARITY_CONFIDENCE = 0.75
 FUZZY_SINGLE_MIN = 0.8
 FUZZY_SINGLE_GAP = 0.2
+OVERVIEW_MAX = 300
 SEARCH_LANGUAGES = {"hu": None, "en": "en-US"}  # None = client default (hu-HU)
 
 _TRAILING_PUNCT = re.compile(r"[\s.,;:!?\-–—]+$")
@@ -112,7 +116,14 @@ def _score(text: str, hit: SearchHit, year: int | None) -> tuple[float, bool]:
     return score, exact
 
 
+def tmdb_url(media_type: MediaType, tmdb_id: int) -> str:
+    return f"https://www.themoviedb.org/{media_type}/{tmdb_id}"
+
+
 def _candidate(hit: SearchHit, score: float) -> dict[str, Any]:
+    overview = hit.overview
+    if overview and len(overview) > OVERVIEW_MAX:
+        overview = overview[: OVERVIEW_MAX - 1].rstrip() + "…"
     return {
         "media_type": hit.media_type,
         "tmdb_id": hit.tmdb_id,
@@ -120,6 +131,13 @@ def _candidate(hit: SearchHit, score: float) -> dict[str, Any]:
         "original_title": hit.original_title,
         "year": hit.year,
         "score": round(score, 4),
+        "poster_path": hit.poster_path,
+        "overview": overview,
+        "vote_average": hit.vote_average,
+        "vote_count": hit.vote_count,
+        "popularity": hit.popularity,
+        "genre_ids": list(hit.genre_ids),
+        "tmdb_url": tmdb_url(hit.media_type, hit.tmdb_id),
     }
 
 
@@ -310,3 +328,89 @@ def reject_resolution(session: Session, resolution_id: int) -> TitleResolution:
     row.resolved_at = datetime.now(UTC)
     session.flush()
     return row
+
+
+def _min_year(rows: list[ImportRow], field: str) -> int | None:
+    years = []
+    for r in rows:
+        value = (r.parsed or {}).get(field)
+        if isinstance(value, str) and value:
+            try:
+                years.append(datetime.fromisoformat(value).year)
+            except ValueError:
+                continue
+    return min(years) if years else None
+
+
+_NETFLIX_DATE_FIELDS: dict[str, str] = {
+    "netflix_viewing": "start_time",
+    "netflix_mylist": "added_on",
+    "netflix_ratings": "event_ts",
+}
+
+
+def request_for_rows(row: TitleResolution, rows: list[ImportRow]) -> ResolveRequest | None:
+    """Rebuild the import's ResolveRequest for `row` from its linked import rows.
+
+    Mirrors the Netflix/IMDb importers; returns None if the rebuilt request does not
+    map back to the same lookup key (or there are no rows), so nothing is guessed.
+    """
+    if not rows:
+        return None
+    first = rows[0]
+    parsed = first.parsed or {}
+    req: ResolveRequest | None = None
+    if row.source == "netflix_viewing":
+        req = ResolveRequest(
+            source=row.source,
+            title_text=str(parsed.get("display_title") or first.title_text),
+            media_type_hint="tv" if parsed.get("kind") == "episode" else None,
+            language="hu",
+            max_year=_min_year(rows, "start_time"),
+            expected_provider_key="netflix",
+        )
+    elif row.source in _NETFLIX_DATE_FIELDS:
+        req = ResolveRequest(
+            source=row.source,
+            title_text=first.title_text,
+            language="en",
+            max_year=_min_year(rows, _NETFLIX_DATE_FIELDS[row.source]),
+            expected_provider_key="netflix",
+        )
+    elif row.source in ("imdb_ratings", "imdb_watchlist"):
+        parts = row.lookup_key.split("|")
+        hint = parts[1] if len(parts) > 1 and parts[1] in ("movie", "tv") else None
+        year = parsed.get("year")
+        req = ResolveRequest(
+            source=row.source,
+            title_text=first.title_text,
+            media_type_hint=hint,  # type: ignore[arg-type]
+            year=year if isinstance(year, int) else None,
+            imdb_id=parsed.get("imdb_id") or None,
+            language="en",
+        )
+    if req is None or build_lookup_key(req) != row.lookup_key:
+        return None
+    return req
+
+
+def refresh_resolution(
+    session: Session, tmdb: TmdbClient, resolution_id: int
+) -> TitleResolution | None:
+    """Re-run resolution for an open (ambiguous/unresolved) row via its import rows.
+
+    Returns None when the row is final or its request cannot be rebuilt. Flushes, no
+    commit; imported data is rebuilt only by re-running the import.
+    """
+    row = _get_resolution(session, resolution_id)
+    if row.status in FINAL_STATUSES:
+        return None
+    rows = list(
+        session.scalars(
+            select(ImportRow).where(ImportRow.resolution_id == row.id).order_by(ImportRow.id)
+        )
+    )
+    req = request_for_rows(row, rows)
+    if req is None:
+        return None
+    return resolve_title(session, tmdb, req)

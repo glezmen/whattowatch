@@ -84,6 +84,10 @@ class GetRecommendationsIn(_In):
         max_length=10,
         description="Hangulat-/témacímkék a zárt szótárból (kategória/kulcs); puha előnyt adnak.",
     )
+    include_watchlist: bool = Field(
+        default=False,
+        description="true = a watchlistes címek is szerepelhetnek (alapból kimaradnak).",
+    )
     limit: int = Field(default=8, ge=1, le=20)
 
     @field_validator("providers")
@@ -298,6 +302,7 @@ def get_recommendations(
         config=ctx.config,
         now=ctx.clock(),
         echo=False,
+        include_watchlist=args.include_watchlist,
     )
     subs = _subs(session, [r.title_id for r in rows], ctx)
     wanted_genres = {g.casefold() for g in args.genres or []}
@@ -490,7 +495,8 @@ TOOLS: tuple[Tool, ...] = (
         "get_recommendations",
         "Személyre szabott ajánlások a determinisztikus ajánlómotorból, csak ellenőrzötten "
         "elérhető, még nem látott címek. Szűrhető típusra, szolgáltatókra, műfajokra; a "
-        "mood_labels csak előnyt ad, nem szűr.",
+        "mood_labels csak előnyt ad, nem szűr. A watchlisten lévő címek alapból kimaradnak; "
+        "include_watchlist=true esetén szerepelhetnek.",
         GetRecommendationsIn,
         get_recommendations,
     ),

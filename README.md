@@ -31,6 +31,7 @@ uv run wtw import netflix <export.zip> --profile <name>  # Netflix personal data
 uv run wtw resolve list --status ambiguous   # ambiguous title matches
 uv run wtw resolve set <id> movie|tv <tmdb_id>
 uv run wtw resolve reject <id>
+uv run wtw resolve refresh-candidates [--status ambiguous|unresolved]  # re-check open rows (fills posters, overviews, votes)
 
 uv run wtw recommend run --limit 20 --media-type movie   # recommendation batch
 uv run wtw recommend extract-preferences --extractor rules|llm [--provider lmstudio]
@@ -50,6 +51,19 @@ Imports are idempotent: loading the same file twice does not create duplicates. 
 personal exports under the gitignored `data/` directory. Exports uploaded through the web UI
 are stored under `IMPORTS_DIR` (default `data/imports`) as `<source>/<utc>_<filename>` and
 imported on a background thread (`POST /api/import/upload`).
+
+## Backup and restore
+
+```
+uv run wtw backup export [--out PATH]   # consistent snapshot into BACKUPS_DIR (default data/backups)
+uv run wtw backup list
+uv run wtw backup restore PATH --yes    # safety snapshot first, then swap + migrate to head
+```
+
+A backup is a single SQLite file made with the sqlite3 online backup API, so it is safe to
+take while the server runs. It does **not** contain `.env` secrets or the uploaded exports in
+`IMPORTS_DIR`. Restore accepts backups from older schema revisions (they are migrated to
+head). The same operations are available under `/api/backup` (`docs/api.md`).
 
 ## Settings (M7)
 

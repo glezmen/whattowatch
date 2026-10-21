@@ -159,3 +159,125 @@ def test_search_and_ensure(api_tmdb: ApiEnv) -> None:
 
     gone = api.client.post("/api/titles/ensure", json={"media_type": "movie", "tmdb_id": 404404})
     assert gone.status_code == 404
+
+
+def _viewing_row(rid: int, i: int, parsed: dict[str, Any], device: str) -> ImportRow:
+    return ImportRow(
+        source="netflix_viewing",
+        file_sha256="f",
+        row_hash=f"ctx{i}",
+        raw={"Device Type": device},
+        profile_name="Norbi",
+        title_text="Dark",
+        parsed=parsed,
+        resolution_id=rid,
+    )
+
+
+def test_resolution_context(api: ApiEnv) -> None:
+    res = TitleResolution(source="netflix_viewing", lookup_key="dark||", status="ambiguous")
+    api.session.add(res)
+    api.session.flush()
+    ep = {"kind": "episode", "series_title": "Dark"}
+    rows = [
+        {
+            **ep,
+            "season": 1,
+            "episode_no": 2,
+            "episode_title": "Hazugságok",
+            "seconds": 3000,
+            "start_time": "2023-05-14T20:00:00+00:00",
+        },
+        {
+            **ep,
+            "season": 1,
+            "episode_no": 1,
+            "episode_title": "Titkok",
+            "seconds": 3100,
+            "start_time": "2023-05-12T20:00:00+00:00",
+        },
+        {
+            **ep,
+            "season": 2,
+            "episode_no": 1,
+            "episode_title": "Kezdetek",
+            "seconds": 2900,
+            "start_time": "2023-06-01T20:00:00+00:00",
+        },
+        {
+            "kind": "standalone",
+            "season": None,
+            "episode_no": None,
+            "episode_title": None,
+            "seconds": 600,
+            "start_time": "2023-06-02T21:00:00+00:00",
+        },
+    ]
+    for i, p in enumerate(rows):
+        api.session.add(_viewing_row(res.id, i, p, "TV" if i % 2 else "iPhone"))
+    api.session.commit()
+
+    item = api.client.get(f"/api/resolutions/{res.id}").json()
+    ctx = item["context"]
+    assert item["import_rows"] == 4 and ctx["rows"] == 4
+    assert ctx["first_at"].startswith("2023-05-12T20:00") and ctx["last_at"].startswith(
+        "2023-06-02"
+    )
+    assert ctx["total_seconds"] == 9600 and ctx["devices"] == ["TV", "iPhone"]
+    assert ctx["seasons"] == [
+        {"season": 1, "episodes": 2, "episode_titles": ["Titkok", "Hazugságok"]},
+        {"season": 2, "episodes": 1, "episode_titles": ["Kezdetek"]},
+    ]
+    assert ctx["standalone"] is True and ctx["source_profiles"] == ["Norbi"]
+    listed = api.client.get("/api/resolutions").json()["items"]
+    assert next(i for i in listed if i["id"] == res.id)["context"] == ctx
+    assert api.client.get("/api/resolutions/9999").status_code == 404
+
+
+def test_resolution_context_mylist(api: ApiEnv) -> None:
+    ids = _resolutions(api)
+    res = TitleResolution(source="netflix_mylist", lookup_key="ml||", status="unresolved")
+    api.session.add(res)
+    api.session.flush()
+    api.session.add(
+        ImportRow(
+            source="netflix_mylist",
+            file_sha256="f",
+            row_hash="ml1",
+            raw={},
+            title_text="X",
+            parsed={"added_on": "2024-02-03"},
+            resolution_id=res.id,
+        )
+    )
+    api.session.commit()
+    ctx = api.client.get(f"/api/resolutions/{res.id}").json()["context"]
+    assert ctx["rows"] == 1 and ctx["first_at"].startswith("2024-02-03")
+    assert ctx["total_seconds"] is None and ctx["seasons"] == [] and ctx["standalone"] is False
+    empty = api.client.get(f"/api/resolutions/{ids['unres']}").json()["context"]
+    assert empty["rows"] == 0 and empty["first_at"] is None
+
+
+@respx.mock
+def test_candidate_details(api_tmdb: ApiEnv) -> None:
+    api = api_tmdb
+    ids = _resolutions(api)
+    respx.get(f"{BASE_URL}/movie/157336").mock(
+        return_value=httpx.Response(200, json=fx("details_movie_157336.json"))
+    )
+    respx.get(f"{BASE_URL}/movie/1").mock(
+        return_value=httpx.Response(404, json=fx("error_404.json"))
+    )
+    r = api.client.get(f"/api/resolutions/{ids['amb']}/candidates/details")
+    assert r.status_code == 200, r.text
+    first, second = r.json()
+    assert first["tmdb_id"] == 157336 and first["runtime"] == 169 and first["error"] is None
+    assert first["imdb_id"] == "tt0816692" and first["year"] == 2014
+    assert second["tmdb_id"] == 1 and "404" in second["error"] and second["runtime"] is None
+    assert api.session.scalars(select(Title).filter_by(tmdb_id=157336)).first() is None
+    assert api.client.get("/api/resolutions/9999/candidates/details").status_code == 404
+
+
+def test_candidate_details_requires_tmdb_key(api: ApiEnv) -> None:
+    ids = _resolutions(api)
+    assert api.client.get(f"/api/resolutions/{ids['amb']}/candidates/details").status_code == 409

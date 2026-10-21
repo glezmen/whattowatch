@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import select
+from fastapi import APIRouter, HTTPException, Query, Response
+from sqlalchemy import func, select
 
 from whattowatch.api.cards import title_cards
 from whattowatch.api.deps import (
@@ -24,6 +24,7 @@ from whattowatch.api.schemas import (
 )
 from whattowatch.db.models import MediaType, Recommendation, Title
 from whattowatch.services.recommend import engine as recommend_engine
+from whattowatch.services.recommend.candidates import active_watchlist_ids
 
 router = APIRouter(prefix="/recommendations", tags=["recommendations"])
 
@@ -34,6 +35,7 @@ def _aware(dt: datetime) -> datetime:
 
 @router.get("", response_model=list[RecommendationItem])
 def get_recommendations(
+    response: Response,
     session: SessionDep,
     tmdb: OptionalTmdbDep,
     cfg: RecommenderConfigDep,
@@ -41,8 +43,13 @@ def get_recommendations(
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     media_type: MediaType | None = None,
     refresh: bool = False,
+    include_watchlist: bool = False,
 ) -> list[RecommendationItem]:
-    """The latest batch (by `generated_at`); `refresh=true` generates a new one first."""
+    """The latest batch (by `generated_at`); `refresh=true` generates a new one first.
+
+    Watchlisted titles are left out unless `include_watchlist`; for a stored batch this is a
+    post-hoc filter and `X-Filtered-Watchlist` carries the number removed.
+    """
     if refresh:
         if tmdb is None:
             raise no_tmdb_key()
@@ -54,6 +61,7 @@ def get_recommendations(
             config=cfg,
             now=now,
             echo=False,
+            include_watchlist=include_watchlist,
         )
         batch_id = rows[0].batch_id if rows else None
     else:
@@ -62,6 +70,7 @@ def get_recommendations(
             .order_by(Recommendation.generated_at.desc(), Recommendation.batch_id.desc())
             .limit(1)
         )
+    response.headers["X-Filtered-Watchlist"] = "0"
     if batch_id is None:
         return []
     query = (
@@ -73,6 +82,16 @@ def get_recommendations(
     )
     if media_type is not None:
         query = query.where(Title.media_type == media_type)
+    if not include_watchlist:
+        on_list = active_watchlist_ids(session)
+        if on_list:
+            hidden = (
+                select(func.count())
+                .select_from(Recommendation)
+                .where(Recommendation.batch_id == batch_id, Recommendation.title_id.in_(on_list))
+            )
+            response.headers["X-Filtered-Watchlist"] = str(session.scalar(hidden) or 0)
+            query = query.where(Recommendation.title_id.not_in(on_list))
     recs = list(session.scalars(query))
     cards = title_cards(
         session, [r.title for r in recs], now=now, max_age_days=cfg.verified_max_age_days
@@ -83,7 +102,7 @@ def get_recommendations(
             score=r.score,
             reasons=list(r.reasons or []),
             reason_codes=[ReasonCode(**c) for c in r.reason_codes or []],
-            components=dict(r.components or {}),
+            components={k: v for k, v in (r.components or {}).items() if not k.startswith("_")},
             title=card,
             batch_id=r.batch_id,
             generated_at=_aware(r.generated_at),

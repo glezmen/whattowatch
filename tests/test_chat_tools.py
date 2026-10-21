@@ -111,6 +111,16 @@ def test_get_recommendations_filters(recommend_db: Env) -> None:
     assert out["items"] == [] and "note" in out
 
 
+def test_get_recommendations_include_watchlist(recommend_db: Env) -> None:
+    _, ids = recommend_db
+    inv = {v: k for k, v in ids.items()}
+    out = run(recommend_db, "get_recommendations", {"limit": 20}, tmdb=StubTmdb())
+    assert not {107, 108} & {inv[i["title_id"]] for i in out["items"]}
+    args = {"limit": 20, "include_watchlist": True}
+    out = run(recommend_db, "get_recommendations", args, tmdb=StubTmdb())
+    assert {107, 108} <= {inv[i["title_id"]] for i in out["items"]}
+
+
 def test_get_recommendations_mood_is_soft_boost(recommend_db: Env) -> None:
     _, ids = recommend_db
     inv = {v: k for k, v in ids.items()}

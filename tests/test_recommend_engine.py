@@ -44,13 +44,14 @@ def _run(db: DB, cfg: RecommenderConfig | None = None, **kw: object) -> list[int
         config=cfg or RecommenderConfig(),
         now=NOW,
         echo=False,
+        include_watchlist=bool(kw.pop("include_watchlist", False)),
     )
     return [inv[r.title_id] for r in rows]
 
 
 def test_exclusions_and_verification(recommend_db: DB) -> None:
     stub = StubTmdb()
-    got = _run(recommend_db, tmdb=stub)
+    got = _run(recommend_db, tmdb=stub, include_watchlist=True)
     # watched (112), not interested (114), personally rated (201-206), no availability (110),
     # stale verified offer only (111), estimated but not confirmed (109) are all dropped.
     assert set(got) == {101, 102, 103, 104, 105, 106, 107, 108, 113}
@@ -116,21 +117,48 @@ def test_media_type_filter(recommend_db: DB) -> None:
 
 
 def test_expected_ranking_is_stable(recommend_db: DB) -> None:
-    first = _run(recommend_db)
+    first = _run(recommend_db, include_watchlist=True)
     assert first == EXPECTED_DEFAULT
-    assert _run(recommend_db) == first
+    assert _run(recommend_db, include_watchlist=True) == first
+
+
+def test_watchlist_titles_excluded_by_default(recommend_db: DB) -> None:
+    session, ids = recommend_db
+    default = _run(recommend_db)
+    assert 107 not in default and 108 not in default
+    assert set(default) == set(EXPECTED_DEFAULT) - {107, 108}
+    assert 107 in _run(recommend_db, include_watchlist=True)
+    kept = {c.title.id for c in load_candidates(session, now=NOW)}
+    assert ids[107] in kept
+    assert ids[107] not in {
+        c.title.id for c in load_candidates(session, now=NOW, exclude_watchlist=True)
+    }
+    # the batch is still `limit` long
+    assert len(_run(recommend_db, limit=4)) == 4
+
+
+def test_include_watchlist_flag_persisted(recommend_db: DB) -> None:
+    session, _ = recommend_db
+    off = run_recommendations(limit=3, session=session, tmdb=StubTmdb(), now=NOW, echo=False)
+    on = run_recommendations(
+        limit=3, session=session, tmdb=StubTmdb(), now=NOW, echo=False, include_watchlist=True
+    )
+    assert all(r.components["_include_watchlist"] is False for r in off)
+    assert all(r.components["_include_watchlist"] is True for r in on)
 
 
 def test_watchlist_weight_zero_changes_order(recommend_db: DB) -> None:
     cfg = RecommenderConfig(weights=Weights(watchlist=0.0))
-    assert _run(recommend_db, cfg) == EXPECTED_NO_WATCHLIST
+    assert _run(recommend_db, cfg, include_watchlist=True) == EXPECTED_NO_WATCHLIST
 
 
 def test_cold_start_switches_weights(recommend_db: DB) -> None:
     session, ids = recommend_db
     session.execute(delete(TitleRating).where(TitleRating.title_id.in_([ids[204], ids[205]])))
     session.commit()  # 4 personal ratings < 5
-    rows = run_recommendations(session=session, tmdb=StubTmdb(), now=NOW, echo=False)
+    rows = run_recommendations(
+        session=session, tmdb=StubTmdb(), now=NOW, echo=False, include_watchlist=True
+    )
     by_tmdb = {r.title.tmdb_id: r for r in rows}
     assert all(r.weighted["genre_affinity"] == 0 for r in rows)
     assert by_tmdb[107].weighted["watchlist"] == pytest.approx(0.35)
@@ -144,7 +172,13 @@ def test_diversity_caps_same_genre_run(recommend_db: DB) -> None:
         session, ids = recommend_db
         inv = {v: k for k, v in ids.items()}
         rows = run_recommendations(
-            limit=5, session=session, tmdb=StubTmdb(), config=cfg, now=NOW, echo=False
+            limit=5,
+            session=session,
+            tmdb=StubTmdb(),
+            config=cfg,
+            now=NOW,
+            echo=False,
+            include_watchlist=True,
         )
         assert len({inv[r.title_id] for r in rows}) == 5
         return [r.title.genres[0] for r in rows]
@@ -155,7 +189,9 @@ def test_diversity_caps_same_genre_run(recommend_db: DB) -> None:
 
 def test_reasons_are_hungarian_and_non_empty(recommend_db: DB) -> None:
     session, _ = recommend_db
-    rows = run_recommendations(session=session, tmdb=StubTmdb(), now=NOW, echo=False)
+    rows = run_recommendations(
+        session=session, tmdb=StubTmdb(), now=NOW, echo=False, include_watchlist=True
+    )
     for r in rows:
         assert 1 <= len(r.reasons) <= 3
         assert all(isinstance(s, str) and s.endswith(".") for s in r.reasons)
@@ -179,7 +215,7 @@ def test_batch_persisted_and_rerun_creates_new_batch(
     batches = {r.batch_id for r in stored}
     assert batches == {first[0].batch_id, second[0].batch_id} and len(batches) == 2
     assert [r.rank for r in first] == [1, 2, 3, 4, 5]
-    assert first[0].components.keys() == first[0].weighted.keys()
+    assert first[0].components.keys() - {"_include_watchlist"} == first[0].weighted.keys()
     assert first[0].feedback is None
 
     session.add(

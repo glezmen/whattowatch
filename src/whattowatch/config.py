@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     frontend_dist: str = "frontend/dist"
     # Where uploaded export files are kept (`<imports_dir>/<source>/<utc>_<name>`).
     imports_dir: str = "data/imports"
+    # Database snapshots (`wtw backup export`, restore safety copies); keep it out of git.
+    backups_dir: str = "data/backups"
     # Days before a known leaving date when an in-app notice is created (docs/updates.md 4).
     leaving_notice_days: str = "14,7,3"
 
