@@ -14,7 +14,9 @@ English. Full specification: `docs/spec.md`; plan: `docs/plan.md`.
 This installs Python and frontend dependencies if needed, creates `.env` from
 `.env.example` on first run, builds the web UI, applies database migrations and
 starts the server at http://127.0.0.1:8000, opening it in your browser. Options:
-`--no-open`, `--no-build`, `--port <n>`. API keys can be entered later in
+`--no-open`, `--no-build`, `--port <n>`, `--lan` (or `--host 0.0.0.0`) to reach the app from
+other devices on your local network — set profile passwords first, there is no HTTPS yet
+(see `docs/multiuser.md`, phase B). API keys can be entered later in
 Settings. `start.sh` installs `uv` itself if it is missing (official installer,
 no sudo). It needs Node.js 20.19+ for the UI build; on Ubuntu/Debian run it with
 `--install-node` to install Node.js 22 from NodeSource (apt's `nodejs` is too old).

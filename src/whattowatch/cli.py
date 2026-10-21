@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Annotated
 
 import typer
 import uvicorn
@@ -40,6 +41,20 @@ def db_upgrade() -> None:
 
 
 @app.command()
-def serve() -> None:
-    """Run the web app on 127.0.0.1:8000."""
-    uvicorn.run("whattowatch.api.app:create_app", factory=True, host="127.0.0.1", port=8000)
+def serve(
+    host: Annotated[
+        str,
+        typer.Option(
+            help="Bind address. Default localhost only; use 0.0.0.0 to reach the app from "
+            "other devices on your network (set profile passwords first)."
+        ),
+    ] = "127.0.0.1",
+    port: Annotated[int, typer.Option(help="Port")] = 8000,
+) -> None:
+    """Run the web app (default: http://127.0.0.1:8000)."""
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        typer.echo(
+            f"Figyelem: a {host} címen a helyi hálózat minden eszköze eléri az appot; "
+            "állíts be jelszót a profilokra (Beállítások → Profil)."
+        )
+    uvicorn.run("whattowatch.api.app:create_app", factory=True, host=host, port=port)

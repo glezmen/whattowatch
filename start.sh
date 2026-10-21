@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # One-shot launcher: sets up everything from scratch (if needed) and starts the app.
-# Usage: ./start.sh [--no-open] [--no-build] [--port 8000] [--install-node]
+# Usage: ./start.sh [--no-open] [--no-build] [--port 8000] [--host 127.0.0.1|0.0.0.0] [--install-node]
 # Installs uv automatically if missing; --install-node installs Node.js 22 via NodeSource (Ubuntu/Debian, sudo).
 set -euo pipefail
 
 cd "$(dirname "$0")"
 
 PORT=8000
+HOST=127.0.0.1
 OPEN=1
 BUILD=1
 INSTALL_NODE=0
@@ -15,6 +16,8 @@ while [[ $# -gt 0 ]]; do
     --no-open) OPEN=0 ;;
     --no-build) BUILD=0 ;;
     --port) PORT="$2"; shift ;;
+    --host) HOST="$2"; shift ;;
+    --lan) HOST=0.0.0.0 ;;
     --install-node) INSTALL_NODE=1 ;;
     -h|--help) sed -n '2,3p' "$0"; exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 2 ;;
@@ -100,8 +103,11 @@ fi
 
 # 7. Start
 URL="http://127.0.0.1:$PORT"
+if [[ "$HOST" != "127.0.0.1" && "$HOST" != "localhost" ]]; then
+  say "Binding to $HOST: the app is reachable from your whole local network - set profile passwords in Settings -> Profile"
+fi
 say "Starting whattowatch at $URL (Ctrl+C to stop)"
 if [[ $OPEN -eq 1 ]]; then
   ( sleep 2; if command -v open >/dev/null 2>&1; then open "$URL"; elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$URL"; fi ) &
 fi
-exec uv run uvicorn whattowatch.api.app:create_app --factory --host 127.0.0.1 --port "$PORT"
+exec uv run uvicorn whattowatch.api.app:create_app --factory --host "$HOST" --port "$PORT"
