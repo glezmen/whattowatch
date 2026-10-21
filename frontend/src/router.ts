@@ -1,24 +1,34 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { t } from './i18n'
 import HomeView from './views/HomeView.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/', component: HomeView, meta: { title: 'Neked ajánljuk' } },
-    { path: '/felfedezes', component: () => import('./views/DiscoverView.vue'), meta: { title: 'Felfedezés' } },
-    { path: '/beszelgetes', component: () => import('./views/ChatView.vue'), meta: { title: 'Beszélgetős ajánló' } },
-    { path: '/watchlist', component: () => import('./views/WatchlistView.vue'), meta: { title: 'Watchlist' } },
-    { path: '/elozmenyek', component: () => import('./views/HistoryView.vue'), meta: { title: 'Előzmények' } },
-    { path: '/feloldas', component: () => import('./views/ResolutionView.vue'), meta: { title: 'Címfeloldás' } },
-    { path: '/sync', component: () => import('./views/SyncView.vue'), meta: { title: 'Import és szinkron' } },
-    { path: '/beallitasok', component: () => import('./views/SettingsView.vue'), meta: { title: 'Beállítások' } },
-    { path: '/ujdonsagok', component: () => import('./views/UpdatesView.vue'), meta: { title: 'Újdonságok' } },
-    { path: '/tavozik', component: () => import('./views/LeavingView.vue'), meta: { title: 'Hamarosan távozik' } },
-    { path: '/:rest(.*)*', component: () => import('./views/PlaceholderView.vue'), props: { heading: 'Nincs ilyen oldal' } },
+    { path: '/', component: HomeView, meta: { titleKey: 'nav.home' } },
+    { path: '/felfedezes', component: () => import('./views/DiscoverView.vue'), meta: { titleKey: 'nav.discover' } },
+    { path: '/beszelgetes', component: () => import('./views/ChatView.vue'), meta: { titleKey: 'nav.chat' } },
+    { path: '/watchlist', component: () => import('./views/WatchlistView.vue'), meta: { titleKey: 'nav.watchlist' } },
+    { path: '/elozmenyek', component: () => import('./views/HistoryView.vue'), meta: { titleKey: 'nav.history' } },
+    { path: '/feloldas', component: () => import('./views/ResolutionView.vue'), meta: { titleKey: 'nav.resolution' } },
+    { path: '/import', component: () => import('./views/ImportView.vue'), meta: { titleKey: 'nav.import' } },
+    { path: '/sync', component: () => import('./views/SyncView.vue'), meta: { titleKey: 'nav.sync' } },
+    { path: '/beallitasok', component: () => import('./views/SettingsView.vue'), meta: { titleKey: 'nav.settings' } },
+    { path: '/ujdonsagok', component: () => import('./views/UpdatesView.vue'), meta: { titleKey: 'nav.updates' } },
+    { path: '/tavozik', component: () => import('./views/LeavingView.vue'), meta: { titleKey: 'nav.leaving' } },
+    {
+      path: '/:rest(.*)*',
+      component: () => import('./views/PlaceholderView.vue'),
+      props: { headingKey: 'nav.notFound' },
+      meta: { titleKey: 'nav.notFound' },
+    },
   ],
 })
 
-router.afterEach((to) => {
-  const t = to.meta.title
-  document.title = typeof t === 'string' ? `${t} · Mit nézzek?` : 'Mit nézzek?'
-})
+export function updateDocumentTitle(): void {
+  const key = router.currentRoute.value.meta.titleKey
+  const app = t('app.name')
+  document.title = typeof key === 'string' ? `${t(key)} · ${app}` : app
+}
+
+router.afterEach(() => updateDocumentTitle())

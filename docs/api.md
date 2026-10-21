@@ -132,3 +132,21 @@ továbbra is mind a hatot mutatja, `enabled: bool` jelzővel.
 ezt fordítja; a `reasons` szöveges mező marad magyar a CLI-hez. A `/chat`
 rendszerpromptja a beállított nyelven kér választ. A hibaüzenetek `detail`
 mezője mellett `detail_code` is jöhet, ahol van értelme (pl. `no_tmdb_key`).
+
+**Megvalósítási részletek (backend, M7):**
+- `ImportJob.id` egész szám (folyamaton belüli számláló; újraindításkor elölről kezdődik).
+- A feltöltés mappája az `IMPORTS_DIR` (alap `data/imports`); a fájlnév ASCII-re tisztítva
+  (`[A-Za-z0-9._-]`, más karakter → `_`). `422`: ismeretlen vagy nem támogatott `source`,
+  rossz kiterjesztés. TMDB-kulcs nélkül a feladat `failed` (a címfeloldáshoz kell).
+- `POST /import/netflix/profiles`: olvashatatlan ZIP `422`, ismeretlen `job_id` `404`;
+  a Netflix-feladat maga is eltárolja a talált profilneveket (`netflix_profiles`).
+- `GET /settings/app.netflix_profile_name`: az app-beállítás, ha nincs, a `.env`
+  `NETFLIX_PROFILE_NAME`; `PUT` `null`/üres értékkel törli az app-beállítást.
+- `PUT /settings/subscriptions` ismeretlen kulccsal `422` (semmi sem változik).
+- `AvailabilityEntry.enabled: bool` (bekapcsolt előfizetés-e).
+- `reason_codes` kódok és paraméterek: `watchlist`, `genre_match {genres: string[]}`,
+  `preference {label, labels?}` (`labels` = a `label` utáni további címkék, ha vannak),
+  `popular`, `new_release`, `external_score {source: "tmdb", vote_average}`, `abandoned`,
+  valamint `available` (tartalék: „Elérhető az előfizetéseiden.”, ha nincs erősebb indok).
+  A régi batch-ek sorainál `reason_codes` üres lista.
+- `detail_code` értékek: `no_tmdb_key` (409), `llm_not_configured` (`/chat` 409).

@@ -29,6 +29,7 @@ class AvailabilityEntry(BaseModel):
     leaving_confidence: str | None = None
     arriving_at: datetime | None = None
     arriving_confidence: str | None = None
+    enabled: bool = True  # the user's subscription switch (docs/api.md M7)
 
 
 class PersonalRating(BaseModel):
@@ -85,10 +86,16 @@ class TitleDetail(TitleCard):
     resolutions: list[ResolutionRef] = Field(default_factory=list)
 
 
+class ReasonCode(BaseModel):
+    code: str
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
 class RecommendationItem(BaseModel):
     rank: int
     score: float
     reasons: list[str]
+    reason_codes: list[ReasonCode] = Field(default_factory=list)
     components: dict[str, float]
     title: TitleCard
     batch_id: str
@@ -214,6 +221,78 @@ class SettingsOut(BaseModel):
     llm_fallback_allowed: bool = False
     llm_cloud_send_feedback_text: bool = False
     recommender: dict[str, Any]
+    ui_language: Literal["hu", "en"] = "hu"
+    enabled_subscriptions: list[str] = Field(default_factory=list)
+
+
+class SubscriptionItem(BaseModel):
+    key: str
+    display_name: str
+    enabled: bool
+    tmdb_provider_ids: list[int]
+
+
+class SubscriptionsOut(BaseModel):
+    items: list[SubscriptionItem]
+
+
+class SubscriptionsIn(BaseModel):
+    enabled: list[str]
+
+
+class AppSettingsOut(BaseModel):
+    ui_language: Literal["hu", "en"]
+    netflix_profile_name: str | None = None
+    netflix_profiles: list[str] = Field(default_factory=list)
+    onboarding_done: bool = False
+
+
+class AppSettingsIn(BaseModel):
+    """Partial update: a missing key is unchanged; `netflix_profile_name: null` clears."""
+
+    ui_language: Literal["hu", "en"] | None = None
+    netflix_profile_name: str | None = Field(default=None, max_length=200)
+    onboarding_done: bool | None = None
+
+
+class ImportSummary(BaseModel):
+    processed: int = 0
+    created: int = 0
+    updated: int = 0
+    skipped: int = 0
+    unresolved: int | None = None
+    ambiguous: int | None = None
+
+
+class ImportJobOut(BaseModel):
+    id: int
+    source: str
+    file_name: str
+    status: Literal["queued", "running", "done", "failed"]
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    summary: ImportSummary | None = None
+    error: str | None = None
+    sync_run_id: int | None = None
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+class NetflixProfileOut(BaseModel):
+    name: str
+    primary_lang: str | None = None
+    viewing_rows: int
+
+
+class NetflixProfilesOut(BaseModel):
+    profiles: list[NetflixProfileOut]
+
+
+class ImportSourceOut(BaseModel):
+    source: str
+    label_key: str
+    accepts: str
+    supported: bool
+    note_key: str | None = None
 
 
 class RecommendationFeedbackOut(BaseModel):

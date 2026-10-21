@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { api, type PreferenceSignal, type UserState } from '../api/client'
+import { useI18n } from 'vue-i18n'
 import { pushToast } from '../toast'
+import { preferenceLabel } from '../preferenceLabels'
 import StarRating from './StarRating.vue'
 
 type TextField = 'liked_text' | 'disliked_text'
@@ -9,6 +11,7 @@ type TextField = 'liked_text' | 'disliked_text'
 const props = defineProps<{ titleId: number; user: UserState; startOpen?: boolean }>()
 const emit = defineEmits<{ 'update:user': [user: UserState] }>()
 
+const { t } = useI18n()
 const busy = ref(false)
 const saving = ref(false)
 const open = ref(!!props.startOpen)
@@ -102,7 +105,7 @@ async function saveFields(fields: Partial<Record<TextField, string | null>>) {
     const res = await api.putFeedback(props.titleId, fields)
     emit('update:user', res.user)
     signals.value = res.signals
-    pushToast('Visszajelzés elmentve.')
+    pushToast(t('feedback.saved'))
   } catch {
     // Drafts are kept so the text is not lost; the toast shows the error.
   } finally {
@@ -132,6 +135,13 @@ function clearField(f: TextField) {
   if (props.user[f]) saveFields({ [f]: null })
 }
 
+/** Localized vocabulary name; the server's (Hungarian) label_name is the fallback. */
+function signalName(s: PreferenceSignal): string {
+  const key = s.label.includes('/') ? s.label : `${s.category}/${s.label}`
+  const local = preferenceLabel(key)
+  return local !== key ? local : s.label_name || s.label
+}
+
 async function removeSignal(s: PreferenceSignal) {
   const before = signals.value
   signals.value = (signals.value ?? []).filter((x) => x.id !== s.id)
@@ -147,7 +157,7 @@ async function removeSignal(s: PreferenceSignal) {
   <div class="feedback">
     <div class="quick">
       <button type="button" class="toggle" :class="{ active: user.seen }" :aria-pressed="user.seen" :disabled="busy" @click="toggleSeen">
-        {{ user.seen ? '✓ Már láttam' : 'Már láttam' }}
+        {{ user.seen ? t('feedback.seenActive') : t('feedback.seen') }}
       </button>
       <button
         type="button"
@@ -155,10 +165,10 @@ async function removeSignal(s: PreferenceSignal) {
         :class="{ active: appWatchlist }"
         :aria-pressed="appWatchlist"
         :disabled="busy"
-        :title="appWatchlist ? 'Eltávolítás az app watchlistjéről' : 'Mentés az app watchlistjére'"
+        :title="appWatchlist ? t('feedback.watchlistRemoveTitle') : t('feedback.watchlistAddTitle')"
         @click="toggleWatchlist"
       >
-        {{ appWatchlist ? '✓ Watchlisten' : '+ Watchlist' }}
+        {{ appWatchlist ? t('feedback.watchlistOn') : t('feedback.watchlistAdd') }}
       </button>
       <button
         type="button"
@@ -168,29 +178,29 @@ async function removeSignal(s: PreferenceSignal) {
         :disabled="busy"
         @click="toggleNotInterested"
       >
-        Nem érdekel
+        {{ t('feedback.notInterested') }}
       </button>
     </div>
     <div class="row">
-      <span class="small muted">Saját értékelés:</span>
+      <span class="small muted">{{ t('feedback.ownRating') }}</span>
       <StarRating :model-value="user.stars" :disabled="busy" @update:model-value="setStars" />
     </div>
 
     <button type="button" class="link small" :aria-expanded="open" @click="open = !open">
-      {{ open ? '▾' : '▸' }} Szöveges vélemény{{ user.liked_text || user.disliked_text ? ' (van)' : '' }}
+      {{ open ? '▾' : '▸' }} {{ t('feedback.textToggle') }}{{ user.liked_text || user.disliked_text ? ' ' + t('feedback.textHas') : '' }}
     </button>
     <div v-if="open" class="texts">
-      <p class="small muted">A két mező külön kerül feldolgozásra; mindkettő opcionális.</p>
+      <p class="small muted">{{ t('feedback.separateHint') }}</p>
       <label class="field positive">
-        <span class="label">Mi tetszett benne?</span>
+        <span class="label">{{ t('feedback.liked') }}</span>
         <span class="input-wrap">
           <textarea v-model="drafts.liked_text" rows="2" :disabled="saving" @blur="saveField('liked_text')" />
           <button
             v-if="drafts.liked_text || user.liked_text"
             type="button"
             class="icon-btn"
-            aria-label="Pozitív vélemény törlése"
-            title="Törlés"
+            :aria-label="t('feedback.clearLiked')"
+            :title="t('common.delete')"
             :disabled="saving"
             @mousedown.prevent
             @click="clearField('liked_text')"
@@ -198,15 +208,15 @@ async function removeSignal(s: PreferenceSignal) {
         </span>
       </label>
       <label class="field negative">
-        <span class="label">Mi nem tetszett benne?</span>
+        <span class="label">{{ t('feedback.disliked') }}</span>
         <span class="input-wrap">
           <textarea v-model="drafts.disliked_text" rows="2" :disabled="saving" @blur="saveField('disliked_text')" />
           <button
             v-if="drafts.disliked_text || user.disliked_text"
             type="button"
             class="icon-btn"
-            aria-label="Negatív vélemény törlése"
-            title="Törlés"
+            :aria-label="t('feedback.clearDisliked')"
+            :title="t('common.delete')"
             :disabled="saving"
             @mousedown.prevent
             @click="clearField('disliked_text')"
@@ -215,14 +225,14 @@ async function removeSignal(s: PreferenceSignal) {
       </label>
       <div class="row">
         <button type="button" :disabled="saving || (!dirty('liked_text') && !dirty('disliked_text'))" @click="saveAll">
-          {{ saving ? 'Mentés…' : 'Mentés' }}
+          {{ saving ? t('common.saving') : t('common.save') }}
         </button>
       </div>
       <div v-if="signals && signals.length" class="signals">
-        <span class="small muted">Kinyert jelzések (törölhetők):</span>
+        <span class="small muted">{{ t('feedback.signals') }}</span>
         <span v-for="s in [...positive, ...negative]" :key="s.id" class="chip" :class="s.polarity === '+' ? 'pos' : 'neg'" :title="`${s.category}${s.extractor ? ' · ' + s.extractor : ''}`">
-          {{ s.polarity === '+' ? '+' : '−' }} {{ s.label_name || s.label }}
-          <button type="button" class="icon-btn" :aria-label="`Jelzés törlése: ${s.label_name || s.label}`" @click="removeSignal(s)">×</button>
+          {{ s.polarity === '+' ? '+' : '−' }} {{ signalName(s) }}
+          <button type="button" class="icon-btn" :aria-label="t('feedback.deleteSignal', { label: signalName(s) })" @click="removeSignal(s)">×</button>
         </span>
       </div>
     </div>

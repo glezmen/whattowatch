@@ -18,6 +18,20 @@ from whattowatch.services.recommend.config import RecommenderConfig, load_config
 
 NO_TMDB_KEY = "Ehhez a művelethez TMDB API-kulcs kell (TMDB_API_KEY a .env-ben)."
 
+
+class CodedHTTPException(HTTPException):
+    """HTTPException whose JSON body also carries a stable `detail_code` for the UI
+    (rendered by the handler in `api/app.py`): `{"detail": ..., "detail_code": ...}`."""
+
+    def __init__(self, status_code: int, detail: str, detail_code: str) -> None:
+        super().__init__(status_code=status_code, detail=detail)
+        self.detail_code = detail_code
+
+
+def no_tmdb_key() -> CodedHTTPException:
+    return CodedHTTPException(409, NO_TMDB_KEY, "no_tmdb_key")
+
+
 _lock = threading.Lock()
 
 
@@ -55,7 +69,7 @@ def tmdb_dep(settings: Annotated[Settings, Depends(settings_dep)]) -> Iterator[T
 
 def require_tmdb(tmdb: Annotated[TmdbClient | None, Depends(tmdb_dep)]) -> TmdbClient:
     if tmdb is None:
-        raise HTTPException(status_code=409, detail=NO_TMDB_KEY)
+        raise no_tmdb_key()
     return tmdb
 
 

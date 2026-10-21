@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { api, itemsOf, type SyncRun } from '../api/client'
 import { fmtDateTime } from '../format'
 
+const COLS = ['source', 'started', 'finished', 'status', 'processed', 'created', 'updated', 'skipped', 'errors']
 const runs = ref<SyncRun[]>([])
 const loading = ref(false)
 const open = ref<number | null>(null)
@@ -25,19 +26,18 @@ function errText(e: unknown): string {
 </script>
 
 <template>
-  <h1>Import és szinkron</h1>
+  <h1>{{ $t('sync.title') }}</h1>
   <div class="toolbar">
-    <button type="button" :disabled="loading" @click="load">Frissítés</button>
-    <span class="small muted">Importot jelenleg a parancssorból lehet indítani.</span>
+    <button type="button" :disabled="loading" @click="load">{{ $t('common.refresh') }}</button>
+    <RouterLink to="/import" class="small">{{ $t('sync.hint') }}</RouterLink>
   </div>
-  <p v-if="loading && !runs.length" class="empty"><span class="spinner"></span> Betöltés…</p>
-  <p v-else-if="!runs.length" class="empty">Még nem futott import vagy szinkron.</p>
+  <p v-if="loading && !runs.length" class="empty"><span class="spinner"></span> {{ $t('common.loading') }}</p>
+  <p v-else-if="!runs.length" class="empty">{{ $t('sync.empty') }}</p>
   <div v-else class="table-wrap">
     <table class="small">
       <thead>
         <tr>
-          <th>Forrás</th><th>Indult</th><th>Befejeződött</th><th>Állapot</th>
-          <th>Feldolgozva</th><th>Új</th><th>Frissítve</th><th>Kihagyva</th><th>Hibák</th>
+          <th v-for="c in COLS" :key="c">{{ $t(`sync.cols.${c}`) }}</th>
         </tr>
       </thead>
       <tbody>

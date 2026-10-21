@@ -13,19 +13,19 @@ function onStatus(s: UpdatesResponse['source_status']) {
 </script>
 
 <template>
-  <h1>Hamarosan távozik</h1>
+  <h1>{{ $t('leaving.title') }}</h1>
   <div v-if="saMissing" class="banner small" role="status">
-    A Streaming Availability forrás nincs beállítva, az érkező és kikerülő adatok hiányoznak.
+    {{ $t('saBanner') }}
   </div>
   <div class="toolbar">
     <DaysSelector v-model="days" />
-    <span class="small muted">Kivezetési dátum csak forrásból származik; ha nem ismert, „hamarosan” címkét kap.</span>
+    <span class="small muted">{{ $t('leaving.hint') }}</span>
   </div>
   <UpdateSectionList
     section="leaving"
     :days="days"
     sort-by-date
-    empty-text="Ebben az időszakban nincs ismert kikerülő cím az előfizetéseiden."
+    :empty-text="$t('leaving.empty')"
     @status="onStatus"
   />
 </template>

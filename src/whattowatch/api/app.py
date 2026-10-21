@@ -15,6 +15,7 @@ from whattowatch.adapters.tmdb import TmdbError
 from whattowatch.api import (
     chat,
     history,
+    imports,
     recommendations,
     resolutions,
     search,
@@ -24,6 +25,7 @@ from whattowatch.api import (
     updates,
     watchlist,
 )
+from whattowatch.api.deps import CodedHTTPException
 from whattowatch.config import Settings, get_settings
 
 
@@ -44,6 +46,7 @@ def _api_router() -> APIRouter:
         sync,
         settings,
         updates,
+        imports,
     ):
         api.include_router(module.router)
     api.include_router(search.router)
@@ -51,6 +54,14 @@ def _api_router() -> APIRouter:
 
 
 def _install_error_handlers(app: FastAPI) -> None:
+    @app.exception_handler(CodedHTTPException)
+    async def _coded(_request: Request, exc: CodedHTTPException) -> JSONResponse:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail, "detail_code": exc.detail_code},
+            headers=exc.headers,
+        )
+
     @app.exception_handler(TmdbError)
     async def _tmdb_error(_request: Request, exc: TmdbError) -> JSONResponse:
         if exc.status == 404:

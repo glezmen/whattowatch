@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from whattowatch.api.deps import (
+    CodedHTTPException,
     NowDep,
     OptionalTmdbDep,
     RecommenderConfigDep,
@@ -59,7 +60,7 @@ def chat(
     try:
         provider = factory(body.provider)
     except LLMError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise CodedHTTPException(409, str(exc), "llm_not_configured") from exc
     try:
         return run_chat(
             body.messages,

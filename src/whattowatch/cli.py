@@ -11,6 +11,7 @@ from whattowatch.cli_llm import app as llm_app
 from whattowatch.cli_recommend import app as recommend_app
 from whattowatch.cli_refresh import app as refresh_app
 from whattowatch.cli_resolve import resolve_app
+from whattowatch.cli_settings import app as settings_app
 from whattowatch.cli_tmdb import tmdb_app
 from whattowatch.config import Settings
 from whattowatch.db.engine import create_engine_from_settings, session_factory
@@ -26,6 +27,7 @@ app.add_typer(recommend_app, name="recommend")
 app.add_typer(resolve_app, name="resolve")
 app.add_typer(llm_app, name="llm")
 app.add_typer(refresh_app, name="refresh")
+app.add_typer(settings_app, name="settings")
 
 ROOT = Path(__file__).resolve().parents[2]
 

@@ -1,0 +1,392 @@
+{
+  "app": {
+    "name": "What to watch?"
+  },
+  "nav": {
+    "home": "For you",
+    "discover": "Discover",
+    "chat": "Ask for ideas",
+    "watchlist": "Watchlist",
+    "history": "History",
+    "updates": "What's new",
+    "leaving": "Leaving soon",
+    "resolution": "Title matching",
+    "import": "Import",
+    "sync": "Sync log",
+    "settings": "Settings",
+    "notFound": "Page not found",
+    "menu": "Menu",
+    "language": "Language"
+  },
+  "common": {
+    "loading": "Loading…",
+    "save": "Save",
+    "saving": "Saving…",
+    "close": "Close",
+    "delete": "Delete",
+    "refresh": "Refresh",
+    "search": "Search",
+    "searchPlaceholder": "Search by title…",
+    "all": "All",
+    "yes": "yes",
+    "no": "no",
+    "type": "Type",
+    "allTypes": "All types",
+    "noResults": "Nothing found.",
+    "backHome": "Back to the home page",
+    "thisOne": "This one"
+  },
+  "lang": {
+    "hu": "Magyar",
+    "en": "English",
+    "huShort": "HU",
+    "enShort": "EN"
+  },
+  "mediaType": {
+    "movie": "movie",
+    "tv": "series",
+    "movieCap": "Movie",
+    "tvCap": "Series"
+  },
+  "confidence": {
+    "verified": "verified",
+    "stale": "outdated",
+    "estimated": "estimated",
+    "conflicting": "conflicting",
+    "user_denied": "disputed by you",
+    "exact": "exact"
+  },
+  "eventType": {
+    "new": "New on your services",
+    "upcoming": "Coming soon",
+    "expiring": "Leaving soon",
+    "leaving": "Leaving soon",
+    "removed": "Removed",
+    "new_season": "New season",
+    "watchlist_available": "Now streaming from your watchlist"
+  },
+  "source": {
+    "import": "import"
+  },
+  "errors": {
+    "unreachable": "Can't reach the server. Is the backend running?",
+    "conflict": "Conflict (409).",
+    "notFound": "Not found.",
+    "notFoundDetail": "Not found: {detail}",
+    "invalid": "Invalid request.",
+    "invalidDetail": "Invalid request: {detail}",
+    "server": "Server error ({status}).",
+    "serverDetail": "Server error ({status}): {detail}",
+    "code": {
+      "no_tmdb_key": "No TMDB API key is configured (set TMDB_API_KEY in .env)."
+    }
+  },
+  "pagination": {
+    "prev": "‹ Previous",
+    "next": "Next ›",
+    "pageInfo": "Page {page} of {pages} ({total} results)",
+    "results": "{total} results"
+  },
+  "days": {
+    "label": "Period",
+    "n": "{n} days"
+  },
+  "stars": {
+    "group": "Your rating (1–5 stars)",
+    "star": "{n} stars",
+    "clear": "Clear rating"
+  },
+  "feedback": {
+    "seen": "Seen it",
+    "seenActive": "✓ Seen it",
+    "watchlistAdd": "+ Watchlist",
+    "watchlistOn": "✓ On watchlist",
+    "watchlistAddTitle": "Save to the app's watchlist",
+    "watchlistRemoveTitle": "Remove from the app's watchlist",
+    "notInterested": "Not interested",
+    "ownRating": "Your rating:",
+    "textToggle": "Written review",
+    "textHas": "(added)",
+    "separateHint": "The two fields are processed separately, and both are optional.",
+    "liked": "What did you like?",
+    "disliked": "What didn't you like?",
+    "clearLiked": "Clear what you liked",
+    "clearDisliked": "Clear what you didn't like",
+    "saved": "Feedback saved.",
+    "signals": "Extracted signals (you can remove them):",
+    "deleteSignal": "Remove signal: {label}"
+  },
+  "card": {
+    "poster": "{title} poster",
+    "noHuTitle": "no Hungarian title",
+    "yearUnknown": "year unknown",
+    "seasons": "{n} seasons",
+    "minutes": "{n} min",
+    "checked": "checked: {date}",
+    "sourceTitle": "Source: {source}",
+    "leaving": "leaves: {date}",
+    "estimatedSuffix": " (estimated)",
+    "noAvailability": "No verified subscription availability.",
+    "notSubscribed": "not subscribed",
+    "fetchedAt": "Fetched: {date}",
+    "personal": "Yours ({source}): {value} [{scale}]"
+  },
+  "reason": {
+    "watchlist": "It's on your watchlist.",
+    "genre_match": "Same genres as titles you rated highly ({genres}).",
+    "preference": "Matches something you said you like: {label}.",
+    "popular": "Popular right now.",
+    "new_release": "A recent release.",
+    "abandoned": "You stopped watching this earlier.",
+    "external_score": "Well rated by TMDB users.",
+    "external_score_value": "Well rated by TMDB users ({score}/10).",
+    "available": "Streaming on your services."
+  },
+  "bell": {
+    "label": "Notifications",
+    "labelUnread": "Notifications: {n} unread",
+    "dialog": "Unread notifications",
+    "heading": "Notifications",
+    "empty": "No unread notifications.",
+    "markRead": "Mark as read"
+  },
+  "saBanner": "The Streaming Availability source isn't configured, so arrival and departure data is missing.",
+  "updates": {
+    "title": "What's new",
+    "hint": "The year on a card is the original release year; the date in the strip is the Hungarian streaming event.",
+    "loadFailed": "This section couldn't be loaded.",
+    "emptyDefault": "Nothing like this in this period.",
+    "sections": {
+      "new": "New on your services",
+      "upcoming": "Coming soon",
+      "new_season": "New seasons",
+      "watchlist_available": "Now streaming from your watchlist"
+    },
+    "empty": {
+      "new": "Nothing new arrived on your services in this period.",
+      "upcoming": "No known upcoming titles.",
+      "new_season": "No known new seasons in this period.",
+      "watchlist_available": "None of your watchlist titles became available."
+    },
+    "label": {
+      "new": "Streaming premiere (HU): {date}",
+      "upcomingUndated": "Coming soon (date unknown)",
+      "upcoming": "Arrives: {date}",
+      "new_season": "New season: {date}",
+      "watchlist_available": "Available since: {date}",
+      "leavingUndated": "Leaving soon (exact date unknown)",
+      "leaving": "Leaves: {date}"
+    },
+    "onWatchlist": "on watchlist",
+    "detected": "Detected: {date}",
+    "source": "source: {source}"
+  },
+  "leaving": {
+    "title": "Leaving soon",
+    "hint": "Departure dates only come from a source; when unknown, the title is just marked “soon”.",
+    "empty": "No titles are known to be leaving your services in this period."
+  },
+  "home": {
+    "title": "For you",
+    "refresh": "Refresh",
+    "refreshing": "Building new recommendations; checking TMDB availability can take a while…",
+    "generated": "Generated: {date}",
+    "empty": "No recommendations yet. Click “Refresh”.",
+    "noSubscriptions": "No subscriptions are switched on, so there's nothing to recommend. Turn on your services in Settings."
+  },
+  "onboarding": {
+    "title": "Let's get started",
+    "intro": "Three quick steps and recommendations will fit your services and your taste.",
+    "dismiss": "Hide",
+    "step1": "Which services do you subscribe to?",
+    "step1Hint": "We only recommend from these. You can change them later in Settings.",
+    "step2": "Upload your watch history and ratings",
+    "step2Link": "Open Import",
+    "step2Hint": "IMDb ratings, IMDb watchlist and the Netflix data export. Optional: you can also mark titles with “Seen it” on any card.",
+    "step3": "Done",
+    "step3Hint": "Finish the introduction when you're ready.",
+    "done": "Done"
+  },
+  "subscriptions": {
+    "title": "Subscriptions",
+    "hint": "Recommendations, Discover, What's new and the chat only use the services switched on here. Cards still show availability on all six services.",
+    "none": "No subscriptions are switched on: recommendations will be empty.",
+    "saveFailed": "Couldn't save your subscriptions."
+  },
+  "discover": {
+    "title": "Discover",
+    "hint": "Only titles from the local catalog with verified subscription availability in Hungary.",
+    "genre": "Genre",
+    "seen": "Seen",
+    "seenAll": "Seen and unseen",
+    "seenFalse": "Unseen only",
+    "seenTrue": "Seen only",
+    "provider": "Service"
+  },
+  "history": {
+    "title": "History and ratings",
+    "status": "Status",
+    "allStatuses": "All statuses",
+    "statuses": {
+      "watched": "watched",
+      "in_progress": "in progress",
+      "abandoned": "abandoned"
+    },
+    "empty": "No history yet.",
+    "noEvents": "no viewing events"
+  },
+  "watchlist": {
+    "title": "Watchlist",
+    "source": "Source",
+    "allSources": "All sources",
+    "availableOnly": "Streaming now only (verified, on your subscriptions)",
+    "hint": "Imported items (Netflix, IMDb) can only be removed at their source; here you manage the app's own watchlist. A watchlist shows interest, not a rating.",
+    "empty": "Your watchlist is empty."
+  },
+  "resolution": {
+    "title": "Title matching",
+    "reimportTitle": "Re-import needed.",
+    "reimportText": "Manual matches only show up in your history and watchlist after the related import is run again.",
+    "ambiguous": "Uncertain",
+    "unresolved": "Unmatched",
+    "empty": "Nothing to match.",
+    "key": "key: {key}",
+    "importRows": "referenced by {n} import rows",
+    "candidate": "Candidate",
+    "year": "Year",
+    "score": "Score",
+    "onProvider": "available on the service",
+    "noCandidates": "No automatic candidates.",
+    "manualSearch": "Search TMDB manually",
+    "searchLabel": "TMDB search",
+    "reject": "Skip",
+    "saved": "Match saved."
+  },
+  "sync": {
+    "title": "Sync log",
+    "hint": "Upload files on the Import page; every import and sync run is listed here.",
+    "empty": "No imports or syncs have run yet.",
+    "cols": {
+      "source": "Source",
+      "started": "Started",
+      "finished": "Finished",
+      "status": "Status",
+      "processed": "Processed",
+      "created": "New",
+      "updated": "Updated",
+      "skipped": "Skipped",
+      "errors": "Errors"
+    }
+  },
+  "import": {
+    "title": "Data sources and import",
+    "intro": "Upload official export files. Files stay on this machine (data/imports); we never ask for or store passwords.",
+    "chooseFile": "Choose file ({ext})",
+    "upload": "Upload and import",
+    "uploading": "Uploading…",
+    "uploaded": "Upload complete, the import has started.",
+    "notSupported": "Not supported",
+    "readingProfiles": "Reading profiles…",
+    "profile": "Netflix profile",
+    "profileOption": "{name} · {lang} · {rows} rows",
+    "profileOptionNoLang": "{name} · {rows} rows",
+    "noProfiles": "No profiles were found in the export.",
+    "source": {
+      "imdb_ratings": "IMDb ratings",
+      "imdb_watchlist": "IMDb watchlist",
+      "netflix_export": "Netflix data export",
+      "disney_plus_export": "Disney+",
+      "hbo_max_export": "HBO Max",
+      "prime_video_export": "Prime Video",
+      "apple_tv_export": "Apple TV+",
+      "skyshowtime_export": "SkyShowtime"
+    },
+    "hint": {
+      "imdb_ratings": "On IMDb, open “Your Ratings” and pick “Export” from the menu at the top right. Download the CSV when it's ready and upload it here.",
+      "imdb_watchlist": "On IMDb, open your watchlist and choose “Export this list”. Upload the downloaded CSV here.",
+      "netflix_export": "Netflix account → Security & privacy → “Download your personal information”. The ZIP usually arrives by email within a few days; upload it as is, without unzipping."
+    },
+    "unsupported": {
+      "disney_plus_export": "You can get your Disney+ watch history through a GDPR data request, but there's no automatic import for it yet. Until then, mark titles you've watched with “Seen it” on the cards.",
+      "hbo_max_export": "You can get your HBO Max watch history through a GDPR data request, but there's no automatic import for it yet. Until then, mark titles you've watched with “Seen it” on the cards.",
+      "prime_video_export": "You can get your Prime Video watch history through a GDPR data request, but there's no automatic import for it yet. Until then, mark titles you've watched with “Seen it” on the cards.",
+      "apple_tv_export": "You can get your Apple TV+ watch history through a GDPR data request, but there's no automatic import for it yet. Until then, mark titles you've watched with “Seen it” on the cards.",
+      "skyshowtime_export": "You can get your SkyShowtime watch history through a GDPR data request, but there's no automatic import for it yet. Until then, mark titles you've watched with “Seen it” on the cards."
+    },
+    "unsupportedGeneric": "You can get your {provider} watch history through a GDPR data request, but there's no automatic import for that format yet. Until then, mark titles you've watched with “Seen it” on the cards.",
+    "jobs": {
+      "title": "Import jobs",
+      "empty": "Nothing uploaded yet.",
+      "file": "File",
+      "started": "Started: {date}",
+      "finished": "Finished: {date}",
+      "profile": "Profile: {name}",
+      "resolve": "Match titles",
+      "status": {
+        "queued": "queued",
+        "running": "running",
+        "done": "done",
+        "failed": "failed"
+      },
+      "summary": {
+        "processed": "processed",
+        "created": "new",
+        "updated": "updated",
+        "skipped": "skipped",
+        "unresolved": "unmatched",
+        "ambiguous": "uncertain"
+      }
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "dataSources": "Data sources",
+    "dataSourcesHint": "Upload IMDb ratings, your IMDb watchlist and the Netflix data export, and see what's not possible yet for the other services.",
+    "openImport": "Open Import",
+    "language": "Language",
+    "languageHint": "Language of the interface and of the chat's answers.",
+    "netflixProfile": "Netflix profile",
+    "netflixProfileHint": "Whose history to import from the Netflix export.",
+    "netflixProfileNone": "No Netflix export has been uploaded yet, so there are no profiles to choose from.",
+    "netflixProfileUnset": "– not selected –",
+    "saved": "Setting saved.",
+    "refresh": {
+      "title": "Catalog refresh",
+      "button": "Refresh now",
+      "hint": "Fetches availability changes, new arrivals and notifications. This can take up to a minute."
+    },
+    "env": {
+      "title": "Environment and LLM",
+      "hint": "Read-only. These come from the backend's environment variables (see .env.example); secrets are never shown.",
+      "tmdbKey": "TMDB API key set",
+      "lmStudio": "LM Studio base URL",
+      "llmProvider": "Default LLM provider",
+      "leavingDays": "Departure notice (days before)"
+    },
+    "recommender": "Recommender configuration (weights)"
+  },
+  "chat": {
+    "title": "Ask for ideas",
+    "model": "Model:",
+    "providerLabel": "LLM provider",
+    "providers": {
+      "lmstudio": "LM Studio (local)",
+      "anthropic": "Anthropic (cloud)",
+      "openai": "OpenAI (cloud)"
+    },
+    "newChat": "New conversation",
+    "backendNote": "Titles and availability come from the backend; the model only words the answer.",
+    "empty": "Ask away, e.g. “Something light and funny on Netflix tonight” or “What's on my watchlist that I can stream now?”",
+    "roundsExhausted": "tool limit reached",
+    "toolCalls": "Tool calls ({n})",
+    "loadingCards": "Loading cards…",
+    "thinking": "Thinking…",
+    "placeholder": "Describe what you're in the mood for… (Enter to send, Shift+Enter for a new line)",
+    "placeholderCompact": "Ask for a pick, e.g. “a short, clever crime show for tonight”",
+    "messageLabel": "Message",
+    "send": "Send",
+    "showAll": "Whole conversation ({n} messages)",
+    "showLess": "Latest exchange only",
+    "openFull": "Open full page"
+  }
+}

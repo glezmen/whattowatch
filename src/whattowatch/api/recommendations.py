@@ -10,13 +10,14 @@ from sqlalchemy import select
 
 from whattowatch.api.cards import title_cards
 from whattowatch.api.deps import (
-    NO_TMDB_KEY,
     NowDep,
     OptionalTmdbDep,
     RecommenderConfigDep,
     SessionDep,
+    no_tmdb_key,
 )
 from whattowatch.api.schemas import (
+    ReasonCode,
     RecommendationFeedbackIn,
     RecommendationFeedbackOut,
     RecommendationItem,
@@ -44,7 +45,7 @@ def get_recommendations(
     """The latest batch (by `generated_at`); `refresh=true` generates a new one first."""
     if refresh:
         if tmdb is None:
-            raise HTTPException(status_code=409, detail=NO_TMDB_KEY)
+            raise no_tmdb_key()
         rows = recommend_engine.run_recommendations(
             limit=limit,
             media_type=media_type,
@@ -81,6 +82,7 @@ def get_recommendations(
             rank=r.rank,
             score=r.score,
             reasons=list(r.reasons or []),
+            reason_codes=[ReasonCode(**c) for c in r.reason_codes or []],
             components=dict(r.components or {}),
             title=card,
             batch_id=r.batch_id,

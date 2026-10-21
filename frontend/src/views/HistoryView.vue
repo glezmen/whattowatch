@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { api, type HistoryItem, type UserState } from '../api/client'
 import FeedbackPanel from '../components/FeedbackPanel.vue'
 import Pagination from '../components/Pagination.vue'
@@ -15,10 +16,11 @@ const offset = ref(0)
 const loading = ref(false)
 const expanded = ref<number | null>(null)
 
-const STATUS_LABELS: Record<string, string> = {
-  watched: 'megnézve',
-  in_progress: 'folyamatban',
-  abandoned: 'félbehagyva',
+const STATUSES = ['watched', 'in_progress', 'abandoned']
+const { t, te } = useI18n()
+
+function statusLabel(s: string): string {
+  return te(`history.statuses.${s}`) ? t(`history.statuses.${s}`) : s
 }
 
 async function load() {
@@ -58,22 +60,22 @@ function sourcesOf(it: HistoryItem): string {
 }
 
 function statusOf(it: HistoryItem): string {
-  const st = [...new Set(it.events.map((e) => STATUS_LABELS[e.status] ?? e.status))]
+  const st = [...new Set(it.events.map((e) => statusLabel(e.status)))]
   return st.join(', ')
 }
 </script>
 
 <template>
-  <h1>Előzmények és értékelések</h1>
+  <h1>{{ t('history.title') }}</h1>
   <div class="toolbar">
-    <input v-model="q" type="search" placeholder="Keresés címre…" aria-label="Keresés" />
-    <select v-model="status" aria-label="Státusz">
-      <option value="">Minden státusz</option>
-      <option v-for="(label, key) in STATUS_LABELS" :key="key" :value="key">{{ label }}</option>
+    <input v-model="q" type="search" :placeholder="t('common.searchPlaceholder')" :aria-label="t('common.search')" />
+    <select v-model="status" :aria-label="t('history.status')">
+      <option value="">{{ t('history.allStatuses') }}</option>
+      <option v-for="s in STATUSES" :key="s" :value="s">{{ statusLabel(s) }}</option>
     </select>
   </div>
-  <p v-if="loading && !items.length" class="empty"><span class="spinner"></span> Betöltés…</p>
-  <p v-else-if="!items.length" class="empty">Nincs előzmény.</p>
+  <p v-if="loading && !items.length" class="empty"><span class="spinner"></span> {{ t('common.loading') }}</p>
+  <p v-else-if="!items.length" class="empty">{{ t('history.empty') }}</p>
   <ul v-else class="history">
     <li v-for="it in items" :key="it.title.id" class="card">
       <button type="button" class="row-head" :aria-expanded="expanded === it.title.id" @click="expanded = expanded === it.title.id ? null : it.title.id">
@@ -84,7 +86,7 @@ function statusOf(it: HistoryItem): string {
         </span>
         <span class="small muted info">
           <span v-if="statusOf(it)">{{ statusOf(it) }}</span>
-          <span v-else>nincs nézési esemény</span>
+          <span v-else>{{ t('history.noEvents') }}</span>
           <span v-if="it.last_watched_at">{{ fmtDateTime(it.last_watched_at) }}</span>
           <span v-if="sourcesOf(it)">{{ sourcesOf(it) }}</span>
           <span v-if="it.title.user.stars">{{ '★'.repeat(it.title.user.stars) }}</span>

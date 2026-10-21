@@ -27,7 +27,8 @@ from whattowatch.db.models import (
     WatchEvent,
     WatchlistItem,
 )
-from whattowatch.providers import BY_KEY, SUBSCRIPTIONS
+from whattowatch.providers import SUBSCRIPTIONS
+from whattowatch.services.subscriptions import enabled_keys
 
 VERIFIED_SOURCE = "tmdb/justwatch"
 ESTIMATED_SOURCE = "tmdb/discover"
@@ -78,7 +79,7 @@ def excluded_title_ids(session: Session) -> set[int]:
 def verified_subscriptions(
     session: Session, title_ids: Iterable[int], *, now: datetime, max_age_days: int = 14
 ) -> dict[int, tuple[str, ...]]:
-    """Provider keys with a fresh, verified flatrate HU offer, per title id."""
+    """Enabled provider keys with a fresh, verified flatrate HU offer, per title id."""
     ids = list(title_ids)
     if not ids:
         return {}
@@ -92,7 +93,7 @@ def verified_subscriptions(
             Availability.offer_type == "flatrate",
             Availability.confidence == "verified",
             Availability.region == REGION,
-            Provider.key.in_(list(BY_KEY)),
+            Provider.key.in_(enabled_keys(session)),
         )
     )
     found: dict[int, set[str]] = {}
@@ -112,6 +113,8 @@ def load_candidates(
 ) -> list[Candidate]:
     """Unseen, not-rejected titles with verified or estimated availability, by popularity."""
     now = now or datetime.now(UTC)
+    if not enabled_keys(session):
+        return []  # no subscription switched on: nothing may be recommended
     excluded = excluded_title_ids(session)
     verified = verified_subscriptions(
         session,

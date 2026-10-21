@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from whattowatch.api.cards import title_cards
-from whattowatch.api.deps import NO_TMDB_KEY, NowDep, SessionDep, SettingsDep
+from whattowatch.api.deps import NowDep, SessionDep, SettingsDep, no_tmdb_key
 from whattowatch.api.schemas import (
     NotificationCount,
     NotificationOut,
@@ -139,5 +139,5 @@ def read_notification(session: SessionDep, now: NowDep, notification_id: int) ->
 def refresh(session: SessionDep, settings: SettingsDep) -> dict[str, Any]:
     """Synchronous daily refresh; may take a minute (TMDB discover + verify, SA changes)."""
     if not settings.tmdb_api_key:
-        raise HTTPException(status_code=409, detail=NO_TMDB_KEY)
+        raise no_tmdb_key()
     return updates_service.run_refresh(session=session, settings=settings)

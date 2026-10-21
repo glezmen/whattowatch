@@ -1,0 +1,392 @@
+{
+  "app": {
+    "name": "Mit nézzek?"
+  },
+  "nav": {
+    "home": "Neked ajánljuk",
+    "discover": "Felfedezés",
+    "chat": "Beszélgetős ajánló",
+    "watchlist": "Watchlist",
+    "history": "Előzmények",
+    "updates": "Újdonságok",
+    "leaving": "Hamarosan távozik",
+    "resolution": "Címfeloldás",
+    "import": "Import",
+    "sync": "Szinkronnapló",
+    "settings": "Beállítások",
+    "notFound": "Nincs ilyen oldal",
+    "menu": "Menü",
+    "language": "Nyelv"
+  },
+  "common": {
+    "loading": "Betöltés…",
+    "save": "Mentés",
+    "saving": "Mentés…",
+    "close": "Bezárás",
+    "delete": "Törlés",
+    "refresh": "Frissítés",
+    "search": "Keresés",
+    "searchPlaceholder": "Keresés címre…",
+    "all": "Mind",
+    "yes": "igen",
+    "no": "nem",
+    "type": "Típus",
+    "allTypes": "Minden típus",
+    "noResults": "Nincs találat.",
+    "backHome": "Vissza a főoldalra",
+    "thisOne": "Ez az"
+  },
+  "lang": {
+    "hu": "Magyar",
+    "en": "English",
+    "huShort": "HU",
+    "enShort": "EN"
+  },
+  "mediaType": {
+    "movie": "film",
+    "tv": "sorozat",
+    "movieCap": "Film",
+    "tvCap": "Sorozat"
+  },
+  "confidence": {
+    "verified": "ellenőrzött",
+    "stale": "elavult",
+    "estimated": "becsült",
+    "conflicting": "ellentmondásos",
+    "user_denied": "felhasználó cáfolta",
+    "exact": "pontos"
+  },
+  "eventType": {
+    "new": "Új az előfizetéseiden",
+    "upcoming": "Hamarosan érkezik",
+    "expiring": "Hamarosan távozik",
+    "leaving": "Hamarosan távozik",
+    "removed": "Kikerült",
+    "new_season": "Új évad",
+    "watchlist_available": "Watchlistedről elérhető"
+  },
+  "source": {
+    "import": "import"
+  },
+  "errors": {
+    "unreachable": "A szerver nem érhető el. Fut a backend?",
+    "conflict": "Ütközés (409).",
+    "notFound": "Nem található.",
+    "notFoundDetail": "Nem található: {detail}",
+    "invalid": "Érvénytelen kérés.",
+    "invalidDetail": "Érvénytelen kérés: {detail}",
+    "server": "Szerverhiba ({status}).",
+    "serverDetail": "Szerverhiba ({status}): {detail}",
+    "code": {
+      "no_tmdb_key": "Nincs beállítva TMDB API-kulcs (TMDB_API_KEY a .env fájlban)."
+    }
+  },
+  "pagination": {
+    "prev": "‹ Előző",
+    "next": "Következő ›",
+    "pageInfo": "{page} / {pages} oldal ({total} találat)",
+    "results": "{total} találat"
+  },
+  "days": {
+    "label": "Időszak",
+    "n": "{n} nap"
+  },
+  "stars": {
+    "group": "Saját értékelés (1–5 csillag)",
+    "star": "{n} csillag",
+    "clear": "Értékelés törlése"
+  },
+  "feedback": {
+    "seen": "Már láttam",
+    "seenActive": "✓ Már láttam",
+    "watchlistAdd": "+ Watchlist",
+    "watchlistOn": "✓ Watchlisten",
+    "watchlistAddTitle": "Mentés az app watchlistjére",
+    "watchlistRemoveTitle": "Eltávolítás az app watchlistjéről",
+    "notInterested": "Nem érdekel",
+    "ownRating": "Saját értékelés:",
+    "textToggle": "Szöveges vélemény",
+    "textHas": "(van)",
+    "separateHint": "A két mező külön kerül feldolgozásra; mindkettő opcionális.",
+    "liked": "Mi tetszett benne?",
+    "disliked": "Mi nem tetszett benne?",
+    "clearLiked": "Pozitív vélemény törlése",
+    "clearDisliked": "Negatív vélemény törlése",
+    "saved": "Visszajelzés elmentve.",
+    "signals": "Kinyert jelzések (törölhetők):",
+    "deleteSignal": "Jelzés törlése: {label}"
+  },
+  "card": {
+    "poster": "{title} plakát",
+    "noHuTitle": "nincs magyar cím",
+    "yearUnknown": "év ismeretlen",
+    "seasons": "{n} évad",
+    "minutes": "{n} perc",
+    "checked": "ellenőrizve: {date}",
+    "sourceTitle": "Forrás: {source}",
+    "leaving": "távozik: {date}",
+    "estimatedSuffix": " (becsült)",
+    "noAvailability": "Nincs ellenőrzött előfizetéses elérhetőség.",
+    "notSubscribed": "nem fizetsz elő",
+    "fetchedAt": "Lekérve: {date}",
+    "personal": "Saját ({source}): {value} [{scale}]"
+  },
+  "reason": {
+    "watchlist": "A watchlisteden van.",
+    "genre_match": "Hasonló műfajú, mint a jól értékelt művek ({genres}).",
+    "preference": "Illik a jelzett preferenciádhoz: {label}.",
+    "popular": "Népszerű most.",
+    "new_release": "Új megjelenés.",
+    "abandoned": "Korábban félbehagytad.",
+    "external_score": "Jól értékelt a TMDB közönségénél.",
+    "external_score_value": "Jól értékelt a TMDB közönségénél ({score}/10).",
+    "available": "Elérhető az előfizetéseiden."
+  },
+  "bell": {
+    "label": "Értesítések",
+    "labelUnread": "Értesítések: {n} olvasatlan",
+    "dialog": "Olvasatlan értesítések",
+    "heading": "Értesítések",
+    "empty": "Nincs olvasatlan értesítés.",
+    "markRead": "Megjelölés olvasottként"
+  },
+  "saBanner": "A Streaming Availability forrás nincs beállítva, az érkező és kikerülő adatok hiányoznak.",
+  "updates": {
+    "title": "Újdonságok",
+    "hint": "A kártyán az év az eredeti megjelenésé; a sávban lévő dátum a magyar streaminges eseményé.",
+    "loadFailed": "Nem sikerült betölteni ezt a szekciót.",
+    "emptyDefault": "Ebben az időszakban nincs ilyen esemény.",
+    "sections": {
+      "new": "Új az előfizetéseiden",
+      "upcoming": "Hamarosan érkezik",
+      "new_season": "Új évad",
+      "watchlist_available": "Watchlistedről most elérhető"
+    },
+    "empty": {
+      "new": "Ebben az időszakban nem jelent meg új cím az előfizetéseiden.",
+      "upcoming": "Nincs ismert érkező cím.",
+      "new_season": "Ebben az időszakban nincs ismert új évad.",
+      "watchlist_available": "Egyik watchlistes cím sem vált most elérhetővé."
+    },
+    "label": {
+      "new": "Streamingpremier (HU): {date}",
+      "upcomingUndated": "Hamarosan (dátum nem ismert)",
+      "upcoming": "Érkezik: {date}",
+      "new_season": "Új évad: {date}",
+      "watchlist_available": "Elérhető lett: {date}",
+      "leavingUndated": "Hamarosan kikerül (pontos dátum nem ismert)",
+      "leaving": "Kikerül: {date}"
+    },
+    "onWatchlist": "watchlisten",
+    "detected": "Észlelve: {date}",
+    "source": "forrás: {source}"
+  },
+  "leaving": {
+    "title": "Hamarosan távozik",
+    "hint": "Kivezetési dátum csak forrásból származik; ha nem ismert, „hamarosan” címkét kap.",
+    "empty": "Ebben az időszakban nincs ismert kikerülő cím az előfizetéseiden."
+  },
+  "home": {
+    "title": "Neked ajánljuk",
+    "refresh": "Frissítés",
+    "refreshing": "Új ajánlások készülnek; a TMDB-elérhetőség ellenőrzése eltarthat egy ideig…",
+    "generated": "Generálva: {date}",
+    "empty": "Még nincs ajánlás. Kattints a „Frissítés” gombra.",
+    "noSubscriptions": "Nincs bekapcsolt előfizetés, ezért az ajánló nem tud mit ajánlani. Kapcsold be az előfizetéseidet a Beállításokban."
+  },
+  "onboarding": {
+    "title": "Kezdjük!",
+    "intro": "Három lépés, és az ajánló a te előfizetéseidhez és ízlésedhez igazodik.",
+    "dismiss": "Elrejtés",
+    "step1": "Melyik szolgáltatókra fizetsz elő?",
+    "step1Hint": "Csak ezek kínálatából ajánlunk; később a Beállításokban módosíthatod.",
+    "step2": "Töltsd fel a nézési előzményeidet és értékeléseidet",
+    "step2Link": "Import megnyitása",
+    "step2Hint": "IMDb-értékelések, IMDb-watchlist és Netflix-adatexport. Kihagyható: a kártyákon a „Már láttam” gombbal is jelölhetsz.",
+    "step3": "Kész",
+    "step3Hint": "Ha végeztél, zárd le a bevezetőt.",
+    "done": "Kész"
+  },
+  "subscriptions": {
+    "title": "Előfizetések",
+    "hint": "Az ajánló, a felfedezés, az újdonságok és a beszélgetős ajánló csak a bekapcsolt szolgáltatók kínálatát használja. A kártyák ettől még mind a hat szolgáltató elérhetőségét mutatják.",
+    "none": "Nincs bekapcsolt előfizetés: az ajánló üres lesz.",
+    "saveFailed": "Az előfizetések mentése nem sikerült."
+  },
+  "discover": {
+    "title": "Felfedezés",
+    "hint": "Csak ellenőrzött, előfizetéses magyar elérhetőségű címek a helyi katalógusból.",
+    "genre": "Műfaj",
+    "seen": "Látott",
+    "seenAll": "Látott és nem látott",
+    "seenFalse": "Csak nem látott",
+    "seenTrue": "Csak látott",
+    "provider": "Szolgáltató"
+  },
+  "history": {
+    "title": "Előzmények és értékelések",
+    "status": "Státusz",
+    "allStatuses": "Minden státusz",
+    "statuses": {
+      "watched": "megnézve",
+      "in_progress": "folyamatban",
+      "abandoned": "félbehagyva"
+    },
+    "empty": "Nincs előzmény.",
+    "noEvents": "nincs nézési esemény"
+  },
+  "watchlist": {
+    "title": "Watchlist",
+    "source": "Forrás",
+    "allSources": "Minden forrás",
+    "availableOnly": "Csak az elérhető most (ellenőrzött előfizetéses)",
+    "hint": "Importált (Netflix, IMDb) tételek csak a forrásukban távolíthatók el; itt az app saját watchlistjét kezelheted. A watchlist érdeklődést jelez, nem értékelést.",
+    "empty": "A watchlist üres."
+  },
+  "resolution": {
+    "title": "Címfeloldás",
+    "reimportTitle": "Újraimport szükséges.",
+    "reimportText": "A kézi feloldások csak a kapcsolódó import újrafuttatása után jelennek meg az előzményekben és a watchlistben.",
+    "ambiguous": "Bizonytalan",
+    "unresolved": "Feloldatlan",
+    "empty": "Nincs feloldandó cím.",
+    "key": "kulcs: {key}",
+    "importRows": "{n} importsor hivatkozik rá",
+    "candidate": "Jelölt",
+    "year": "Év",
+    "score": "Pont",
+    "onProvider": "elérhető a szolgáltatónál",
+    "noCandidates": "Nincs automatikus jelölt.",
+    "manualSearch": "Kézi TMDB-keresés",
+    "searchLabel": "TMDB-keresés",
+    "reject": "Nem kell",
+    "saved": "Feloldás elmentve."
+  },
+  "sync": {
+    "title": "Szinkronnapló",
+    "hint": "Fájlt az Import oldalon tölthetsz fel; itt az összes import és szinkron futása látszik.",
+    "empty": "Még nem futott import vagy szinkron.",
+    "cols": {
+      "source": "Forrás",
+      "started": "Indult",
+      "finished": "Befejeződött",
+      "status": "Állapot",
+      "processed": "Feldolgozva",
+      "created": "Új",
+      "updated": "Frissítve",
+      "skipped": "Kihagyva",
+      "errors": "Hibák"
+    }
+  },
+  "import": {
+    "title": "Adatforrások és import",
+    "intro": "Tölts fel hivatalos exportfájlokat. A fájlok helyben maradnak (data/imports), jelszót nem kérünk és nem tárolunk.",
+    "chooseFile": "Fájl kiválasztása ({ext})",
+    "upload": "Feltöltés és import",
+    "uploading": "Feltöltés…",
+    "uploaded": "A feltöltés kész, az import elindult.",
+    "notSupported": "Nem támogatott",
+    "readingProfiles": "Profilok beolvasása…",
+    "profile": "Netflix-profil",
+    "profileOption": "{name} · {lang} · {rows} sor",
+    "profileOptionNoLang": "{name} · {rows} sor",
+    "noProfiles": "Az exportban nem találtunk profilt.",
+    "source": {
+      "imdb_ratings": "IMDb-értékelések",
+      "imdb_watchlist": "IMDb-watchlist",
+      "netflix_export": "Netflix-adatexport",
+      "disney_plus_export": "Disney+",
+      "hbo_max_export": "HBO Max",
+      "prime_video_export": "Prime Video",
+      "apple_tv_export": "Apple TV+",
+      "skyshowtime_export": "SkyShowtime"
+    },
+    "hint": {
+      "imdb_ratings": "Az IMDb-n nyisd meg a „Your Ratings” oldalt, és a jobb felső menüben válaszd az „Export” lehetőséget. Az elkészült CSV-t töltsd le, majd töltsd fel ide.",
+      "imdb_watchlist": "Az IMDb-n nyisd meg a watchlistedet, és válaszd az „Export this list” lehetőséget. A letöltött CSV-t töltsd fel ide.",
+      "netflix_export": "Netflix-fiók → Biztonság és adatvédelem → „Személyes adatok letöltése” (Download your personal information). A kért ZIP általában néhány napon belül érkezik e-mailben; azt töltsd fel kicsomagolás nélkül."
+    },
+    "unsupported": {
+      "disney_plus_export": "A Disney+ nézési előzményeit GDPR-adatkéréssel (a személyes adataid kikérésével) lehet megszerezni, de ehhez még nincs automatikus import. Addig a megnézett címeket a kártyákon a „Már láttam” gombbal jelölheted.",
+      "hbo_max_export": "Az HBO Max nézési előzményeit GDPR-adatkéréssel (a személyes adataid kikérésével) lehet megszerezni, de ehhez még nincs automatikus import. Addig a megnézett címeket a kártyákon a „Már láttam” gombbal jelölheted.",
+      "prime_video_export": "A Prime Video nézési előzményeit GDPR-adatkéréssel (a személyes adataid kikérésével) lehet megszerezni, de ehhez még nincs automatikus import. Addig a megnézett címeket a kártyákon a „Már láttam” gombbal jelölheted.",
+      "apple_tv_export": "Az Apple TV+ nézési előzményeit GDPR-adatkéréssel (a személyes adataid kikérésével) lehet megszerezni, de ehhez még nincs automatikus import. Addig a megnézett címeket a kártyákon a „Már láttam” gombbal jelölheted.",
+      "skyshowtime_export": "A SkyShowtime nézési előzményeit GDPR-adatkéréssel (a személyes adataid kikérésével) lehet megszerezni, de ehhez még nincs automatikus import. Addig a megnézett címeket a kártyákon a „Már láttam” gombbal jelölheted."
+    },
+    "unsupportedGeneric": "A(z) {provider} nézési előzményeit GDPR-adatkéréssel (a személyes adataid kikérésével) lehet megszerezni, de ehhez a formátumhoz még nincs automatikus import. Addig a megnézett címeket a kártyákon a „Már láttam” gombbal jelölheted.",
+    "jobs": {
+      "title": "Importfeladatok",
+      "empty": "Még nem volt feltöltés.",
+      "file": "Fájl",
+      "started": "Indult: {date}",
+      "finished": "Befejeződött: {date}",
+      "profile": "Profil: {name}",
+      "resolve": "Címfeloldás",
+      "status": {
+        "queued": "várakozik",
+        "running": "fut",
+        "done": "kész",
+        "failed": "hiba"
+      },
+      "summary": {
+        "processed": "feldolgozva",
+        "created": "új",
+        "updated": "frissítve",
+        "skipped": "kihagyva",
+        "unresolved": "feloldatlan",
+        "ambiguous": "bizonytalan"
+      }
+    }
+  },
+  "settings": {
+    "title": "Beállítások",
+    "dataSources": "Adatforrások",
+    "dataSourcesHint": "IMDb-értékelések, IMDb-watchlist és Netflix-adatexport feltöltése, valamint a többi szolgáltató korlátai.",
+    "openImport": "Import megnyitása",
+    "language": "Nyelv",
+    "languageHint": "A felület és a beszélgetős ajánló válaszainak nyelve.",
+    "netflixProfile": "Netflix-profil",
+    "netflixProfileHint": "Melyik profil előzményeit importáljuk a Netflix-exportból.",
+    "netflixProfileNone": "Még nincs feltöltött Netflix-export, ezért nincs választható profil.",
+    "netflixProfileUnset": "– nincs kiválasztva –",
+    "saved": "Beállítás elmentve.",
+    "refresh": {
+      "title": "Katalógusfrissítés",
+      "button": "Frissítés most",
+      "hint": "Lekéri az elérhetőség-változásokat, újdonságokat és értesítéseket. Akár egy percig is eltarthat."
+    },
+    "env": {
+      "title": "Környezet és LLM",
+      "hint": "Csak olvasható. Ezek a backend környezeti változóiból jönnek (lásd .env.example); titkos értékek nem jelennek meg.",
+      "tmdbKey": "TMDB API-kulcs beállítva",
+      "lmStudio": "LM Studio alap-URL",
+      "llmProvider": "Alapértelmezett LLM-szolgáltató",
+      "leavingDays": "Kivezetési értesítés (nappal előtte)"
+    },
+    "recommender": "Ajánló konfiguráció (súlyok)"
+  },
+  "chat": {
+    "title": "Beszélgetős ajánló",
+    "model": "Modell:",
+    "providerLabel": "LLM-szolgáltató",
+    "providers": {
+      "lmstudio": "LM Studio (helyi)",
+      "anthropic": "Anthropic (felhő)",
+      "openai": "OpenAI (felhő)"
+    },
+    "newChat": "Új beszélgetés",
+    "backendNote": "A címeket és az elérhetőséget a backend adja; a modell csak megfogalmazza a választ.",
+    "empty": "Kérdezz bátran, pl. „Valami könnyed vígjáték estére a Netflixen” vagy „Mi van a watchlistemen, ami most elérhető?”",
+    "roundsExhausted": "eszközkorlát elérve",
+    "toolCalls": "Eszközhívások ({n})",
+    "loadingCards": "Kártyák betöltése…",
+    "thinking": "Gondolkodom…",
+    "placeholder": "Írd le, mit néznél… (Enter: küldés, Shift+Enter: új sor)",
+    "placeholderCompact": "Kérdezd az ajánlót, pl. „egy rövid, okos krimi ma estére”",
+    "messageLabel": "Üzenet",
+    "send": "Küldés",
+    "showAll": "Teljes beszélgetés ({n} üzenet)",
+    "showLess": "Csak az utolsó váltás",
+    "openFull": "Megnyitás teljes oldalon"
+  }
+}

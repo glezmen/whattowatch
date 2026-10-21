@@ -28,6 +28,7 @@ from whattowatch.db.models import (
 )
 from whattowatch.providers import BY_KEY, SUBSCRIPTIONS
 from whattowatch.services.feedback import APP_SOURCE, MANUAL_WATCH_SOURCE
+from whattowatch.services.subscriptions import enabled_keys
 
 IMDB_COMMUNITY_SOURCE = "imdb_community"
 DEFAULT_MAX_AGE_DAYS = 14
@@ -84,6 +85,7 @@ def _availability(
     for row, key in rows:
         grouped.setdefault((row.title_id, key), []).append(row)
     cutoff = now - timedelta(days=max_age_days)
+    enabled = set(enabled_keys(session))
     out: dict[int, list[AvailabilityEntry]] = {}
     for (title_id, key), group in sorted(grouped.items(), key=lambda kv: _KEY_ORDER[kv[0][1]]):
         row = max(
@@ -108,6 +110,7 @@ def _availability(
                 leaving_confidence=leaving_confidence,
                 arriving_at=arriving_at,
                 arriving_confidence=arriving_confidence,
+                enabled=key in enabled,
             )
         )
     return out
@@ -284,9 +287,11 @@ def fresh_verified_title_ids(
     max_age_days: int = DEFAULT_MAX_AGE_DAYS,
     provider_key: str | None = None,
 ) -> set[int]:
-    """Titles with a fresh verified HU flatrate offer on the six (or on `provider_key`)."""
+    """Titles with a fresh verified HU flatrate offer on an enabled subscription (or on
+    `provider_key`, which must itself be enabled)."""
     cutoff = (now or datetime.now(UTC)) - timedelta(days=max_age_days)
-    keys = [provider_key] if provider_key else list(BY_KEY)
+    enabled = enabled_keys(session)
+    keys = [k for k in enabled if k == provider_key] if provider_key else enabled
     rows = session.execute(
         select(Availability.title_id, Availability.last_seen_at)
         .join(Provider, Provider.id == Availability.provider_id)

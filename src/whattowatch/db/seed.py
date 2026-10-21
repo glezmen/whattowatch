@@ -12,12 +12,12 @@ def _upsert(
 ) -> None:
     provider = session.scalars(select(Provider).where(Provider.key == key)).one_or_none()
     if provider is None:
-        provider = Provider(key=key)
+        # New rows start enabled; an existing row keeps the user's choice (M7 settings).
+        provider = Provider(key=key, enabled=True)
         session.add(provider)
     provider.display_name = display_name
     provider.kind = kind
     provider.tmdb_provider_ids = tmdb_ids
-    provider.enabled = True
 
 
 def seed_providers(session: Session) -> None:

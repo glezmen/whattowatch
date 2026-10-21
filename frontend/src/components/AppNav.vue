@@ -1,35 +1,38 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import NotificationBell from './NotificationBell.vue'
+import LanguageSwitch from './LanguageSwitch.vue'
 
 const open = ref(false)
 const links = [
-  { to: '/', label: 'Neked ajánljuk' },
-  { to: '/felfedezes', label: 'Felfedezés' },
-  { to: '/beszelgetes', label: 'Beszélgetős ajánló' },
-  { to: '/watchlist', label: 'Watchlist' },
-  { to: '/elozmenyek', label: 'Előzmények' },
-  { to: '/ujdonsagok', label: 'Újdonságok' },
-  { to: '/tavozik', label: 'Hamarosan távozik' },
-  { to: '/feloldas', label: 'Címfeloldás' },
-  { to: '/sync', label: 'Import és szinkron' },
-  { to: '/beallitasok', label: 'Beállítások' },
+  { to: '/', key: 'nav.home' },
+  { to: '/felfedezes', key: 'nav.discover' },
+  { to: '/beszelgetes', key: 'nav.chat' },
+  { to: '/watchlist', key: 'nav.watchlist' },
+  { to: '/elozmenyek', key: 'nav.history' },
+  { to: '/ujdonsagok', key: 'nav.updates' },
+  { to: '/tavozik', key: 'nav.leaving' },
+  { to: '/feloldas', key: 'nav.resolution' },
+  { to: '/import', key: 'nav.import' },
+  { to: '/sync', key: 'nav.sync' },
+  { to: '/beallitasok', key: 'nav.settings' },
 ]
 </script>
 
 <template>
   <header class="nav">
-    <RouterLink to="/" class="brand">Mit nézzek?</RouterLink>
+    <RouterLink to="/" class="brand">{{ $t('app.name') }}</RouterLink>
     <div class="right">
+      <LanguageSwitch compact />
       <NotificationBell />
-      <button class="icon-btn menu" type="button" :aria-expanded="open" aria-label="Menü" @click="open = !open">
+      <button class="icon-btn menu" type="button" :aria-expanded="open" :aria-label="$t('nav.menu')" @click="open = !open">
         <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
         </svg>
       </button>
     </div>
     <nav :class="{ open }">
-      <RouterLink v-for="l in links" :key="l.to" :to="l.to" @click="open = false">{{ l.label }}</RouterLink>
+      <RouterLink v-for="l in links" :key="l.to" :to="l.to" @click="open = false">{{ $t(l.key) }}</RouterLink>
     </nav>
   </header>
 </template>

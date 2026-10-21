@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     netflix_profile_name: str | None = None
     recommender_config_path: str | None = None
     frontend_dist: str = "frontend/dist"
+    # Where uploaded export files are kept (`<imports_dir>/<source>/<utc>_<name>`).
+    imports_dir: str = "data/imports"
     # Days before a known leaving date when an in-app notice is created (docs/updates.md 4).
     leaving_notice_days: str = "14,7,3"
 

@@ -186,6 +186,8 @@ def _availability(card: TitleCard) -> list[dict[str, Any]]:
         {
             "provider_key": a.provider_key,
             "provider_name": a.provider_name,
+            # false: the user has switched this subscription off (not watchable for them)
+            "subscribed": a.enabled,
             "offer_type": a.offer_type,
             "confidence": a.confidence,
             "last_seen_at": _iso(a.last_seen_at),

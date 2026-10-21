@@ -1,4 +1,5 @@
 // Typed wrappers for the backend contract in docs/api.md (prefix /api).
+import { t, te } from '../i18n'
 import { pushError } from '../toast'
 
 export type MediaType = 'movie' | 'tv'
@@ -15,6 +16,8 @@ export interface AvailabilityEntry {
   leaving_confidence?: 'exact' | 'estimated' | null
   arriving_at?: string | null
   arriving_confidence?: 'exact' | 'estimated' | null
+  /** False when the provider is not among the enabled subscriptions (M7). */
+  enabled?: boolean
 }
 
 export interface PersonalRating {
@@ -65,10 +68,17 @@ export interface TitleCard {
   user: UserState
 }
 
+export interface ReasonCode {
+  code: string
+  params?: Record<string, unknown> | null
+}
+
 export interface RecommendationItem {
   rank: number
   score: number
+  /** Hungarian sentences (kept for the CLI); the UI prefers reason_codes. */
   reasons: string[]
+  reason_codes?: ReasonCode[] | null
   components: Record<string, number>
   title: TitleCard
   batch_id: string
@@ -258,6 +268,60 @@ export interface NotificationItem {
   read_at?: string | null
 }
 
+export interface SubscriptionItem {
+  key: string
+  display_name: string
+  enabled: boolean
+  tmdb_provider_ids: number[]
+}
+
+export interface AppSettings {
+  ui_language: 'hu' | 'en'
+  netflix_profile_name?: string | null
+  netflix_profiles: string[]
+  onboarding_done: boolean
+}
+
+export type AppSettingsPatch = Partial<Pick<AppSettings, 'ui_language' | 'netflix_profile_name' | 'onboarding_done'>>
+
+export type ImportSourceKey = 'imdb_ratings' | 'imdb_watchlist' | 'netflix_export' | string
+
+export interface ImportSource {
+  source: ImportSourceKey
+  label_key: string
+  accepts: string
+  supported: boolean
+  note_key?: string | null
+}
+
+export type ImportJobStatus = 'queued' | 'running' | 'done' | 'failed'
+
+export interface ImportJob {
+  id: number | string
+  source: ImportSourceKey
+  file_name: string
+  status: ImportJobStatus | string
+  started_at?: string | null
+  finished_at?: string | null
+  summary?: {
+    processed: number
+    created: number
+    updated: number
+    skipped: number
+    unresolved?: number
+    ambiguous?: number
+  } | null
+  error?: string | null
+  sync_run_id?: number | null
+  params?: { profile_name?: string | null } | null
+}
+
+export interface NetflixProfile {
+  name: string
+  primary_lang?: string | null
+  viewing_rows: number
+}
+
 export type RefreshSummary = Record<string, number | string>
 
 export class ApiError extends Error {
@@ -293,23 +357,28 @@ function detailText(body: unknown): string | null {
 }
 
 function errorMessage(status: number, body: unknown): string {
+  const code =
+    body && typeof body === 'object' && 'detail_code' in body ? (body as { detail_code: unknown }).detail_code : null
+  if (typeof code === 'string' && te(`errors.code.${code}`)) return t(`errors.code.${code}`)
   const detail = detailText(body)
-  if (status === 409) return detail ?? 'Ütközés (409).'
-  if (status === 404) return `Nem található${detail ? `: ${detail}` : '.'}`
-  if (status === 422) return `Érvénytelen kérés${detail ? `: ${detail}` : '.'}`
-  return `Szerverhiba (${status})${detail ? `: ${detail}` : '.'}`
+  if (status === 409) return detail ?? t('errors.conflict')
+  if (status === 404) return detail ? t('errors.notFoundDetail', { detail }) : t('errors.notFound')
+  if (status === 422) return detail ? t('errors.invalidDetail', { detail }) : t('errors.invalid')
+  return detail ? t('errors.serverDetail', { status, detail }) : t('errors.server', { status })
 }
 
 async function request<T>(method: string, path: string, body?: unknown, quiet = false): Promise<T> {
   let res: Response
   try {
+    const isForm = body instanceof FormData
     res = await fetch(`/api${path}`, {
       method,
-      headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      // multipart: the browser sets the boundary itself
+      headers: body !== undefined && !isForm ? { 'Content-Type': 'application/json' } : undefined,
+      body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
     })
   } catch {
-    const msg = 'A szerver nem érhető el. Fut a backend?'
+    const msg = t('errors.unreachable')
     if (!quiet) pushError(msg)
     throw new ApiError(0, msg)
   }
@@ -389,6 +458,31 @@ export const api = {
   /** Polled in the background: quiet (no toast on failure). */
   getNotificationCount: () => request<{ unread: number }>('GET', '/notifications/count', undefined, true),
   postRefresh: () => request<RefreshSummary>('POST', '/refresh'),
+
+  getSubscriptions: () => request<{ items: SubscriptionItem[] }>('GET', '/settings/subscriptions'),
+  putSubscriptions: (enabled: string[]) =>
+    request<{ items: SubscriptionItem[] } | unknown>('PUT', '/settings/subscriptions', { enabled }),
+  getAppSettings: (quiet = false) => request<AppSettings>('GET', '/settings/app', undefined, quiet),
+  putAppSettings: (patch: AppSettingsPatch, quiet = false) =>
+    request<AppSettings | unknown>('PUT', '/settings/app', patch, quiet),
+
+  getImportSources: () => request<ImportSource[]>('GET', '/import/sources'),
+  getImportJobs: (limit = 20, quiet = false) =>
+    request<ImportJob[]>('GET', `/import/jobs${qs({ limit })}`, undefined, quiet),
+  getImportJob: (id: number | string) => request<ImportJob>('GET', `/import/jobs/${enc(String(id))}`),
+  uploadImport: (source: string, file: File, profileName?: string | null) => {
+    const fd = new FormData()
+    fd.set('source', source)
+    fd.set('file', file)
+    if (profileName) fd.set('profile_name', profileName)
+    return request<ImportJob>('POST', '/import/upload', fd)
+  },
+  netflixProfiles: (file: File) => {
+    const fd = new FormData()
+    fd.set('file', file)
+    return request<{ profiles: NetflixProfile[] }>('POST', '/import/netflix/profiles', fd)
+  },
+
   health: () => request<unknown>('GET', '/health', undefined, true),
 }
 

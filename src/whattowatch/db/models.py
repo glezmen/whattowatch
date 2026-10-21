@@ -351,6 +351,8 @@ class Recommendation(TimestampMixin, Base):
     components: Mapped[dict[str, float]] = mapped_column(JSON, default=dict)
     weighted: Mapped[dict[str, float]] = mapped_column(JSON, default=dict)
     reasons: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # Language-neutral reasons for the UI: [{"code": ..., "params": {...}}] (docs/api.md M7).
+    reason_codes: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, default=list)
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     feedback: Mapped[str | None] = mapped_column(String)
     feedback_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -398,3 +400,18 @@ class Notification(TimestampMixin, Base):
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     event: Mapped[CatalogEvent] = relationship()
+
+
+class AppSetting(Base):
+    """App-level key/value settings edited in the UI (not secrets; those stay in `.env`)."""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    value: Mapped[Any] = mapped_column(JSON)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.current_timestamp(),
+        default=_utcnow,
+        onupdate=_utcnow,
+    )

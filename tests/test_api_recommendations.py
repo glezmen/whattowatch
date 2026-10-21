@@ -85,3 +85,41 @@ def test_recommendation_feedback(api: ApiEnv) -> None:
     assert api.client.post(url, json={"feedback": "meh"}).status_code == 422
     missing = f"/api/recommendations/nope/{api.ids[101]}/feedback"
     assert api.client.post(missing, json={"feedback": "clicked"}).status_code == 404
+
+
+def test_reason_codes_in_latest_batch(api: ApiEnv) -> None:
+    run_recommendations(
+        limit=10,
+        session=api.session,
+        tmdb=StubTmdb(),
+        config=RecommenderConfig(),
+        now=NOW,
+        echo=False,
+    )
+    items = api.client.get("/api/recommendations").json()
+    assert items
+    known = {
+        "watchlist",
+        "genre_match",
+        "preference",
+        "popular",
+        "new_release",
+        "abandoned",
+        "external_score",
+        "available",
+    }
+    for item in items:
+        codes = item["reason_codes"]
+        assert len(codes) == len(item["reasons"]) and {c["code"] for c in codes} <= known
+    by_tmdb = {i["title"]["tmdb_id"]: i for i in items}
+    assert by_tmdb[107]["reason_codes"][0] == {"code": "watchlist", "params": {}}
+    genre = next(c for c in by_tmdb[101]["reason_codes"] if c["code"] == "genre_match")
+    assert genre["params"]["genres"] and set(genre["params"]["genres"]) <= {"Thriller", "Rejtély"}
+    assert {
+        "code": "preference",
+        "params": {"label": "hangulat/feszult"},
+    } in by_tmdb[101]["reason_codes"]
+    assert by_tmdb[113]["reason_codes"][-1] == {"code": "abandoned", "params": {}}
+    # old batches without codes still serialize
+    _batch(api, "legacy", [102], at_offset_h=5)
+    assert api.client.get("/api/recommendations").json()[0]["reason_codes"] == []

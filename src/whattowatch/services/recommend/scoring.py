@@ -11,7 +11,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from functools import cached_property
-from typing import Protocol
+from typing import Any, Protocol
 
 from whattowatch.services.recommend.candidates import Candidate
 from whattowatch.services.recommend.config import RecommenderConfig
@@ -157,37 +157,66 @@ def _top(keys: Iterable[str], weights: Mapping[str, float], n: int = 2) -> list[
     return sorted(keys, key=lambda k: (-weights[k], k))[:n]
 
 
-def reasons(breakdown: ScoreBreakdown, cand: Candidate, ctx: ScoringContext) -> list[str]:
-    """1–2 Hungarian template sentences from the strongest positive components.
+@dataclass(frozen=True)
+class Reasons:
+    """Hungarian sentences (CLI, `Recommendation.reasons`) and the same reasons as
+    language-neutral codes for the UI (`[{"code": ..., "params": {...}}]`, docs/api.md M7)."""
+
+    texts: list[str]
+    codes: list[dict[str, Any]]
+
+
+def reasons(breakdown: ScoreBreakdown, cand: Candidate, ctx: ScoringContext) -> Reasons:
+    """1–2 Hungarian template sentences from the strongest positive components, plus codes.
 
     Never quotes free-text feedback; only genre names and closed-vocabulary labels.
     """
     t = cand.title
     c = breakdown.components
-    sentences: dict[str, str] = {}
+    sentences: dict[str, tuple[str, dict[str, Any]]] = {}
     if c["watchlist"] > 0:
-        sentences["watchlist"] = "A watchlisteden van."
+        sentences["watchlist"] = ("A watchlisteden van.", {"code": "watchlist"})
     liked_genres = [g for g in dict.fromkeys(t.genres or []) if ctx.genre_pos.get(g, 0.0) > 0]
     if liked_genres and c["genre_affinity"] > 0.5:
-        names = ", ".join(_top(liked_genres, ctx.genre_pos))
-        sentences["genre_affinity"] = f"Hasonló műfajú, mint a jól értékelt művek ({names})."
+        top_genres = _top(liked_genres, ctx.genre_pos)
+        sentences["genre_affinity"] = (
+            f"Hasonló műfajú, mint a jól értékelt művek ({', '.join(top_genres)}).",
+            {"code": "genre_match", "params": {"genres": top_genres}},
+        )
     liked_labels = [label for label in cand.labels if ctx.pref.positive.get(label, 0.0) > 0]
     if liked_labels:
-        names = ", ".join(ctx.label_name(k) for k in _top(liked_labels, ctx.pref.positive))
-        sentences["pref_positive"] = f"Illik a jelzett preferenciádhoz: {names}."
+        top_labels = _top(liked_labels, ctx.pref.positive)
+        names = ", ".join(ctx.label_name(k) for k in top_labels)
+        sentences["pref_positive"] = (
+            f"Illik a jelzett preferenciádhoz: {names}.",
+            # `label`: the strongest; `labels`: any further ones (not repeating `label`).
+            {
+                "code": "preference",
+                "params": {
+                    "label": top_labels[0],
+                    **({"labels": top_labels[1:]} if top_labels[1:] else {}),
+                },
+            },
+        )
     if c["popularity"] >= 0.7:
-        sentences["popularity"] = "Népszerű most."
+        sentences["popularity"] = ("Népszerű most.", {"code": "popular"})
     if c["external_score"] >= 0.7 and t.vote_average is not None:
-        sentences["external_score"] = f"Jól értékelt a TMDB közönségénél ({t.vote_average:.1f}/10)."
+        sentences["external_score"] = (
+            f"Jól értékelt a TMDB közönségénél ({t.vote_average:.1f}/10).",
+            {
+                "code": "external_score",
+                "params": {"source": "tmdb", "vote_average": round(t.vote_average, 1)},
+            },
+        )
     if c["recency"] >= 0.75:
-        sentences["recency"] = "Új megjelenés."
+        sentences["recency"] = ("Új megjelenés.", {"code": "new_release"})
     ranked = sorted(
         (k for k in sentences if breakdown.weighted[k] > 0),
         key=lambda k: (-breakdown.weighted[k], k),
     )
-    out = [sentences[k] for k in ranked[:2]]
-    if not out:
-        out.append("Elérhető az előfizetéseiden.")
+    picked = [sentences[k] for k in ranked[:2]]
+    if not picked:
+        picked.append(("Elérhető az előfizetéseiden.", {"code": "available"}))
     if c["abandoned_penalty"] > 0:
-        out.append("Korábban félbehagytad.")
-    return out
+        picked.append(("Korábban félbehagytad.", {"code": "abandoned"}))
+    return Reasons(texts=[text for text, _ in picked], codes=[code for _, code in picked])

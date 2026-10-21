@@ -87,7 +87,7 @@ onBeforeUnmount(() => {
       type="button"
       class="icon-btn bell"
       :aria-expanded="open"
-      :aria-label="unread ? `Értesítések: ${unread} olvasatlan` : 'Értesítések'"
+      :aria-label="unread ? $t('bell.labelUnread', { n: unread }) : $t('bell.label')"
       @click="toggle"
     >
       <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
@@ -101,10 +101,10 @@ onBeforeUnmount(() => {
       </svg>
       <span v-if="unread" class="badge">{{ unread > 99 ? '99+' : unread }}</span>
     </button>
-    <div v-if="open" class="panel card" role="dialog" aria-label="Olvasatlan értesítések">
-      <h2>Értesítések</h2>
-      <p v-if="loading" class="small muted"><span class="spinner"></span> Betöltés…</p>
-      <p v-else-if="!items.length" class="small muted">Nincs olvasatlan értesítés.</p>
+    <div v-if="open" class="panel card" role="dialog" :aria-label="$t('bell.dialog')">
+      <h2>{{ $t('bell.heading') }}</h2>
+      <p v-if="loading" class="small muted"><span class="spinner"></span> {{ $t('common.loading') }}</p>
+      <p v-else-if="!items.length" class="small muted">{{ $t('bell.empty') }}</p>
       <ul v-else>
         <li v-for="n in items" :key="n.id">
           <RouterLink :to="eventRoute(n.event_type)" class="item-link" @click="open = false">
@@ -112,7 +112,7 @@ onBeforeUnmount(() => {
             <strong>{{ titleOf(n) }}</strong>
             <span class="small muted">{{ fmtDate(n.event_date) }}</span>
           </RouterLink>
-          <button type="button" class="link small" @click="markRead(n)">Megjelölés olvasottként</button>
+          <button type="button" class="link small" @click="markRead(n)">{{ $t('bell.markRead') }}</button>
         </li>
       </ul>
     </div>

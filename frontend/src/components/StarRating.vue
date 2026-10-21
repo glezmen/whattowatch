@@ -7,7 +7,7 @@ const hover = ref(0)
 </script>
 
 <template>
-  <div class="stars" role="radiogroup" aria-label="Saját értékelés (1–5 csillag)" @mouseleave="hover = 0">
+  <div class="stars" role="radiogroup" :aria-label="$t('stars.group')" @mouseleave="hover = 0">
     <button
       v-for="n in 5"
       :key="n"
@@ -15,7 +15,7 @@ const hover = ref(0)
       class="star"
       role="radio"
       :aria-checked="modelValue === n"
-      :aria-label="`${n} csillag`"
+      :aria-label="$t('stars.star', { n })"
       :class="{ on: (hover || modelValue || 0) >= n }"
       :disabled="disabled"
       @mouseenter="hover = n"
@@ -29,8 +29,8 @@ const hover = ref(0)
       v-if="modelValue"
       type="button"
       class="icon-btn clear"
-      aria-label="Értékelés törlése"
-      title="Értékelés törlése"
+      :aria-label="$t('stars.clear')"
+      :title="$t('stars.clear')"
       :disabled="disabled"
       @click="emit('update:modelValue', null)"
     >

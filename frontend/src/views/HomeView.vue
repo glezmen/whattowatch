@@ -1,9 +1,14 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { api, type MediaType, type RecommendationItem } from '../api/client'
+import { appSettings, enabledCount, loadSubscriptions, subscriptions, ui } from '../appSettings'
+import ChatPanel from '../components/ChatPanel.vue'
+import OnboardingPanel from '../components/OnboardingPanel.vue'
 import TitleCard from '../components/TitleCard.vue'
 import { fmtDateTime } from '../format'
 
+const { t } = useI18n()
 const items = ref<RecommendationItem[]>([])
 const loading = ref(false)
 const refreshing = ref(false)
@@ -26,34 +31,55 @@ async function load(refresh = false) {
 }
 
 watch(mediaType, () => load())
-onMounted(() => load())
+onMounted(() => {
+  void load()
+  void loadSubscriptions()
+})
 
-const types: { value: MediaType | ''; label: string }[] = [
-  { value: '', label: 'Mind' },
-  { value: 'movie', label: 'Film' },
-  { value: 'tv', label: 'Sorozat' },
-]
+// The onboarding panel already warns about missing subscriptions while it is visible.
+const noSubs = computed(
+  () => subscriptions.loaded && enabledCount.value === 0 && (ui.onboardingDismissed || !appSettings.data),
+)
+
+const types = computed<{ value: MediaType | ''; label: string }[]>(() => [
+  { value: '', label: t('common.all') },
+  { value: 'movie', label: t('mediaType.movieCap') },
+  { value: 'tv', label: t('mediaType.tvCap') },
+])
 </script>
 
 <template>
-  <h1>Neked ajánljuk</h1>
+  <OnboardingPanel @done="load()" />
+  <ChatPanel compact />
+
+  <h1>{{ t('home.title') }}</h1>
+  <div v-if="noSubs" class="banner small" role="status">
+    {{ t('home.noSubscriptions') }} <RouterLink to="/beallitasok">{{ t('nav.settings') }}</RouterLink>
+  </div>
   <div class="toolbar">
-    <div class="segmented" role="group" aria-label="Típus">
-      <button v-for="t in types" :key="t.value" type="button" :class="{ active: mediaType === t.value }" @click="mediaType = t.value">
-        {{ t.label }}
+    <div class="segmented" role="group" :aria-label="t('common.type')">
+      <button v-for="ty in types" :key="ty.value" type="button" :class="{ active: mediaType === ty.value }" @click="mediaType = ty.value">
+        {{ ty.label }}
       </button>
     </div>
     <button type="button" class="primary" :disabled="refreshing" @click="load(true)">
       <span v-if="refreshing" class="spinner" aria-hidden="true"></span>
-      Frissítés
+      {{ t('home.refresh') }}
     </button>
-    <span v-if="refreshing" class="small muted">Új ajánlások készülnek; a TMDB-elérhetőség ellenőrzése eltarthat egy ideig…</span>
-    <span v-else-if="items.length" class="small muted">Generálva: {{ fmtDateTime(items[0]!.generated_at) }}</span>
+    <span v-if="refreshing" class="small muted">{{ t('home.refreshing') }}</span>
+    <span v-else-if="items.length" class="small muted">{{ t('home.generated', { date: fmtDateTime(items[0]!.generated_at) }) }}</span>
   </div>
 
-  <p v-if="loading" class="empty"><span class="spinner"></span> Betöltés…</p>
-  <p v-else-if="loaded && !items.length" class="empty">Még nincs ajánlás. Kattints a „Frissítés” gombra.</p>
+  <p v-if="loading" class="empty"><span class="spinner"></span> {{ t('common.loading') }}</p>
+  <p v-else-if="loaded && !items.length" class="empty">{{ t('home.empty') }}</p>
   <div v-else class="grid">
-    <TitleCard v-for="it in items" :key="it.batch_id + it.title.id" :title="it.title" :reasons="it.reasons" :batch-id="it.batch_id" />
+    <TitleCard
+      v-for="it in items"
+      :key="it.batch_id + it.title.id"
+      :title="it.title"
+      :reasons="it.reasons"
+      :reason-codes="it.reason_codes"
+      :batch-id="it.batch_id"
+    />
   </div>
 </template>

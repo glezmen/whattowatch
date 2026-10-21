@@ -13,7 +13,7 @@ const available = ref(false)
 const source = ref('')
 
 const sources = [
-  { value: '', label: 'Minden forrás' },
+  { value: '', label: '' },
   { value: 'app', label: 'App' },
   { value: 'netflix_mylist', label: 'Netflix' },
   { value: 'imdb_watchlist', label: 'IMDb' },
@@ -59,19 +59,18 @@ function goto(o: number) {
 </script>
 
 <template>
-  <h1>Watchlist</h1>
+  <h1>{{ $t('watchlist.title') }}</h1>
   <div class="toolbar">
-    <select v-model="source" aria-label="Forrás">
-      <option v-for="s in sources" :key="s.value" :value="s.value">{{ s.label }}</option>
+    <select v-model="source" :aria-label="$t('watchlist.source')">
+      <option v-for="s in sources" :key="s.value" :value="s.value">{{ s.value ? s.label : $t('watchlist.allSources') }}</option>
     </select>
-    <label><input v-model="available" type="checkbox" /> Csak az elérhető most (ellenőrzött előfizetéses)</label>
+    <label><input v-model="available" type="checkbox" /> {{ $t('watchlist.availableOnly') }}</label>
   </div>
   <p class="small muted">
-    Importált (Netflix, IMDb) tételek csak a forrásukban távolíthatók el; itt az app saját watchlistjét kezelheted.
-    A watchlist érdeklődést jelez, nem értékelést.
+    {{ $t('watchlist.hint') }}
   </p>
-  <p v-if="loading && !items.length" class="empty"><span class="spinner"></span> Betöltés…</p>
-  <p v-else-if="!items.length" class="empty">A watchlist üres.</p>
+  <p v-if="loading && !items.length" class="empty"><span class="spinner"></span> {{ $t('common.loading') }}</p>
+  <p v-else-if="!items.length" class="empty">{{ $t('watchlist.empty') }}</p>
   <template v-else>
     <div class="grid">
       <TitleCard v-for="e in items" :key="e.title.id" :title="e.title" show-sources @user-change="(u) => onUser(e, u)" />

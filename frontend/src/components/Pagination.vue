@@ -10,11 +10,11 @@ const pages = computed(() => Math.max(1, Math.ceil(props.total / props.limit)))
 
 <template>
   <div v-if="pages > 1" class="pagination">
-    <button type="button" :disabled="page <= 1" @click="emit('change', offset - limit)">‹ Előző</button>
-    <span>{{ page }} / {{ pages }} oldal ({{ total }} találat)</span>
-    <button type="button" :disabled="page >= pages" @click="emit('change', offset + limit)">Következő ›</button>
+    <button type="button" :disabled="page <= 1" @click="emit('change', offset - limit)">{{ $t('pagination.prev') }}</button>
+    <span>{{ $t('pagination.pageInfo', { page, pages, total }) }}</span>
+    <button type="button" :disabled="page >= pages" @click="emit('change', offset + limit)">{{ $t('pagination.next') }}</button>
   </div>
-  <p v-else class="muted small">{{ total }} találat</p>
+  <p v-else class="muted small">{{ $t('pagination.results', { total }) }}</p>
 </template>
 
 <style scoped>

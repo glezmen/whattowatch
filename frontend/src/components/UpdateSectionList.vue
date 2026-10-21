@@ -60,9 +60,9 @@ onMounted(load)
       {{ heading }}
       <span v-if="!loading && items.length" class="count small muted">({{ items.length }})</span>
     </h2>
-    <p v-if="loading" class="empty"><span class="spinner"></span> Betöltés…</p>
-    <p v-else-if="failed" class="neutral small muted">Nem sikerült betölteni ezt a szekciót.</p>
-    <p v-else-if="!items.length" class="neutral small muted">{{ emptyText ?? 'Ebben az időszakban nincs ilyen esemény.' }}</p>
+    <p v-if="loading" class="empty"><span class="spinner"></span> {{ $t('common.loading') }}</p>
+    <p v-else-if="failed" class="neutral small muted">{{ $t('updates.loadFailed') }}</p>
+    <p v-else-if="!items.length" class="neutral small muted">{{ emptyText ?? $t('updates.emptyDefault') }}</p>
     <div v-else class="grid">
       <UpdateItemCard v-for="it in shown" :key="it.event.id" :item="it" :section="section" />
     </div>

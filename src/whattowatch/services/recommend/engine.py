@@ -204,6 +204,7 @@ def run_recommendations(
         rows: list[Recommendation] = []
         subs_by_title: dict[int, tuple[str, ...]] = {}
         for rank, x in enumerate(picked, start=1):
+            why = reasons(x.breakdown, x.cand, ctx)
             row = Recommendation(
                 batch_id=batch_id,
                 title_id=x.cand.title.id,
@@ -211,7 +212,8 @@ def run_recommendations(
                 score=x.breakdown.total,
                 components=x.breakdown.components,
                 weighted=x.breakdown.weighted,
-                reasons=reasons(x.breakdown, x.cand, ctx),
+                reasons=why.texts,
+                reason_codes=why.codes,
                 generated_at=now,
             )
             row.title = x.cand.title

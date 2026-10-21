@@ -17,8 +17,8 @@ from whattowatch.adapters.tmdb import DiscoverHit, MediaType, TmdbClient
 from whattowatch.config import get_settings
 from whattowatch.db.engine import create_engine_from_settings, session_factory
 from whattowatch.db.models import Availability, SyncRun, Title
-from whattowatch.providers import SUBSCRIPTIONS
 from whattowatch.services.availability import record_snapshot
+from whattowatch.services.subscriptions import enabled_tmdb_ids
 
 DISCOVER_SOURCE = "tmdb/discover"
 VERIFIED_SOURCE = "tmdb/justwatch"
@@ -124,11 +124,13 @@ def sync_catalog(
     session.add(run)
     session.flush()
     errors: list[str] = []
-    provider_ids = [i for sub in SUBSCRIPTIONS for i in sub.tmdb_provider_ids]
+    # Only the enabled subscriptions; with none enabled, discover is skipped entirely
+    # (an empty provider filter would return the whole catalog).
+    provider_ids = enabled_tmdb_ids(session)
     seen: dict[int, Title] = {}
     created = 0
 
-    for media_type in media_types:
+    for media_type in media_types if provider_ids else ():
         try:
             genre_names = tmdb.genres(media_type)
         except Exception as exc:  # noqa: BLE001 - genre names are optional

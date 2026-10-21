@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { UpdateItem, UpdateSection } from '../api/client'
-import { EVENT_CONFIDENCE_LABELS, fmtDate, sourceLabel } from '../format'
+import { useI18n } from 'vue-i18n'
+import { confidenceLabel, fmtDate, fmtDateTime, sourceLabel } from '../format'
 import ProviderBadge from './ProviderBadge.vue'
 import TitleCard from './TitleCard.vue'
 
 const props = defineProps<{ item: UpdateItem; section: UpdateSection }>()
 
+const { t } = useI18n()
 const ev = computed(() => props.item.event)
 const undated = computed(() => ev.value.payload?.undated === true)
 
@@ -15,19 +17,19 @@ const label = computed(() => {
   const e = ev.value
   switch (props.section) {
     case 'new':
-      return `Streamingpremier (HU): ${fmtDate(e.event_date)}`
+      return t('updates.label.new', { date: fmtDate(e.event_date) })
     case 'upcoming':
       return undated.value || !(e.arriving_at ?? e.event_date)
-        ? 'Hamarosan (dátum nem ismert)'
-        : `Érkezik: ${fmtDate(e.arriving_at ?? e.event_date)}`
+        ? t('updates.label.upcomingUndated')
+        : t('updates.label.upcoming', { date: fmtDate(e.arriving_at ?? e.event_date) })
     case 'new_season':
-      return `Új évad: ${fmtDate(e.event_date)}`
+      return t('updates.label.new_season', { date: fmtDate(e.event_date) })
     case 'watchlist_available':
-      return `Elérhető lett: ${fmtDate(e.event_date)}`
+      return t('updates.label.watchlist_available', { date: fmtDate(e.event_date) })
     case 'leaving':
       return undated.value || !(e.leaving_at ?? e.event_date)
-        ? 'Hamarosan kikerül (pontos dátum nem ismert)'
-        : `Kikerül: ${fmtDate(e.leaving_at ?? e.event_date)}`
+        ? t('updates.label.leavingUndated')
+        : t('updates.label.leaving', { date: fmtDate(e.leaving_at ?? e.event_date) })
     default:
       return fmtDate(e.event_date)
   }
@@ -46,10 +48,10 @@ const warn = computed(() => props.section === 'leaving')
       <ProviderBadge v-if="ev.provider_key" :provider-key="ev.provider_key" :fallback-name="ev.provider_name ?? undefined" />
       <strong class="small">{{ label }}</strong>
       <span v-if="showConfidence" class="tag" :class="`conf-${ev.confidence}`">
-        {{ EVENT_CONFIDENCE_LABELS[ev.confidence] ?? ev.confidence }}
+        {{ confidenceLabel(ev.confidence) }}
       </span>
-      <span v-if="section === 'leaving' && item.title.user.on_watchlist" class="tag wl">watchlisten</span>
-      <span class="small muted src" :title="`Észlelve: ${ev.detected_at}`">forrás: {{ sourceLabel(ev.source) }}</span>
+      <span v-if="section === 'leaving' && item.title.user.on_watchlist" class="tag wl">{{ t('updates.onWatchlist') }}</span>
+      <span class="small muted src" :title="t('updates.detected', { date: fmtDateTime(ev.detected_at) })">{{ t('updates.source', { source: sourceLabel(ev.source) }) }}</span>
     </div>
     <TitleCard :title="item.title" />
   </div>

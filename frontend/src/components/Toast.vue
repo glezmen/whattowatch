@@ -6,7 +6,7 @@ import { dismissToast, toasts } from '../toast'
   <div class="toasts" aria-live="polite">
     <div v-for="t in toasts" :key="t.id" class="toast" :class="t.kind" role="alert">
       <span>{{ t.text }}</span>
-      <button class="icon-btn" type="button" aria-label="Bezárás" @click="dismissToast(t.id)">×</button>
+      <button class="icon-btn" type="button" :aria-label="$t('common.close')" @click="dismissToast(t.id)">×</button>
     </div>
   </div>
 </template>

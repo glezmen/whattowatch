@@ -46,11 +46,12 @@ from whattowatch.db.models import (
     WatchEvent,
     WatchlistItem,
 )
-from whattowatch.providers import BY_KEY, SA_CATALOG_IDS, SUBSCRIPTIONS, SubscriptionProvider
+from whattowatch.providers import SUBSCRIPTIONS, SubscriptionProvider
 from whattowatch.providers import provider_for_sa as _provider_for_sa
 from whattowatch.services.catalog import ensure_title
 from whattowatch.services.catalog_sync import run_sync
 from whattowatch.services.recommend.candidates import excluded_title_ids
+from whattowatch.services.subscriptions import enabled_keys, enabled_sa_catalogs
 from whattowatch.services.title_resolution import ResolveRequest, resolve_title
 
 SA_SOURCE = "streaming_availability"
@@ -337,7 +338,7 @@ def sync_sa_changes(
     max_pages: int = 10,
     now: datetime | None = None,
 ) -> SyncRun:
-    """Import SA `changes` for our six catalogs as `catalog_events` (commits)."""
+    """Import SA `changes` for the enabled catalogs as `catalog_events` (commits)."""
     now = now or datetime.now(UTC)
     run = SyncRun(source="sa_changes", started_at=now, status="running", errors=[])
     session.add(run)
@@ -346,19 +347,25 @@ def sync_sa_changes(
     counts: Counter[str] = Counter()
     errors: list[str] = []
     resolved: dict[str, int | None] = {}
+    catalogs = enabled_sa_catalogs(session)
+    enabled = set(enabled_keys(session))
 
-    for change_type in types:
+    for change_type in types if catalogs else ():
         try:
             for page in sa.iter_changes(
                 country=country,
                 change_type=change_type,
-                catalogs=SA_CATALOG_IDS,
+                catalogs=catalogs,
                 max_pages=max_pages,
             ):
                 for change in page.changes:
                     counts["processed"] += 1
                     sub = _provider_for_sa(change.service_id)
-                    if sub is None or not _counts_as_subscription(sub, change.option_type):
+                    if (
+                        sub is None
+                        or sub.key not in enabled
+                        or not _counts_as_subscription(sub, change.option_type)
+                    ):
                         counts["skipped"] += 1
                         continue
                     try:
@@ -567,7 +574,7 @@ def _verified_offers(session: Session, title_ids: Iterable[int]) -> dict[int, li
             Availability.region == REGION,
             Availability.offer_type == "flatrate",
             Availability.confidence == "verified",
-            Provider.key.in_(list(BY_KEY)),
+            Provider.key.in_(enabled_keys(session)),
         )
     )
     out: dict[int, set[str]] = {}
@@ -749,7 +756,8 @@ def list_events(
     """Events of one UI section within ±`days`, titles loaded, one per title+provider.
 
     Watched / not-interested titles are excluded, except for `new_season` (only
-    not-interested). Past sections (`new`, `watchlist_available`) look back, `upcoming`
+    not-interested). Events of disabled subscriptions are dropped (provider-less ones,
+    e.g. `new_season`, are kept). Past sections (`new`, `watchlist_available`) look back, `upcoming`
     and `leaving` look forward (undated `estimated` ones are kept), `new_season` both.
     """
     event_type = _SECTION_TYPE[section]
@@ -778,10 +786,14 @@ def list_events(
     hidden = (
         _not_interested_ids(session) if section == "new_season" else excluded_title_ids(session)
     )
+    keys = {pid: key for key, pid in _provider_ids(session).items()}
+    enabled = set(enabled_keys(session))
     rank = {"verified": 0, "exact": 1, "estimated": 2}
     best: dict[tuple[int, int | None], CatalogEvent] = {}
     for e in events:
         if e.title_id in hidden:
+            continue
+        if e.provider_id is not None and keys.get(e.provider_id) not in enabled:
             continue
         k = (e.title_id, e.provider_id)
         cur = best.get(k)

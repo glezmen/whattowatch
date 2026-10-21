@@ -1,16 +1,25 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { api, type TitleCard, type UserState } from '../api/client'
-import { CONFIDENCE_LABELS, fmtDateTime, fmtInt, mediaTypeLabel, sourceLabel } from '../format'
+import { useI18n } from 'vue-i18n'
+import { api, type ReasonCode, type TitleCard, type UserState } from '../api/client'
+import { confidenceLabel, fmtDateTime, fmtInt, mediaTypeLabel, sourceLabel } from '../format'
+import { reasonTexts } from '../reasons'
 import FeedbackPanel from './FeedbackPanel.vue'
 import ProviderBadge from './ProviderBadge.vue'
 import { displayTitle, secondaryTitle } from '../titles'
 
 const IMG_BASE = 'https://image.tmdb.org/t/p/w342'
 
-const props = defineProps<{ title: TitleCard; reasons?: string[]; batchId?: string; showSources?: boolean }>()
+const props = defineProps<{
+  title: TitleCard
+  reasons?: string[]
+  reasonCodes?: ReasonCode[] | null
+  batchId?: string
+  showSources?: boolean
+}>()
 const emit = defineEmits<{ 'user-change': [user: UserState] }>()
 
+const { t: tr } = useI18n()
 const user = ref<UserState>(props.title.user)
 watch(
   () => props.title.user,
@@ -29,15 +38,17 @@ function onUser(u: UserState) {
 }
 
 const t = computed(() => props.title)
+// displayTitle / reasonTexts read the global i18n locale ref, so these recompute on a language switch
 const mainTitle = computed(() => displayTitle(t.value))
 const secondary = computed(() => secondaryTitle(t.value))
+const reasonList = computed(() => reasonTexts(props.reasonCodes, props.reasons))
 const c = computed(() => t.value.community)
 </script>
 
 <template>
   <article class="card title-card" :class="{ dimmed: user.not_interested }">
     <div class="top">
-      <img v-if="t.poster_path" class="poster" :src="IMG_BASE + t.poster_path" :alt="`${mainTitle} plakát`" loading="lazy" />
+      <img v-if="t.poster_path" class="poster" :src="IMG_BASE + t.poster_path" :alt="tr('card.poster', { title: mainTitle })" loading="lazy" />
       <div v-else class="poster placeholder" aria-hidden="true">
         <svg viewBox="0 0 24 24" width="32" height="32">
           <path d="M4 5h16v14H4zM4 9h16M8 5v4M12 5v4M16 5v4" fill="none" stroke="currentColor" stroke-width="1.5" />
@@ -46,11 +57,11 @@ const c = computed(() => t.value.community)
       <div class="meta">
         <h3>{{ mainTitle }}</h3>
         <p v-if="secondary" class="original">{{ secondary }}</p>
-        <p v-if="!t.title_hu && t.has_hu_translation === false" class="hint">nincs magyar cím</p>
+        <p v-if="!t.title_hu && t.has_hu_translation === false" class="hint">{{ tr('card.noHuTitle') }}</p>
         <p class="small muted">
-          {{ t.year ?? 'év ismeretlen' }} · {{ mediaTypeLabel(t.media_type) }}
-          <template v-if="t.media_type === 'tv' && t.number_of_seasons"> · {{ t.number_of_seasons }} évad</template>
-          <template v-if="t.media_type === 'movie' && t.runtime"> · {{ t.runtime }} perc</template>
+          {{ t.year ?? tr('card.yearUnknown') }} · {{ mediaTypeLabel(t.media_type) }}
+          <template v-if="t.media_type === 'tv' && t.number_of_seasons"> · {{ tr('card.seasons', { n: t.number_of_seasons }) }}</template>
+          <template v-if="t.media_type === 'movie' && t.runtime"> · {{ tr('card.minutes', { n: t.runtime }) }}</template>
         </p>
         <div v-if="t.genres.length" class="chips">
           <span v-for="g in t.genres" :key="g" class="chip">{{ g }}</span>
@@ -59,18 +70,23 @@ const c = computed(() => t.value.community)
     </div>
 
     <ul v-if="t.availability.length" class="avail">
-      <li v-for="a in t.availability" :key="a.provider_key + a.offer_type">
+      <li
+        v-for="a in t.availability"
+        :key="a.provider_key + a.offer_type"
+        :class="{ off: a.enabled === false }"
+        :title="a.enabled === false ? tr('card.notSubscribed') : undefined"
+      >
         <ProviderBadge :provider-key="a.provider_key" :fallback-name="a.provider_name" />
-        <span class="small muted" :title="`Forrás: ${a.source}`">ellenőrizve: {{ fmtDateTime(a.last_seen_at) }}</span>
-        <span class="tag" :class="`conf-${a.confidence}`">{{ CONFIDENCE_LABELS[a.confidence] ?? a.confidence }}</span>
+        <span class="small muted" :title="tr('card.sourceTitle', { source: a.source })">{{ tr('card.checked', { date: fmtDateTime(a.last_seen_at) }) }}</span>
+        <span class="tag" :class="`conf-${a.confidence}`">{{ confidenceLabel(a.confidence) }}</span>
         <span v-if="a.leaving_at" class="small warn">
-          távozik: {{ fmtDateTime(a.leaving_at) }}{{ a.leaving_confidence === 'estimated' ? ' (becsült)' : '' }}
+          {{ tr('card.leaving', { date: fmtDateTime(a.leaving_at) }) }}{{ a.leaving_confidence === 'estimated' ? tr('card.estimatedSuffix') : '' }}
         </span>
       </li>
     </ul>
-    <p v-else class="small muted">Nincs ellenőrzött előfizetéses elérhetőség.</p>
+    <p v-else class="small muted">{{ tr('card.noAvailability') }}</p>
 
-    <div class="scores small" :title="c.fetched_at ? `Lekérve: ${fmtDateTime(c.fetched_at)}` : undefined">
+    <div class="scores small" :title="c.fetched_at ? tr('card.fetchedAt', { date: fmtDateTime(c.fetched_at) }) : undefined">
       <span v-if="c.tmdb_vote_average != null">
         TMDB {{ c.tmdb_vote_average.toFixed(1) }}<template v-if="c.tmdb_vote_count"> ({{ fmtInt(c.tmdb_vote_count) }})</template>
       </span>
@@ -78,7 +94,7 @@ const c = computed(() => t.value.community)
         IMDb {{ c.imdb_rating.toFixed(1) }}<template v-if="c.imdb_votes"> ({{ fmtInt(c.imdb_votes) }})</template>
       </span>
       <span v-for="r in user.personal_ratings" :key="r.source + r.raw_value" class="personal">
-        Saját ({{ sourceLabel(r.source) }}): {{ r.raw_value }} [{{ r.scale }}]
+        {{ tr('card.personal', { source: sourceLabel(r.source), value: r.raw_value, scale: r.scale }) }}
       </span>
     </div>
 
@@ -86,8 +102,8 @@ const c = computed(() => t.value.community)
       <span v-for="s in user.watchlist_sources" :key="s" class="tag source">{{ sourceLabel(s) }}</span>
     </div>
 
-    <ul v-if="reasons && reasons.length" class="reasons small">
-      <li v-for="r in reasons" :key="r">{{ r }}</li>
+    <ul v-if="reasonList.length" class="reasons small">
+      <li v-for="r in reasonList" :key="r">{{ r }}</li>
     </ul>
 
     <FeedbackPanel :title-id="t.id" :user="user" @update:user="onUser" />
@@ -181,5 +197,8 @@ h3 {
 }
 .warn {
   color: var(--warn);
+}
+.avail li.off {
+  opacity: 0.55;
 }
 </style>

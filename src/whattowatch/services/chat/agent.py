@@ -7,13 +7,14 @@ selection, exclusion, ranking and availability come from the backend tools.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from whattowatch.providers import SUBSCRIPTIONS
+from whattowatch.providers import SUBSCRIPTIONS, SubscriptionProvider
 from whattowatch.services.chat.tools import ChatTmdb, ToolContext, execute_tool, tool_specs
 from whattowatch.services.recommend.config import RecommenderConfig
 
@@ -74,21 +75,36 @@ _RULES = (
     "(kategória/kulcs alakban, pl. hangulat/feszult).",
     "A record_feedback eszközt csak akkor hívd, ha a felhasználó kifejezetten kéri "
     "(pl. „ezt már láttam”, „5 csillag”, „tedd a watchlistre”).",
-    "A magyar cím mellett add meg az eredeti címet is, ha eltér. Válaszolj magyarul, "
-    "tömören: néhány cím, egy-egy rövid indoklással.",
+    "A magyar cím mellett add meg az eredeti címet is, ha eltér. Válaszolj tömören: "
+    "néhány cím, egy-egy rövid indoklással.",
 )
+_LANGUAGE_RULE = {
+    "hu": "A válaszod nyelve: magyar. Válaszolj magyarul.",
+    "en": "Answer language: English. Write your reply in English (keep the Hungarian title "
+    "next to the original title).",
+}
 
 
-def system_prompt(today: datetime | None = None) -> str:
+def system_prompt(
+    today: datetime | None = None,
+    *,
+    providers: Sequence[SubscriptionProvider] | None = None,
+    language: str = "hu",
+) -> str:
+    """`providers`: the enabled subscriptions (default: all six); `language`: ui_language."""
     day = (today or datetime.now(UTC)).date().isoformat()
-    providers = ", ".join(f"{p.key} ({p.display_name})" for p in SUBSCRIPTIONS)
-    rules = "\n".join(f"{i}. {rule}" for i, rule in enumerate(_RULES, start=1))
+    subs = SUBSCRIPTIONS if providers is None else providers
+    listed = ", ".join(f"{p.key} ({p.display_name})" for p in subs) or (
+        "nincs bekapcsolt előfizetés; ajánlani nem tudsz, ezt mondd el"
+    )
+    rules = list(_RULES) + [_LANGUAGE_RULE.get(language, _LANGUAGE_RULE["hu"])]
+    numbered = "\n".join(f"{i}. {rule}" for i, rule in enumerate(rules, start=1))
     return (
         f"Magyar nyelvű film- és sorozatajánló asszisztens vagy. Mai dátum: {day}.\n"
-        f"A felhasználó előfizetései (szolgáltatókulcs és név): {providers}.\n"
+        f"A felhasználó előfizetései (szolgáltatókulcs és név): {listed}.\n"
         "Feladatod: a kérést eszközhívásokká alakítani, majd az eredmények alapján "
         "válaszolni.\n"
-        f"Szabályok:\n{rules}\n"
+        f"Szabályok:\n{numbered}\n"
         f"Hangulat-/témaszótár (mood_labels):\n{_mood_vocabulary()}\n"
     )
 
@@ -132,7 +148,12 @@ def run_chat(
         now=now,
         send_feedback_text=provider.is_local or allow_cloud_feedback_text,
     )
-    system = system_prompt(now)
+    from whattowatch.services.app_settings import ui_language
+    from whattowatch.services.subscriptions import enabled_subscriptions
+
+    system = system_prompt(
+        now, providers=enabled_subscriptions(session), language=ui_language(session)
+    )
     specs = tool_specs()
     history: list[Message] = [Message(role=m.role, content=m.content) for m in messages]
     trace: list[ToolTraceEntry] = []

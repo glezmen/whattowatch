@@ -41,7 +41,24 @@ uv run wtw refresh notifications [--all]     # értesítések (alapból az olvas
 ```
 
 Az importok idempotensek: ugyanaz a fájl kétszer betöltve nem duplikál. A
-személyes exportokat a gitignored `data/` alá tedd. Az adatforrások
+személyes exportokat a gitignored `data/` alá tedd. A webes felületen feltöltött exportok
+az `IMPORTS_DIR` (alap `data/imports`) alá kerülnek (`<forrás>/<utc>_<fájlnév>`), és egy
+háttérszálon importálódnak (`POST /api/import/upload`).
+
+## Beállítások (M7)
+
+Az alkalmazásszintű beállítások az adatbázisban élnek (`app_settings` tábla), a `.env`
+csak a titkokat és az infrastruktúrát tartja. Parancssorból:
+
+```
+uv run wtw settings show
+uv run wtw settings subscriptions --disable skyshowtime,apple_tv_plus   # előfizetések ki/be
+uv run wtw settings subscriptions --enable apple_tv_plus
+```
+
+A kikapcsolt szolgáltató kimarad a jelöltgenerálásból, az ajánlásokból, a szűrésekből, az
+újdonságokból és a beszélgetős ajánlóból. A Netflix-profil (`wtw import netflix --profile`
+nélkül) először az app-beállításból, csak utána a `.env` `NETFLIX_PROFILE_NAME`-jéből jön. Az adatforrások
 részleteit a `docs/adatforrasok.md` írja le. Az ajánló súlyai a `RECOMMENDER_CONFIG_PATH`
 változóval megadott YAML-fájlból felülírhatók (`docs/recommender.md`).
 
@@ -134,3 +151,10 @@ npm run lint     # eslint (vue + typescript-eslint)
 ```
 
 A backend a `frontend/dist` tartalmát a gyökéren szolgálja ki, ha létezik (más útvonal: `FRONTEND_DIST`).
+
+**Nyelv (HU/EN):** a felület `vue-i18n`-nel fordított; a szövegek a `frontend/src/locales/hu.json`
+(forrás) és `en.json` fájlokban vannak, a két fájl kulcskészlete azonos. A nyelvet a fejléc HU/EN
+kapcsolója vagy a Beállítások állítja; a választás a `PUT /settings/app` `ui_language` mezőjébe és a
+böngésző `localStorage`-ába (`ui_language`) is bekerül. Betöltéskor a szerver értéke dönt, ennek
+hiányában a `localStorage`, végül a böngésző nyelve. Angol felületen a címek sorrendje: angol,
+eredeti, magyar.

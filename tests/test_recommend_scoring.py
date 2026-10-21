@@ -96,7 +96,7 @@ def test_score_candidate_and_reasons() -> None:
     assert b.components["watchlist"] == 1.0 and b.components["genre_affinity"] == 1.0
     assert b.total == pytest.approx(sum(b.weighted.values()))
     assert b.total == pytest.approx(0.3 + 0.2 + 0.15 + 0.1 + 0.04 + 0.05)
-    text = reasons(b, cand, ctx)
+    text = reasons(b, cand, ctx).texts
     assert text == [
         "Hasonló műfajú, mint a jól értékelt művek (Thriller).",
         "A watchlisteden van.",
@@ -106,13 +106,15 @@ def test_score_candidate_and_reasons() -> None:
         {**b.weighted, "genre_affinity": 0.0, "watchlist": 0.0},
         0.0,
     )
-    assert "Illik a jelzett preferenciádhoz: csavaros történet." in reasons(only_pref, cand, ctx)
+    assert (
+        "Illik a jelzett preferenciádhoz: csavaros történet." in reasons(only_pref, cand, ctx).texts
+    )
 
 
 def test_reasons_fallback_never_empty() -> None:
     cand = _cand(1, [])
     ctx = _ctx()
-    assert reasons(score_candidate(cand, ctx, RecommenderConfig()), cand, ctx) == [
+    assert reasons(score_candidate(cand, ctx, RecommenderConfig()), cand, ctx).texts == [
         "Elérhető az előfizetéseiden."
     ]
 

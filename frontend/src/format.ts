@@ -1,31 +1,37 @@
 import type { MediaType } from './api/client'
+import { intlLocale, t, te } from './i18n'
 
-const pad = (n: number) => String(n).padStart(2, '0')
-
-/** ISO (UTC) -> local "YYYY-MM-DD HH:mm". */
+/** ISO (UTC) -> local date and time in the active UI locale. */
 export function fmtDateTime(iso?: string | null): string {
   if (!iso) return '–'
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return new Intl.DateTimeFormat(intlLocale(), { dateStyle: 'medium', timeStyle: 'short' }).format(d)
+}
+
+/** "YYYY-MM-DD" (or ISO) -> localized date; a plain date is not shifted by the timezone. */
+export function fmtDate(d?: string | null): string {
+  if (!d) return '–'
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d)
+  const date = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(d)
+  if (Number.isNaN(date.getTime())) return d
+  return new Intl.DateTimeFormat(intlLocale(), { dateStyle: 'medium' }).format(date)
 }
 
 export function fmtInt(n?: number | null): string {
-  return n == null ? '' : n.toLocaleString('hu-HU')
+  return n == null ? '' : n.toLocaleString(intlLocale())
 }
 
-export function mediaTypeLabel(t: MediaType): string {
-  return t === 'movie' ? 'film' : 'sorozat'
+export function mediaTypeLabel(mt: MediaType): string {
+  return t(mt === 'movie' ? 'mediaType.movie' : 'mediaType.tv')
 }
 
-export const CONFIDENCE_LABELS: Record<string, string> = {
-  verified: 'ellenőrzött',
-  stale: 'elavult',
-  estimated: 'becsült',
-  conflicting: 'ellentmondásos',
-  user_denied: 'felhasználó cáfolta',
+/** Availability / event confidence label (verified, stale, estimated, exact, …). */
+export function confidenceLabel(c: string): string {
+  return te(`confidence.${c}`) ? t(`confidence.${c}`) : c
 }
 
+// Source names are brand names and are not translated.
 export const SOURCE_LABELS: Record<string, string> = {
   app: 'App',
   manual: 'App',
@@ -33,47 +39,25 @@ export const SOURCE_LABELS: Record<string, string> = {
   netflix_mylist: 'Netflix',
   netflix_viewing: 'Netflix',
   netflix_ratings: 'Netflix',
+  netflix_export: 'Netflix',
   imdb: 'IMDb',
   imdb_watchlist: 'IMDb',
   imdb_ratings: 'IMDb',
   tmdb: 'TMDB',
   tmdb_watchlist: 'TMDB',
   tmdb_ratings: 'TMDB',
-  import: 'import',
 }
 
 export function sourceLabel(s: string): string {
-  return SOURCE_LABELS[s] ?? s
+  if (SOURCE_LABELS[s]) return SOURCE_LABELS[s]
+  return te(`source.${s}`) ? t(`source.${s}`) : s
 }
 
-/** "YYYY-MM-DD" (or ISO) -> "YYYY-MM-DD" without timezone shifting a plain date. */
-export function fmtDate(d?: string | null): string {
-  if (!d) return '–'
-  if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d
-  return fmtDateTime(d).slice(0, 10)
-}
-
-export const EVENT_CONFIDENCE_LABELS: Record<string, string> = {
-  exact: 'pontos',
-  estimated: 'becsült',
-  verified: 'ellenőrzött',
-}
-
-export const EVENT_TYPE_LABELS: Record<string, string> = {
-  new: 'Új az előfizetéseiden',
-  upcoming: 'Hamarosan érkezik',
-  expiring: 'Hamarosan távozik',
-  leaving: 'Hamarosan távozik',
-  removed: 'Kikerült',
-  new_season: 'Új évad',
-  watchlist_available: 'Watchlistedről elérhető',
-}
-
-export function eventTypeLabel(t: string): string {
-  return EVENT_TYPE_LABELS[t] ?? t
+export function eventTypeLabel(et: string): string {
+  return te(`eventType.${et}`) ? t(`eventType.${et}`) : et
 }
 
 /** Which page lists events of this type. */
-export function eventRoute(t: string): string {
-  return t === 'expiring' || t === 'leaving' || t === 'removed' ? '/tavozik' : '/ujdonsagok'
+export function eventRoute(et: string): string {
+  return et === 'expiring' || et === 'leaving' || et === 'removed' ? '/tavozik' : '/ujdonsagok'
 }

@@ -1,7 +1,12 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { api, type RefreshSummary, type Settings } from '../api/client'
+import { appSettings, updateAppSettings } from '../appSettings'
+import LanguageSwitch from '../components/LanguageSwitch.vue'
+import SubscriptionToggles from '../components/SubscriptionToggles.vue'
 
+const { t } = useI18n()
 const s = ref<Settings | null>(null)
 const refreshing = ref(false)
 const summary = ref<RefreshSummary | null>(null)
@@ -26,29 +31,64 @@ onMounted(async () => {
   }
 })
 
+const netflixProfiles = computed(() => appSettings.data?.netflix_profiles ?? [])
+const netflixProfile = computed(() => appSettings.data?.netflix_profile_name ?? '')
+
+function onProfile(e: Event) {
+  const v = (e.target as HTMLSelectElement).value
+  void updateAppSettings({ netflix_profile_name: v || null }, { toast: true })
+}
+
 function show(v: unknown): string {
   if (v === null || v === undefined || v === '') return '–'
-  if (typeof v === 'boolean') return v ? 'igen' : 'nem'
+  if (typeof v === 'boolean') return v ? t('common.yes') : t('common.no')
   return typeof v === 'object' ? JSON.stringify(v) : String(v)
 }
 </script>
 
 <template>
-  <h1>Beállítások</h1>
-  <p class="small muted">
-    Csak olvasható nézet. A beállítások a backend környezeti változóiból és konfigurációjából jönnek (lásd
-    <code>.env.example</code>); titkos értékek nem jelennek meg.
-  </p>
+  <h1>{{ t('settings.title') }}</h1>
+
   <section class="card">
-    <h2>Katalógusfrissítés</h2>
+    <h2>{{ t('subscriptions.title') }}</h2>
+    <p class="small muted">{{ t('subscriptions.hint') }}</p>
+    <SubscriptionToggles />
+  </section>
+
+  <section class="card">
+    <h2>{{ t('settings.dataSources') }}</h2>
+    <p class="small muted">{{ t('settings.dataSourcesHint') }}</p>
+    <RouterLink to="/import">{{ t('settings.openImport') }} →</RouterLink>
+  </section>
+
+  <section class="card">
+    <h2>{{ t('settings.language') }}</h2>
+    <p class="small muted">{{ t('settings.languageHint') }}</p>
+    <LanguageSwitch />
+  </section>
+
+  <section class="card">
+    <h2>{{ t('settings.netflixProfile') }}</h2>
+    <p class="small muted">{{ t('settings.netflixProfileHint') }}</p>
+    <p v-if="!appSettings.loaded" class="small muted"><span class="spinner"></span> {{ t('common.loading') }}</p>
+    <p v-else-if="!netflixProfiles.length" class="small muted">
+      {{ t('settings.netflixProfileNone') }}
+      <template v-if="netflixProfile"> ({{ netflixProfile }})</template>
+    </p>
+    <select v-else :value="netflixProfile" :aria-label="t('settings.netflixProfile')" @change="onProfile">
+      <option value="">{{ t('settings.netflixProfileUnset') }}</option>
+      <option v-for="p in netflixProfiles" :key="p" :value="p">{{ p }}</option>
+    </select>
+  </section>
+
+  <section class="card">
+    <h2>{{ t('settings.refresh.title') }}</h2>
     <div class="toolbar refresh">
       <button type="button" class="primary" :disabled="refreshing" @click="refreshNow">
         <span v-if="refreshing" class="spinner" aria-hidden="true"></span>
-        Frissítés most
+        {{ t('settings.refresh.button') }}
       </button>
-      <span class="small muted">
-        Lekéri az elérhetőség-változásokat, újdonságokat és értesítéseket. Akár egy percig is eltarthat.
-      </span>
+      <span class="small muted">{{ t('settings.refresh.hint') }}</span>
     </div>
     <div v-if="summary" class="table-wrap">
       <table class="small">
@@ -61,25 +101,29 @@ function show(v: unknown): string {
       </table>
     </div>
   </section>
-  <p v-if="!s" class="empty"><span class="spinner"></span> Betöltés…</p>
+
+  <p v-if="!s" class="empty"><span class="spinner"></span> {{ t('common.loading') }}</p>
   <template v-else>
     <section class="card">
-      <h2>Adatforrások és LLM</h2>
+      <h2>{{ t('settings.env.title') }}</h2>
+      <p class="small muted">{{ t('settings.env.hint') }}</p>
       <dl>
-        <dt>TMDB API-kulcs beállítva</dt>
+        <dt>{{ t('settings.env.tmdbKey') }}</dt>
         <dd>{{ show(s.tmdb_api_key_set) }}</dd>
-        <dt>Netflix-profil</dt>
-        <dd>{{ show(s.netflix_profile_name) }}</dd>
-        <dt>LM Studio alap-URL</dt>
+        <template v-if="s.llm_provider !== undefined">
+          <dt>{{ t('settings.env.llmProvider') }}</dt>
+          <dd>{{ show(s.llm_provider) }}</dd>
+        </template>
+        <dt>{{ t('settings.env.lmStudio') }}</dt>
         <dd>{{ show(s.lm_studio_base_url) }}</dd>
         <template v-if="s.leaving_notice_days !== undefined">
-          <dt>Kivezetési értesítés (nappal előtte)</dt>
+          <dt>{{ t('settings.env.leavingDays') }}</dt>
           <dd>{{ Array.isArray(s.leaving_notice_days) ? s.leaving_notice_days.join(', ') : show(s.leaving_notice_days) }}</dd>
         </template>
       </dl>
     </section>
     <section v-if="s.recommender" class="card">
-      <h2>Ajánló konfiguráció (súlyok)</h2>
+      <h2>{{ t('settings.recommender') }}</h2>
       <dl>
         <template v-for="(v, k) in s.recommender" :key="k">
           <dt>{{ k }}</dt>
@@ -101,6 +145,9 @@ function show(v: unknown): string {
 <style scoped>
 section {
   margin-bottom: 16px;
+}
+section > p {
+  margin: 0 0 8px;
 }
 h2 {
   font-size: 1.1rem;
@@ -128,5 +175,14 @@ th {
 }
 .nested {
   grid-template-columns: max-content 1fr;
+}
+@media (max-width: 480px) {
+  dl {
+    grid-template-columns: 1fr;
+    gap: 0 0;
+  }
+  dd {
+    margin-bottom: 6px;
+  }
 }
 </style>
