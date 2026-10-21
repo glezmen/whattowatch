@@ -40,9 +40,9 @@ function searchFor(r: Resolution): SearchState {
 }
 
 // --- import context -------------------------------------------------------------------
-const VIEWING_SOURCES = new Set(['netflix_viewing'])
-const LIST_SOURCES = new Set(['netflix_mylist', 'imdb_watchlist'])
-const RATING_SOURCES = new Set(['netflix_ratings', 'imdb_ratings'])
+const VIEWING_SOURCES = new Set(['netflix_viewing', 'prime_viewing'])
+const LIST_SOURCES = new Set(['netflix_mylist', 'imdb_watchlist', 'prime_watchlist'])
+const RATING_SOURCES = new Set(['netflix_ratings', 'imdb_ratings', 'prime_feedback'])
 
 function sameDay(a: string, b: string): boolean {
   return fmtDate(a) === fmtDate(b)

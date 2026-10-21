@@ -328,6 +328,7 @@
     "notSupported": "Nem támogatott",
     "readingProfiles": "Profilok beolvasása…",
     "profile": "Netflix-profil",
+    "profilePrime": "Prime Video-profiltípus",
     "profileOption": "{name} · {lang} · {rows} sor",
     "profileOptionNoLang": "{name} · {rows} sor",
     "noProfiles": "Az exportban nem találtunk profilt.",
@@ -344,12 +345,12 @@
     "hint": {
       "imdb_ratings": "Az IMDb-n nyisd meg a „Your Ratings” oldalt, és a jobb felső menüben válaszd az „Export” lehetőséget. Az elkészült CSV-t töltsd le, majd töltsd fel ide.",
       "imdb_watchlist": "Az IMDb-n nyisd meg a watchlistedet, és válaszd az „Export this list” lehetőséget. A letöltött CSV-t töltsd fel ide.",
-      "netflix_export": "Netflix-fiók → Biztonság és adatvédelem → „Személyes adatok letöltése” (Download your personal information). A kért ZIP általában néhány napon belül érkezik e-mailben; azt töltsd fel kicsomagolás nélkül."
+      "netflix_export": "Netflix-fiók → Biztonság és adatvédelem → „Személyes adatok letöltése” (Download your personal information). A kért ZIP általában néhány napon belül érkezik e-mailben; azt töltsd fel kicsomagolás nélkül.",
+      "prime_video_export": "Amazon → Fiók → Adatok és adatvédelem → „Kérd le az adataidat” → Prime Video. A kért ZIP („Prime Video.zip”) általában néhány napon belül érkezik; azt töltsd fel kicsomagolás nélkül. Az exportban csak felnőtt (ADULT) és gyerek (CHILD) profiltípus különül el; az előzetesek és promók nem számítanak megnézettnek."
     },
     "unsupported": {
       "disney_plus_export": "A Disney+ nézési előzményeit GDPR-adatkéréssel (a személyes adataid kikérésével) lehet megszerezni, de ehhez még nincs automatikus import. Addig a megnézett címeket a kártyákon a „Már láttam” gombbal jelölheted.",
       "hbo_max_export": "Az HBO Max nézési előzményeit GDPR-adatkéréssel (a személyes adataid kikérésével) lehet megszerezni, de ehhez még nincs automatikus import. Addig a megnézett címeket a kártyákon a „Már láttam” gombbal jelölheted.",
-      "prime_video_export": "A Prime Video nézési előzményeit GDPR-adatkéréssel (a személyes adataid kikérésével) lehet megszerezni, de ehhez még nincs automatikus import. Addig a megnézett címeket a kártyákon a „Már láttam” gombbal jelölheted.",
       "apple_tv_export": "Az Apple TV+ nézési előzményeit GDPR-adatkéréssel (a személyes adataid kikérésével) lehet megszerezni, de ehhez még nincs automatikus import. Addig a megnézett címeket a kártyákon a „Már láttam” gombbal jelölheted.",
       "skyshowtime_export": "A SkyShowtime nézési előzményeit GDPR-adatkéréssel (a személyes adataid kikérésével) lehet megszerezni, de ehhez még nincs automatikus import. Addig a megnézett címeket a kártyákon a „Már láttam” gombbal jelölheted."
     },

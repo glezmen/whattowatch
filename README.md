@@ -27,6 +27,7 @@ uv run wtw catalog backfill                  # refresh title details: poster, vo
 uv run wtw import imdb <ratings.csv> --kind ratings     # your IMDb ratings
 uv run wtw import imdb <watchlist.csv> --kind watchlist
 uv run wtw import netflix <export.zip> --profile <name>  # Netflix personal data export
+uv run wtw import prime <export.zip> --profile ADULT  # Prime Video data export (ADULT|CHILD)
 
 uv run wtw resolve list --status ambiguous   # ambiguous title matches
 uv run wtw resolve set <id> movie|tv <tmdb_id>
@@ -79,7 +80,8 @@ uv run wtw settings subscriptions --enable apple_tv_plus
 A disabled provider is left out of candidate generation, recommendations, filters, new
 releases and the chat recommender. The Netflix profile (when `wtw import netflix --profile`
 is omitted) comes from the app setting first and only then from `NETFLIX_PROFILE_NAME` in
-`.env`. Data sources are described in `docs/adatforrasok.md`. The recommender weights can be
+`.env`; the Prime Video profile type (`ADULT`/`CHILD`) from the app setting, default
+`ADULT`. Data sources are described in `docs/adatforrasok.md`. The recommender weights can be
 overridden from a YAML file given by `RECOMMENDER_CONFIG_PATH` (`docs/recommender.md`).
 
 ### Settings in the UI

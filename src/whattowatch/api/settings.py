@@ -251,7 +251,9 @@ def put_subscriptions(
             )
     except ValueError as exc:
         session.rollback()
-        raise HTTPException(status_code=422, detail=f"Ismeretlen szolgáltató: {exc}") from exc
+        raise HTTPException(
+            status_code=422, detail=f"Érvénytelen előfizetés-beállítás: {exc}"
+        ) from exc
     session.commit()
     return _subscriptions(session, settings)
 

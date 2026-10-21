@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from whattowatch.adapters.prime_export import clean
 from whattowatch.adapters.tmdb import TmdbError
 from whattowatch.api.deps import SessionDep, TmdbDep
 from whattowatch.api.schemas import (
@@ -55,9 +56,14 @@ _DATE_FIELDS: dict[str, tuple[str, ...]] = {
     "netflix_viewing": ("start_time",),
     "netflix_mylist": ("added_on",),
     "netflix_ratings": ("event_ts",),
+    "prime_viewing": ("start_time",),
+    "prime_watchlist": ("added_at",),
+    "prime_feedback": ("feedback_at",),
     "imdb_ratings": ("Date Rated", "Created"),
     "imdb_watchlist": ("Created", "Date Rated"),
 }
+
+_VIEWING_SOURCES = frozenset({"netflix_viewing", "prime_viewing"})
 
 _RowData = tuple[str, dict[str, Any], dict[str, Any], str | None]
 
@@ -98,9 +104,15 @@ def _seasons(episodes: list[dict[str, Any]]) -> list[ResolutionSeason]:
 
 def _context(rows: list[_RowData]) -> ResolutionContext:
     dates = [d for src, p, raw, _ in rows if (d := _row_date(src, p, raw)) is not None]
-    viewing = [(p, raw) for src, p, raw, _ in rows if src == "netflix_viewing"]
+    viewing = [(p, raw) for src, p, raw, _ in rows if src in _VIEWING_SOURCES]
     seconds = [p["seconds"] for p, _ in viewing if isinstance(p.get("seconds"), int)]
-    devices = sorted({str(raw["Device Type"]) for _, raw in viewing if raw.get("Device Type")})
+    devices = sorted(
+        {
+            device
+            for _, raw in viewing
+            if (device := clean(str(raw.get("Device Type") or raw.get("Device Model") or "")))
+        }
+    )
     episodes = [p for p, _ in viewing if p.get("kind") == "episode"]
     profiles = sorted({prof for *_, prof in rows if prof})
     return ResolutionContext(

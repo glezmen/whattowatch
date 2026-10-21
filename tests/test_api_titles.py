@@ -334,3 +334,22 @@ def test_watchlist(api: ApiEnv) -> None:
     assert page["items"][0]["sources"][0]["source"] == "app"
     page = api.client.get("/api/watchlist", params={"source": "netflix_mylist"}).json()
     assert [inv[i["title"]["id"]] for i in page["items"]] == [108]
+
+
+def test_watchlist_hide_watched(api: ApiEnv) -> None:
+    inv = {v: k for k, v in api.ids.items()}
+    for tmdb_id in (112, 103):
+        api.client.post(f"/api/titles/{api.ids[tmdb_id]}/watchlist")
+    # 112: imported watched event; 107: manual override; 108/103: unseen
+    api.client.put(f"/api/titles/{api.ids[107]}/seen", json={"seen": True})
+    r = api.client.get("/api/watchlist")
+    assert r.headers["X-Filtered-Watched"] == "0" and r.json()["total"] == 4
+    r = api.client.get("/api/watchlist", params={"hide_watched": True, "limit": 1})
+    assert r.headers["X-Filtered-Watched"] == "2"
+    assert r.json()["total"] == 2 and len(r.json()["items"]) == 1
+    r = api.client.get("/api/watchlist", params={"hide_watched": True})
+    assert {inv[i["title"]["id"]] for i in r.json()["items"]} == {108, 103}
+    # an explicit "not seen" beats the imported event
+    api.client.put(f"/api/titles/{api.ids[112]}/seen", json={"seen": False})
+    r = api.client.get("/api/watchlist", params={"hide_watched": True})
+    assert r.headers["X-Filtered-Watched"] == "1" and r.json()["total"] == 3

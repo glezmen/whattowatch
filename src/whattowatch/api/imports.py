@@ -6,6 +6,7 @@ import re
 import shutil
 import tempfile
 import zipfile
+from collections.abc import Callable
 from contextlib import AbstractContextManager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -29,12 +30,14 @@ from whattowatch.services import subscriptions
 from whattowatch.services.import_jobs import (
     IMPORT_SOURCES,
     SOURCES_BY_KEY,
+    ExportProfile,
     ImportJob,
     ImportJobRegistry,
     SessionFactory,
     TmdbFactory,
     make_runner,
     netflix_profiles,
+    prime_profiles,
     profile_dicts,
 )
 
@@ -123,8 +126,12 @@ def upload(
     source: Annotated[str, Form()],
     file: Annotated[UploadFile, File()],
     profile_name: Annotated[str | None, Form(max_length=200)] = None,
+    profile_type: Annotated[str | None, Form(max_length=20)] = None,
 ) -> ImportJobOut:
-    """Save under `<imports_dir>/<source>/<utc>_<name>` and start the import job."""
+    """Save under `<imports_dir>/<source>/<utc>_<name>` and start the import job.
+
+    `profile_name`: Netflix profile, or the Prime Video profile type (`ADULT`/`CHILD`);
+    `profile_type` is accepted as an alias for Prime Video."""
     info = SOURCES_BY_KEY.get(source)
     if info is None:
         raise HTTPException(status_code=422, detail=f"Ismeretlen importforrás: {source}")
@@ -140,8 +147,9 @@ def upload(
     target = Path(settings.imports_dir) / source / f"{stamp}_{sanitize_file_name(original)}"
     _save(file, target)
     params: dict[str, Any] = {}
-    if profile_name and profile_name.strip():
-        params["profile_name"] = profile_name.strip()
+    chosen = profile_type if source == "prime_video_export" and profile_type else profile_name
+    if chosen and chosen.strip():
+        params["profile_name"] = chosen.strip()
     job = registry.create(source=source, file_name=original, path=target, params=params)
     registry.start(job.id, make_runner(session_factory, settings, tmdb_factory))
     current = registry.get(job.id)
@@ -164,22 +172,32 @@ def get_job(job_id: int, registry: RegistryDep) -> ImportJobOut:
     return _job_out(job)
 
 
-def _profiles_from_upload(session: Session, upload_file: StarletteUploadFile) -> NetflixProfilesOut:
-    with tempfile.TemporaryDirectory(prefix="wtw-netflix-") as tmp:
+# Providers whose export lists profiles: (job source, provider key, reader, label).
+_PROFILE_EXPORTS: dict[str, tuple[str, str, Callable[[Path], list[ExportProfile]], str]] = {
+    "netflix": ("netflix_export", "netflix", netflix_profiles, "Netflix"),
+    "prime": ("prime_video_export", "prime_video", prime_profiles, "Prime Video"),
+}
+
+
+def _profiles_from_upload(
+    session: Session, upload_file: StarletteUploadFile, kind: str
+) -> NetflixProfilesOut:
+    with tempfile.TemporaryDirectory(prefix=f"wtw-{kind}-") as tmp:
         path = Path(tmp) / "export.zip"
         _save(upload_file, path)
-        return _profiles_response(session, path)
+        return _profiles_response(session, path, kind)
 
 
-def _profiles_response(session: Session, path: Path) -> NetflixProfilesOut:
+def _profiles_response(session: Session, path: Path, kind: str) -> NetflixProfilesOut:
+    _, provider_key, reader, label = _PROFILE_EXPORTS[kind]
     try:
-        profiles = netflix_profiles(path)
-    except (zipfile.BadZipFile, UnicodeDecodeError, OSError) as exc:
+        profiles = reader(path)
+    except (zipfile.BadZipFile, UnicodeDecodeError, OSError, ValueError) as exc:
         raise HTTPException(
-            status_code=422, detail=f"Nem olvasható Netflix-export (ZIP): {exc}"
+            status_code=422, detail=f"Nem olvasható {label}-export (ZIP): {exc}"
         ) from exc
     if profiles:
-        subscriptions.set_provider_profiles(session, "netflix", profile_dicts(profiles))
+        subscriptions.set_provider_profiles(session, provider_key, profile_dicts(profiles))
         session.commit()
     return NetflixProfilesOut(
         profiles=[
@@ -189,21 +207,17 @@ def _profiles_response(session: Session, path: Path) -> NetflixProfilesOut:
     )
 
 
-@router.post("/netflix/profiles", response_model=NetflixProfilesOut)
-async def post_netflix_profiles(
-    request: Request, session: SessionDep, registry: RegistryDep
+async def _post_profiles(
+    request: Request, session: Session, registry: ImportJobRegistry, kind: str
 ) -> NetflixProfilesOut:
-    """Multipart `file` (a Netflix export ZIP) or JSON `{job_id}` of an uploaded export.
-
-    Lists the profiles without importing and remembers their names (`netflix_profiles`).
-    """
+    source, _, _, label = _PROFILE_EXPORTS[kind]
     content_type = request.headers.get("content-type", "")
     if content_type.startswith("multipart/form-data"):
         form = await request.form()
         upload_file = form.get("file")
         if not isinstance(upload_file, StarletteUploadFile):
             raise HTTPException(status_code=422, detail="Hiányzik a `file` mező.")
-        return await run_in_threadpool(_profiles_from_upload, session, upload_file)
+        return await run_in_threadpool(_profiles_from_upload, session, upload_file, kind)
     try:
         body = await request.json()
     except ValueError as exc:
@@ -214,6 +228,29 @@ async def post_netflix_profiles(
     job = registry.get(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail=f"Nincs ilyen importfeladat: {job_id}")
-    if job.source != "netflix_export":
-        raise HTTPException(status_code=422, detail="A feladat nem Netflix-export.")
-    return await run_in_threadpool(_profiles_response, session, job.path)
+    if job.source != source:
+        raise HTTPException(status_code=422, detail=f"A feladat nem {label}-export.")
+    return await run_in_threadpool(_profiles_response, session, job.path, kind)
+
+
+@router.post("/netflix/profiles", response_model=NetflixProfilesOut)
+async def post_netflix_profiles(
+    request: Request, session: SessionDep, registry: RegistryDep
+) -> NetflixProfilesOut:
+    """Multipart `file` (a Netflix export ZIP) or JSON `{job_id}` of an uploaded export.
+
+    Lists the profiles without importing and remembers their names (`netflix_profiles`).
+    """
+    return await _post_profiles(request, session, registry, "netflix")
+
+
+@router.post("/prime/profiles", response_model=NetflixProfilesOut)
+async def post_prime_profiles(
+    request: Request, session: SessionDep, registry: RegistryDep
+) -> NetflixProfilesOut:
+    """Multipart `file` (a Prime Video export ZIP) or JSON `{job_id}` of an uploaded export.
+
+    Returns both profile types (`ADULT`, `CHILD`) with their viewing-row counts without
+    importing, and remembers them (`prime_profiles`, provider row `prime_video`).
+    """
+    return await _post_profiles(request, session, registry, "prime")

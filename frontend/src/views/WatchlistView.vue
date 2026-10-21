@@ -16,6 +16,7 @@ const sources = [
   { value: '', label: '' },
   { value: 'app', label: 'App' },
   { value: 'netflix_mylist', label: 'Netflix' },
+  { value: 'prime_watchlist', label: 'Prime Video' },
   { value: 'imdb_watchlist', label: 'IMDb' },
   { value: 'tmdb_watchlist', label: 'TMDB' },
 ]

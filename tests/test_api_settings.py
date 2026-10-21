@@ -22,7 +22,9 @@ def test_subscriptions_roundtrip(api: ApiEnv) -> None:
         "selected_profile": None,
         "profile_support": "export",
     }
-    assert all(i["profile_support"] == "none" for i in items[1:])
+    support = {i["key"]: i["profile_support"] for i in items[1:]}
+    assert support.pop("prime_video") == "export"
+    assert set(support.values()) == {"none"}
     r = api.client.put("/api/settings/subscriptions", json={"enabled": ["hbo_max", "netflix"]})
     assert r.status_code == 200
     assert [i["key"] for i in r.json()["items"] if i["enabled"]] == ["netflix", "hbo_max"]

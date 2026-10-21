@@ -20,6 +20,10 @@ UI_LANGUAGE = "ui_language"
 NETFLIX_PROFILE_NAME = "netflix_profile_name"
 NETFLIX_PROFILES = "netflix_profiles"
 ONBOARDING_DONE = "onboarding_done"
+PRIME_PROFILE_TYPE = "prime_profile_type"
+PRIME_PROFILES = "prime_profiles"
+PRIME_PROFILE_TYPES: tuple[str, ...] = ("ADULT", "CHILD")
+DEFAULT_PRIME_PROFILE = "ADULT"
 
 
 def get_setting(session: Session, key: str, default: Any = None) -> Any:
@@ -72,6 +76,30 @@ def netflix_profiles(session: Session) -> list[str]:
 
 def set_netflix_profiles(session: Session, names: list[str]) -> None:
     set_setting(session, NETFLIX_PROFILES, list(dict.fromkeys(n for n in names if n)))
+
+
+def prime_profile_type(session: Session) -> str:
+    """Prime Video export profile type (`ADULT`/`CHILD`) the import uses; default ADULT."""
+    value = get_setting(session, PRIME_PROFILE_TYPE)
+    return value if value in PRIME_PROFILE_TYPES else DEFAULT_PRIME_PROFILE
+
+
+def set_prime_profile_type(session: Session, value: str | None) -> None:
+    """`None`/"" resets to the default; anything but ADULT/CHILD raises ValueError."""
+    clean = (value or "").strip().upper() or None
+    if clean is not None and clean not in PRIME_PROFILE_TYPES:
+        allowed = ", ".join(PRIME_PROFILE_TYPES)
+        raise ValueError(f"unknown Prime Video profile type: {value!r} (allowed: {allowed})")
+    set_setting(session, PRIME_PROFILE_TYPE, clean)
+
+
+def prime_profiles(session: Session) -> list[str]:
+    value = get_setting(session, PRIME_PROFILES, [])
+    return [str(v) for v in value] if isinstance(value, list) else []
+
+
+def set_prime_profiles(session: Session, names: list[str]) -> None:
+    set_setting(session, PRIME_PROFILES, list(dict.fromkeys(n for n in names if n)))
 
 
 def onboarding_done(session: Session) -> bool:

@@ -15,10 +15,12 @@ import respx
 from conftest import ApiEnv
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
+from test_import_prime import fake_resolver, write_zip
 
 from whattowatch.adapters.tmdb import BASE_URL, TmdbClient
 from whattowatch.api.imports import import_tmdb_factory_dep, job_session_factory_dep
-from whattowatch.db.models import SyncRun, TitleRating
+from whattowatch.db.models import SyncRun, TitleRating, WatchEvent
+from whattowatch.services import import_prime
 from whattowatch.services.import_jobs import ImportJobRegistry
 
 FX = Path(__file__).parent / "fixtures"
@@ -89,11 +91,13 @@ def test_sources(api: ApiEnv) -> None:
         "note_key": None,
     }
     assert sources["netflix_export"]["accepts"] == ".zip"
+    assert sources["prime_video_export"]["supported"] is True
+    assert sources["prime_video_export"]["accepts"] == ".zip"
+    assert sources["prime_video_export"]["note_key"] is None
     unsupported = [k for k, s in sources.items() if not s["supported"]]
     assert unsupported == [
         "disney_plus_export",
         "hbo_max_export",
-        "prime_video_export",
         "apple_tv_export",
         "skyshowtime_export",
     ]
@@ -200,3 +204,75 @@ def test_background_thread_job(env: tuple[ApiEnv, Path]) -> None:
     assert r.json()["status"] in ("queued", "running", "done")
     job = registry.wait(r.json()["id"], timeout=30)
     assert job is not None and job.status == "done", job
+
+
+def test_prime_profiles_and_upload(
+    env: tuple[ApiEnv, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    api, imports_dir = env
+    data = write_zip(tmp_path / "Prime Video.zip").read_bytes()
+    r = api.client.post("/api/import/prime/profiles", files={"file": ("Prime Video.zip", data)})
+    assert r.status_code == 200, r.text
+    assert r.json() == {
+        "profiles": [
+            {"name": "ADULT", "primary_lang": None, "viewing_rows": 10},
+            {"name": "CHILD", "primary_lang": None, "viewing_rows": 1},
+        ]
+    }
+    subs = {s["key"]: s for s in api.client.get("/api/settings/subscriptions").json()["items"]}
+    prime = subs["prime_video"]
+    assert prime["profile_support"] == "export"
+    assert [p["name"] for p in prime["profiles"]] == ["ADULT", "CHILD"]
+    assert prime["profiles"][0]["rows"] == 10
+    assert prime["selected_profile"] == "ADULT"  # default
+
+    bad = api.client.post("/api/import/prime/profiles", files={"file": ("x.zip", b"nope")})
+    assert bad.status_code == 422
+    r = api.client.put(
+        "/api/settings/subscriptions",
+        json={"items": [{"key": "prime_video", "selected_profile": "TEEN"}]},
+    )
+    assert r.status_code == 422
+    r = api.client.put(
+        "/api/settings/subscriptions",
+        json={"items": [{"key": "prime_video", "selected_profile": "child"}]},
+    )
+    prime = {s["key"]: s for s in r.json()["items"]}["prime_video"]
+    assert prime["selected_profile"] == "CHILD"
+
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(import_prime, "_resolve", fake_resolver(calls))
+    r = api.client.post(
+        "/api/import/upload",
+        data={"source": "prime_video_export"},
+        files={"file": ("Prime Video.zip", data, "application/zip")},
+    )
+    job = r.json()
+    assert job["status"] == "done", job
+    assert job["params"] == {"profile_name": "CHILD"}  # from the app setting
+    assert job["summary"]["processed"] == 17
+    assert {c["title_text"] for c in calls if c["source"] == "prime_viewing"} == {"Bluey"}
+    assert len(list((imports_dir / "prime_video_export").iterdir())) == 1
+
+    r = api.client.post(
+        "/api/import/upload",
+        data={"source": "prime_video_export", "profile_type": "ADULT"},
+        files={"file": ("Prime Video.zip", data)},
+    )
+    job = r.json()
+    assert job["status"] == "done" and job["params"] == {"profile_name": "ADULT"}
+    api.session.expire_all()
+    run = api.session.get(SyncRun, job["sync_run_id"])
+    assert run is not None and run.source == "prime_video_export"
+    assert api.session.scalar(
+        select(WatchEvent).where(WatchEvent.source == "prime_viewing").limit(1)
+    )
+    r = api.client.post("/api/import/prime/profiles", json={"job_id": job["id"]})
+    assert r.status_code == 200 and len(r.json()["profiles"]) == 2
+
+    r = api.client.post(
+        "/api/import/upload",
+        data={"source": "prime_video_export", "profile_name": "TEEN"},
+        files={"file": ("Prime Video.zip", data)},
+    )
+    assert r.json()["status"] == "failed" and "TEEN" in r.json()["error"]

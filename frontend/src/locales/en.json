@@ -328,6 +328,7 @@
     "notSupported": "Not supported",
     "readingProfiles": "Reading profiles…",
     "profile": "Netflix profile",
+    "profilePrime": "Prime Video profile type",
     "profileOption": "{name} · {lang} · {rows} rows",
     "profileOptionNoLang": "{name} · {rows} rows",
     "noProfiles": "No profiles were found in the export.",
@@ -344,12 +345,12 @@
     "hint": {
       "imdb_ratings": "On IMDb, open “Your Ratings” and pick “Export” from the menu at the top right. Download the CSV when it's ready and upload it here.",
       "imdb_watchlist": "On IMDb, open your watchlist and choose “Export this list”. Upload the downloaded CSV here.",
-      "netflix_export": "Netflix account → Security & privacy → “Download your personal information”. The ZIP usually arrives by email within a few days; upload it as is, without unzipping."
+      "netflix_export": "Netflix account → Security & privacy → “Download your personal information”. The ZIP usually arrives by email within a few days; upload it as is, without unzipping.",
+      "prime_video_export": "Amazon → Account → Data & privacy → “Request your data” → Prime Video. The ZIP (“Prime Video.zip”) usually arrives within a few days; upload it as is, without unzipping. The export only separates the adult (ADULT) and child (CHILD) profile types; trailers and promos do not count as watched."
     },
     "unsupported": {
       "disney_plus_export": "You can get your Disney+ watch history through a GDPR data request, but there's no automatic import for it yet. Until then, mark titles you've watched with “Seen it” on the cards.",
       "hbo_max_export": "You can get your HBO Max watch history through a GDPR data request, but there's no automatic import for it yet. Until then, mark titles you've watched with “Seen it” on the cards.",
-      "prime_video_export": "You can get your Prime Video watch history through a GDPR data request, but there's no automatic import for it yet. Until then, mark titles you've watched with “Seen it” on the cards.",
       "apple_tv_export": "You can get your Apple TV+ watch history through a GDPR data request, but there's no automatic import for it yet. Until then, mark titles you've watched with “Seen it” on the cards.",
       "skyshowtime_export": "You can get your SkyShowtime watch history through a GDPR data request, but there's no automatic import for it yet. Until then, mark titles you've watched with “Seen it” on the cards."
     },

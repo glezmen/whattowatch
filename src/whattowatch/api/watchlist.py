@@ -5,10 +5,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Response
 from sqlalchemy import select
 
-from whattowatch.api.cards import fresh_verified_title_ids, title_cards
+from whattowatch.api.cards import fresh_verified_title_ids, seen_title_ids, title_cards
 from whattowatch.api.deps import NowDep, RecommenderConfigDep, SessionDep
 from whattowatch.api.schemas import Page, WatchlistEntry, WatchlistSourceEntry
 from whattowatch.db.models import Title, WatchlistItem
@@ -25,15 +25,20 @@ def _aware(dt: datetime | None) -> datetime | None:
 
 @router.get("", response_model=Page[WatchlistEntry])
 def get_watchlist(
+    response: Response,
     session: SessionDep,
     cfg: RecommenderConfigDep,
     now: NowDep,
     source: str | None = None,
     available: bool | None = None,
+    hide_watched: bool = False,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> Page[WatchlistEntry]:
-    """Active items, newest first; `available` = has a fresh verified flatrate on the six."""
+    """Active items, newest first; `available` = fresh verified flatrate on the six.
+
+    `hide_watched` drops titles the card marks seen (count in `X-Filtered-Watched`).
+    """
     query = select(WatchlistItem).where(WatchlistItem.status == "active")
     if source:
         query = query.where(WatchlistItem.source == source)
@@ -43,6 +48,13 @@ def get_watchlist(
     if available is not None:
         fresh = fresh_verified_title_ids(session, now=now, max_age_days=cfg.verified_max_age_days)
         grouped = {tid: v for tid, v in grouped.items() if (tid in fresh) == available}
+
+    filtered = 0
+    if hide_watched:
+        seen = seen_title_ids(session)
+        filtered = sum(1 for tid in grouped if tid in seen)
+        grouped = {tid: v for tid, v in grouped.items() if tid not in seen}
+    response.headers["X-Filtered-Watched"] = str(filtered)
 
     def newest(items: list[WatchlistItem]) -> datetime | None:
         dates = [d for d in (_aware(i.added_at) for i in items) if d is not None]

@@ -47,9 +47,9 @@ IMPORT_SOURCES: tuple[ImportSourceInfo, ...] = (
     ImportSourceInfo("imdb_ratings", ".csv", True),
     ImportSourceInfo("imdb_watchlist", ".csv", True),
     ImportSourceInfo("netflix_export", ".zip", True),
+    ImportSourceInfo("prime_video_export", ".zip", True),
     ImportSourceInfo("disney_plus_export", ".zip", False),
     ImportSourceInfo("hbo_max_export", ".zip", False),
-    ImportSourceInfo("prime_video_export", ".zip", False),
     ImportSourceInfo("apple_tv_export", ".zip", False),
     ImportSourceInfo("skyshowtime_export", ".zip", False),
 )
@@ -184,7 +184,7 @@ def summarize(run: SyncRun) -> dict[str, int]:
         "updated": run.updated or 0,
         "skipped": run.skipped or 0,
     }
-    # The Netflix import keeps its counters as the first `errors` entry.
+    # The Netflix/Prime imports keep their counters as the first `errors` entry.
     first = run.errors[0] if run.errors else None
     if isinstance(first, dict):
         for key in ("unresolved", "ambiguous"):
@@ -193,24 +193,27 @@ def summarize(run: SyncRun) -> dict[str, int]:
     return out
 
 
-# --- Netflix profiles ---------------------------------------------------------------------
+# --- Export profiles (Netflix profiles, Prime Video profile types) -------------------------
 
 
 @dataclass(frozen=True)
-class NetflixProfile:
+class ExportProfile:
     name: str
     primary_lang: str | None
     viewing_rows: int
 
 
-def profile_dicts(profiles: list[NetflixProfile]) -> list[dict[str, Any]]:
+NetflixProfile = ExportProfile
+
+
+def profile_dicts(profiles: list[ExportProfile]) -> list[dict[str, Any]]:
     """`providers.profiles` shape: `[{name, primary_lang, rows}]`."""
     return [
         {"name": p.name, "primary_lang": p.primary_lang, "rows": p.viewing_rows} for p in profiles
     ]
 
 
-def netflix_profiles(path: Path) -> list[NetflixProfile]:
+def netflix_profiles(path: Path) -> list[ExportProfile]:
     """Profiles of a Netflix export (Profiles.csv + viewing-row counts); imports nothing."""
     from whattowatch.adapters.netflix_export import open_export
 
@@ -222,7 +225,19 @@ def netflix_profiles(path: Path) -> list[NetflixProfile]:
             langs.setdefault(p.profile_name, p.primary_lang or None)
     for name in counts:
         langs.setdefault(name, None)
-    return [NetflixProfile(name, langs[name], counts.get(name, 0)) for name in langs]
+    return [ExportProfile(name, langs[name], counts.get(name, 0)) for name in langs]
+
+
+def prime_profiles(path: Path) -> list[ExportProfile]:
+    """Both Prime Video profile types (ADULT, CHILD) with viewing-row counts; imports nothing.
+
+    Raises ValueError when the file has no `Viewing History.csv` (not a Prime export)."""
+    from whattowatch.adapters.prime_export import VIEWING_CSV, list_profiles, open_export
+
+    export = open_export(path)
+    if VIEWING_CSV not in export.file_hashes:
+        raise ValueError(f"nincs benne {VIEWING_CSV}")
+    return [ExportProfile(p["name"], None, p["rows"]) for p in list_profiles(export)]
 
 
 # --- Runners ------------------------------------------------------------------------------
@@ -238,6 +253,8 @@ def make_runner(
             return _run_imdb(job, session_factory, tmdb_factory)
         if job.source == "netflix_export":
             return _run_netflix(job, session_factory, settings, tmdb_factory)
+        if job.source == "prime_video_export":
+            return _run_prime(job, session_factory, tmdb_factory)
         raise ImportJobError(f"Ehhez a forráshoz nincs import: {job.source}")
 
     return runner
@@ -300,3 +317,30 @@ def _run_netflix(
     factory = _require_tmdb(tmdb_factory)
     with session_factory() as session, factory() as tmdb:
         return import_netflix.run_import(job.path, profile_name=profile, session=session, tmdb=tmdb)
+
+
+def _run_prime(
+    job: ImportJob, session_factory: SessionFactory, tmdb_factory: TmdbFactory | None
+) -> SyncRun:
+    import zipfile
+
+    from whattowatch.services import app_settings, import_prime, subscriptions
+
+    try:
+        profiles = prime_profiles(job.path)
+    except (zipfile.BadZipFile, UnicodeDecodeError, OSError, ValueError) as exc:
+        raise ImportJobError(f"Nem olvasható Prime Video-export (ZIP): {exc}") from exc
+    with session_factory() as session:
+        subscriptions.set_provider_profiles(session, "prime_video", profile_dicts(profiles))
+        session.commit()
+        requested = job.params.get("profile_name") or app_settings.prime_profile_type(session)
+    profile = str(requested).strip().upper()
+    if profile not in app_settings.PRIME_PROFILE_TYPES:
+        allowed = ", ".join(app_settings.PRIME_PROFILE_TYPES)
+        raise ImportJobError(
+            f"Ismeretlen Prime Video-profiltípus: {requested}. Lehetséges: {allowed}"
+        )
+    job.params["profile_name"] = profile
+    factory = _require_tmdb(tmdb_factory)
+    with session_factory() as session, factory() as tmdb:
+        return import_prime.run_import(job.path, profile_type=profile, session=session, tmdb=tmdb)

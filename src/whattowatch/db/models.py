@@ -28,6 +28,9 @@ ImportSource = Literal[
     "imdb_ratings",
     "imdb_watchlist",
     "sa_changes",
+    "prime_viewing",
+    "prime_watchlist",
+    "prime_feedback",
 ]
 ResolutionStatus = Literal["resolved", "ambiguous", "unresolved", "manual", "rejected"]
 ResolutionMethod = Literal[
@@ -39,7 +42,7 @@ ResolutionMethod = Literal[
     "manual",
 ]
 WatchStatus = Literal["watched", "in_progress", "abandoned"]
-RatingScale = Literal["1-10", "thumbs0-3", "1-5", "0-10"]
+RatingScale = Literal["1-10", "thumbs0-3", "1-5", "0-10", "like"]
 OfferType = Literal["flatrate", "rent", "buy", "ads", "free"]
 AvailabilityConfidence = Literal["verified", "stale", "estimated", "conflicting", "user_denied"]
 LeavingConfidence = Literal["exact", "estimated"]

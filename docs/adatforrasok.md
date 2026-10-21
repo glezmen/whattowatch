@@ -245,13 +245,67 @@ kizárólag explicit értékelés vagy szöveges visszajelzés adjon. Egy
 
 ### 2.2 Prime Video
 
-Állapot: **közvetett**.
+Állapot: **igazolt** (valós exporton ellenőrizve, 2026-10-21; import:
+`wtw import prime`, webes import „Prime Video”).
 
-Fiók → „Adatok és adatvédelem” → „Kérd le az adataidat”:
+Amazon → Fiók → „Adatok és adatvédelem” → „Kérd le az adataidat” → Prime Video:
 `https://www.amazon.<tld>/hz/privacy-central/data-requests/preview.html`
-(domain-független útvonal). Kategóriánként külön fájl, nincs „mindent letölt”.
-A Prime Video nézési előzmény dokumentáltan benne van (cím, időpont, eszköz,
-nézett másodpercek). A watchlist jelenlétét nem találtuk megerősítve.
+(domain-független útvonal). Az átfutás ~1 nap volt. Az eredmény egy ZIP
+(„Prime Video.zip”) mappákkal; az import a tagokat **fájlnév szerint**
+olvassa, `utf-8-sig` kódolással.
+
+Formátumsajátosság: a cellák értéke gyakran **szó szerinti idézőjelekbe**
+van csomagolva a CSV-cellán belül (a cella szövege `"The Grinch (2018)"`,
+az idézőjelekkel együtt), a hiányzó érték pedig `Not available` /
+`Not Applicable` szöveg. Az import mindkettőt eltávolítja.
+
+- `Viewing History.csv` (~1400 sor a vizsgált exportban). Releváns oszlopok:
+  `Title`, `Profile Type` (`ADULT` / `CHILD`),
+  `Playback Start Datetime (UTC)`, `Playback End Datetime (UTC)`,
+  `Seconds Viewed`, `Is Autoplay` (`Yes`/`No`),
+  `Material Type Description` (`Full` / `Promo` / `Trailer`),
+  `Entitlement Type Code` (`PRIME_SUBSCRIPTION` / `FREE` / `RENTAL` /
+  `TRAILER`), `Offer Type Code`, `Country Code`, `Device Model`,
+  `Is Deleted`. **Csak a `Full` sor nézés**; a `Promo`/`Trailer` sorok
+  automatikusan lejátszott előzetesek (importnál `supplemental`-ként
+  kihagyva). Profilnév nincs, csak profiltípus: az import `ADULT`/`CHILD`
+  szerint szűr (alapértelmezés `ADULT`, app-beállítás `prime_profile_type`).
+- `Watchlist.csv` (~50 sor): `Catalog Title` (pl. `The Northman`,
+  `Fallout - Season 1`), `Item Added Date`, `Item Type`, `Deleted`.
+  Az import a ` - Season N` végződést a kereséshez levágja (a nyers sorban
+  megmarad), a `Deleted` sorokat kihagyja.
+- `Customer Feedback.csv` (~20 sor): `Entity Type` (`Movie` / `TV Series`),
+  `Feedback Type` (`Like`, várhatóan `Dislike`), `Title Name` (az
+  `Unknown title` sorokat kihagyjuk), `Feedback Date`. Saját értékelésként
+  tároljuk: `title_ratings.source = prime_like`, skála `like`, `Like` = 1,0,
+  `Dislike` = 0,0; az `Entity Type` média-típus-tipp a feloldáshoz.
+- `Watch Events.csv`: epizódcímek sorozatnév nélkül — **nem használjuk**.
+
+A címek angolok (TMDB-keresés `en-US`). Címminták a `Title` oszlopban:
+
+| Minta | Példa | Értelmezés |
+|---|---|---|
+| film | `Fantastic Mr. Fox` | önálló cím |
+| film évvel | `The Grinch (2018)` | cím + `year` |
+| epizód | `You Found Me-The Boys - Season 1` | epizód`-`sorozat` - Season N` |
+| epizód, nagykötőjel | `Dirty Business-The Boys – Season 4` | ugyanaz |
+| epizód, kettőspont | `Chuck Versus the Suburbs-Chuck: Season 2` | ugyanaz |
+| évadszintű sor | `The Tick - Season 1-The Tick - Season 1`, `11.22.63: SEASON 1-11.22.63: SEASON 1` | két azonos fél: sorozat + évad, epizódcím nélkül |
+| évad nélküli epizód | `Stasis-Tales from the Loop` | epizód, évad ismeretlen |
+
+Elemzési szabály: a szegmenseket elválasztó kötőjel szóköz nélküli `-` (a
+` - ` nem az). Évadjelölés (`[-–:] Season N`, kis/nagybetű-független) esetén
+a jelölést hordozó szegmens a sorozat, az előtte állók az epizódcím.
+Jelölés nélküli `X-Y` esetén `Y` sorozat epizódjaként olvassuk, **kivéve**
+ha `Y` az exportban sehol nem szerepel évadjelöléssel és csak egyetlen
+különböző epizódcímmel fordul elő — ilyenkor kötőjeles filmcímnek tekintjük
+(pl. `Spider-Man: Homecoming`). Ismert korlát: kötőjeles sorozatnév
+évadjelöléssel (`Part I-Obi-Wan Kenobi - Season 1`) az utolsó kötőjelnél
+vágódik; az ilyen csoport feloldatlan/kétértelmű lesz, és kézzel oldható fel.
+
+Nézési státusz: mint a Netflixnél — epizódnál 5, filmnél 10 perc felett
+„megnézett”, alatta „félbehagyott”; az automatikus lejátszás (`Is Autoplay`)
+csak a küszöb felett számít.
 
 Létezik nem hivatalos böngésző-script az előzmény exportjára — **nem
 használjuk**.
@@ -368,7 +422,7 @@ Opcionális, kétirányú szinkron lehetőség.
 | Szolgáltató | Watchlist-export | Állapot |
 |---|---|---|
 | Netflix | `MyList.csv` a teljes adatexportban (2.1) | igazolt |
-| Prime Video | adatkérésben nem megerősített | közvetett |
+| Prime Video | `Watchlist.csv` az adatkérésben (2.2) | igazolt |
 | Disney+ | nem dokumentált | nincs |
 | HBO Max | nem dokumentált | nincs |
 | Apple TV | „Up Next” az exportban nem megerősített | közvetett |

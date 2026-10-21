@@ -26,7 +26,7 @@ log = logging.getLogger(__name__)
 
 TMDB_LOGO_BASE = "https://image.tmdb.org/t/p/w92"
 # Providers whose official data export lists viewing profiles (docs/api.md M7b).
-PROFILE_SUPPORT: dict[str, str] = {"netflix": "export"}
+PROFILE_SUPPORT: dict[str, str] = {"netflix": "export", "prime_video": "export"}
 UNSET: Any = object()
 
 
@@ -101,7 +101,8 @@ def apply_updates(session: Session, updates: Iterable[SubscriptionUpdate]) -> No
     """Partial update of some rows; unknown keys raise ValueError before any change.
 
     Netflix's `selected_profile` is kept in sync with the `netflix_profile_name` app
-    setting (the import's default profile filter). Flushes."""
+    setting, Prime Video's with `prime_profile_type` (the imports' default profile
+    filter). Flushes."""
     items = list(updates)
     _check_keys(u.key for u in items)
     rows = _rows(session, create=True)
@@ -111,6 +112,9 @@ def apply_updates(session: Session, updates: Iterable[SubscriptionUpdate]) -> No
             row.enabled = u.enabled
         if u.selected_profile is not UNSET:
             value = (u.selected_profile or "").strip() or None
+            if u.key == "prime_video":
+                app_cfg.set_prime_profile_type(session, value)  # ValueError if not ADULT/CHILD
+                value = value.upper() if value else None
             row.selected_profile = value
             if u.key == "netflix":
                 app_cfg.set_netflix_profile_name(session, value)
@@ -124,6 +128,8 @@ def set_provider_profiles(session: Session, key: str, profiles: list[dict[str, A
     row.profiles = [dict(p) for p in profiles if p.get("name")]
     if key == "netflix":
         app_cfg.set_netflix_profiles(session, [str(p["name"]) for p in row.profiles])
+    elif key == "prime_video":
+        app_cfg.set_prime_profiles(session, [str(p["name"]) for p in row.profiles])
     session.flush()
 
 
@@ -149,6 +155,10 @@ def subscription_rows(session: Session, settings: Settings) -> list[Subscription
             if not profiles:
                 profiles = [{"name": n} for n in app_cfg.netflix_profiles(session)]
             selected = app_cfg.effective_netflix_profile(session, settings)
+        elif sub.key == "prime_video":
+            if not profiles:
+                profiles = [{"name": n} for n in app_cfg.prime_profiles(session)]
+            selected = app_cfg.prime_profile_type(session)
         logo = row.logo_path if row is not None else None
         out.append(
             SubscriptionRow(

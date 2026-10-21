@@ -58,7 +58,9 @@ ResolutionContext { rows: int, first_at?, last_at?, total_seconds?, devices: str
                     seasons: { season?, episodes: int, episode_titles: string[] (≤5) }[],
                     standalone: bool, source_profiles: string[] }
   // a kapcsolt import-sorokból: netflix_viewing = Start Time, Duration, Device Type, évad/epizód;
-  // netflix_mylist/netflix_ratings/imdb_* = csak rows + a listára tétel/értékelés dátuma (first_at/last_at)
+  // prime_viewing ugyanez (Playback Start, Seconds Viewed, Device Model);
+  // netflix_mylist/netflix_ratings/prime_watchlist/prime_feedback/imdb_* = csak rows + a listára
+  // tétel/értékelés dátuma (first_at/last_at)
 CandidateDetails { tmdb_id, media_type, runtime?, number_of_seasons?, year?, overview?, poster_path?,
                    imdb_id?, vote_count?, error? }
 SearchHit { media_type, tmdb_id, title, original_title, year?, popularity, vote_count, title_id? }  // title_id: már a helyi katalógusban
@@ -81,7 +83,7 @@ Settings { tmdb_api_key_set: bool, netflix_profile_name?, lm_studio_base_url, re
 | `PUT /titles/{id}/seen` `{seen: bool}` | kézi „láttam” |
 | `PUT /titles/{id}/not-interested` `{value: bool}` | |
 | `POST /titles/{id}/watchlist` / `DELETE` | app-watchlist (a DELETE csak az `app` forrású tételt veszi le) |
-| `GET /watchlist?source=&available=&limit=100&offset=0` | `Page<WatchlistEntry>`, legutóbb hozzáadott elöl; `source` pl. `app`, `netflix_mylist`, `imdb_watchlist` (ismeretlen = üres); `available` = van friss verified flatrate |
+| `GET /watchlist?source=&available=&hide_watched=false&limit=100&offset=0` | `Page<WatchlistEntry>`, legutóbb hozzáadott elöl; `source` pl. `app`, `netflix_mylist`, `imdb_watchlist` (ismeretlen = üres); `available` = van friss verified flatrate; `hide_watched=true` kihagyja a látott címeket (a `total` is ezt tükrözi), `X-Filtered-Watched: <n>` = kihagyottak száma |
 | `GET /history?q=&status=&source=&exclude_rated=false&include_watchlist=false&limit=50&offset=0` | `Page<HistoryEntry>`: címek nézési eseménnyel vagy személyes értékeléssel, `last_watched_at` (különben `rated_at`) desc, dátum nélküliek a végén; `status` (watched/in_progress/abandoned) és `source` a címeket szűri, a sor a cím összes eseményét adja; `exclude_rated=true` kihagyja a személyesen értékelt címeket (a `total` is ezt tükrözi); `include_watchlist=false` (alap) kihagyja az aktív watchlistes címeket, `X-Filtered-Watchlist: <n>` a kihagyottak száma |
 | `GET /search/tmdb?q=&media_type=` | `SearchHit[]` (TMDB, hu-HU) |
 | `POST /titles/ensure` `{media_type, tmdb_id}` | cím beemelése TMDB-ből (details), válasz `TitleCard` |
@@ -118,11 +120,12 @@ oszlop az előfizetések kapcsolója.
 | `PUT /settings/subscriptions` `{enabled: ["netflix","hbo_max",…]}` | beállítja; üres lista megengedett (ilyenkor az ajánló üres és a felület erre figyelmeztet) |
 | `GET /settings/app` | `{ui_language: "hu"|"en", netflix_profile_name?: string, netflix_profiles: string[] (az utolsó feltöltött exportból), onboarding_done: bool}` |
 | `PUT /settings/app` `{ui_language?, netflix_profile_name?, onboarding_done?}` | részleges frissítés |
-| `POST /import/upload` multipart: `source` (`imdb_ratings`, `imdb_watchlist`, `netflix_export`) + `file` | elmenti `data/imports/<source>/<utc>_<eredeti név>` alá, elindít egy háttérfeladatot; válasz `ImportJob` |
+| `POST /import/upload` multipart: `source` (`imdb_ratings`, `imdb_watchlist`, `netflix_export`, `prime_video_export`) + `file` [+ `profile_name`; Prime-nál `profile_type` is] | elmenti `data/imports/<source>/<utc>_<eredeti név>` alá, elindít egy háttérfeladatot; válasz `ImportJob` |
 | `POST /import/netflix/profiles` multipart `file` **vagy** `{job_id}` | az exportban talált profilnevek: `{profiles: [{name, primary_lang, viewing_rows}]}` (nem indít importot) |
+| `POST /import/prime/profiles` multipart `file` **vagy** `{job_id}` | Prime Video-export: a két profiltípus sorszámmal, `{profiles: [{name: "ADULT"|"CHILD", primary_lang: null, viewing_rows}]}`; eltárolja (`prime_profiles` app-beállítás, `prime_video` szolgáltatósor); nem indít importot |
 | `GET /import/jobs?limit=` | `ImportJob[]` legfrissebb elöl |
 | `GET /import/jobs/{id}` | egy feladat |
-| `GET /import/sources` | mely forrásokhoz van import: `[{source, label_key, accepts: ".csv"|".zip", supported: bool, note_key}]` — a nem támogatott szolgáltatói exportok (Disney+, HBO Max, Prime, Apple, SkyShowtime) `supported: false`, `note_key` a frontend i18n kulcsa a magyarázathoz |
+| `GET /import/sources` | mely forrásokhoz van import: `[{source, label_key, accepts: ".csv"|".zip", supported: bool, note_key}]` — a nem támogatott szolgáltatói exportok (Disney+, HBO Max, Apple, SkyShowtime) `supported: false`, `note_key` a frontend i18n kulcsa a magyarázathoz |
 
 ```
 ImportJob { id, source, file_name, status: "queued"|"running"|"done"|"failed",
@@ -133,7 +136,13 @@ ImportJob { id, source, file_name, status: "queued"|"running"|"done"|"failed",
 A feldolgozás egy háttérszálon fut a folyamaton belül (nincs külső queue); a
 feladatlista memóriában él és a `sync_runs` táblához kötődik. Netflix-exportnál
 `profile_name` kötelező (kérdésben vagy az app-beállításból); ha hiányzik, a
-feladat `failed`, az üzenet felsorolja a profilokat.
+feladat `failed`, az üzenet felsorolja a profilokat. Prime Video-exportnál a
+`profile_name` (vagy `profile_type`) `ADULT`/`CHILD`; ha hiányzik, a `prime_profile_type`
+app-beállítás (alap `ADULT`); más érték → `failed`. A Prime-import csak a
+`Material Type Description = Full` sorokat veszi nézésnek (lásd `docs/adatforrasok.md` 2.2);
+források: `prime_viewing` → `watch_events`, `prime_watchlist` → `watchlist_items`,
+`prime_feedback` → `title_ratings` (`source: prime_like`, `scale: like`, Like = 1,0,
+Dislike = 0,0). CLI: `wtw import prime <zip> [--profile ADULT|CHILD]`.
 
 **Előfizetés-szűrés hatóköre:** a jelöltgenerálás (`discover`), az ajánló
 `verified_subscriptions`, a `/titles` és `/watchlist?available=true` szűrés, az
@@ -154,8 +163,10 @@ mezője mellett `detail_code` is jöhet, ahol van értelme (pl. `no_tmdb_key`).
 - A feltöltés mappája az `IMPORTS_DIR` (alap `data/imports`); a fájlnév ASCII-re tisztítva
   (`[A-Za-z0-9._-]`, más karakter → `_`). `422`: ismeretlen vagy nem támogatott `source`,
   rossz kiterjesztés. TMDB-kulcs nélkül a feladat `failed` (a címfeloldáshoz kell).
-- `POST /import/netflix/profiles`: olvashatatlan ZIP `422`, ismeretlen `job_id` `404`;
-  a Netflix-feladat maga is eltárolja a talált profilneveket (`netflix_profiles`).
+- `POST /import/netflix/profiles` és `/import/prime/profiles`: olvashatatlan ZIP (Prime-nál
+  `Viewing History.csv` nélküli ZIP is) `422`, ismeretlen `job_id` `404`, más forrású
+  feladat `422`; a feladat maga is eltárolja a talált profilokat (`netflix_profiles` /
+  `prime_profiles`).
 - `GET /settings/app.netflix_profile_name`: az app-beállítás, ha nincs, a `.env`
   `NETFLIX_PROFILE_NAME`; `PUT` `null`/üres értékkel törli az app-beállítást.
 - `PUT /settings/subscriptions` ismeretlen kulccsal `422` (semmi sem változik).
@@ -180,7 +191,7 @@ Naplóba nem kerülnek.
 |---|---|
 | `GET /settings/secrets` | `{items: [{key: "TMDB_API_KEY"|"STREAMING_AVAILABILITY_API_KEY"|"ANTHROPIC_API_KEY"|"OPENAI_API_KEY", set: bool, hint: str|null, label_key}]}` + `{lm_studio_base_url: str}` |
 | `PUT /settings/secrets` `{values: {KEY: "…"|null}, lm_studio_base_url?: str}` | `null`/üres = törlés; válasz mint a GET; a TMDB-kulcsnál a mentés előtt `GET /configuration` próba, hibás kulcs → 422 `detail_code: invalid_tmdb_key` |
-| `GET /settings/subscriptions` | bővül: `{key, display_name, enabled, tmdb_provider_ids, logo_url?: str, profiles: [{name, primary_lang?, rows?}], selected_profile?: str, profile_support: "export"|"none"}` — `logo_url` a TMDB `/watch/providers` `logo_path`-ból (`https://image.tmdb.org/t/p/w92…`), a `providers.logo_path` oszlopban cache-elve (migráció 0008); `profiles` a feltöltött exportból (jelenleg csak Netflix), más szolgáltatónál üres és `profile_support: "none"` |
+| `GET /settings/subscriptions` | bővül: `{key, display_name, enabled, tmdb_provider_ids, logo_url?: str, profiles: [{name, primary_lang?, rows?}], selected_profile?: str, profile_support: "export"|"none"}` — `logo_url` a TMDB `/watch/providers` `logo_path`-ból (`https://image.tmdb.org/t/p/w92…`), a `providers.logo_path` oszlopban cache-elve (migráció 0008); `profiles` a feltöltött exportból (Netflix: profilnevek; Prime Video: `ADULT`/`CHILD` profiltípusok), más szolgáltatónál üres és `profile_support: "none"` |
 | `PUT /settings/subscriptions` `{items: [{key, enabled, selected_profile?}]}` | részleges lista is jó; a régi `{enabled: [...]}` forma továbbra is elfogadott |
 | `GET /settings/llm` | `{provider: "lmstudio"|"anthropic"|"openai", model: str|null, options: {lmstudio: {available: bool, base_url, models: [str]}, anthropic: {key_set: bool, models: ["claude-opus-5-5","claude-sonnet-5-5","claude-haiku-4-5","claude-fable-5-1"]}, openai: {key_set: bool, models: []}}, cloud_send_feedback_text: bool, fallback_allowed: bool}` — az LM Studio modellista a `/v1/models` hívásból (nem inferencia), hiba esetén `available: false` |
 | `PUT /settings/llm` `{provider?, model?, cloud_send_feedback_text?, fallback_allowed?}` | `app_settings`-be ment; a futó rendszer ezt részesíti előnyben a `.env` értékekkel szemben (`llm/registry.effective_llm_config(session, settings)`) |
@@ -188,7 +199,8 @@ Naplóba nem kerülnek.
 
 A profilválasztó jelentése: a kiválasztott profil a szolgáltató exportjának
 importjánál az alapértelmezett szűrő (Netflixnél a `netflix_profile_name`
-app-beállítás ugyanez, visszafelé kompatibilisen).
+app-beállítás ugyanez, visszafelé kompatibilisen; Prime Video-nál a `prime_profile_type`
+app-beállítás, alapértéke `ADULT`, `PUT` csak `ADULT`/`CHILD` értéket fogad el — más `422`).
 
 **Megvalósítási részletek (backend, M7b):**
 - `label_key` = `settings.secrets.label.<KEY>`. `hint` csak legalább 8 karakteres

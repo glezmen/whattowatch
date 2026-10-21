@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api, type ImportJob, type ImportSource, type NetflixProfile } from '../api/client'
-import { appSettings, loadAppSettings } from '../appSettings'
+import { appSettings, loadAppSettings, loadSubscriptions, subscriptions } from '../appSettings'
 import ProviderBadge from '../components/ProviderBadge.vue'
 import { fmtDateTime } from '../format'
 import { PROVIDER_BY_KEY } from '../providers'
@@ -10,6 +10,23 @@ import { pushToast } from '../toast'
 
 const POLL_MS = 3000
 const NETFLIX = 'netflix_export'
+const PRIME = 'prime_video_export'
+/** Sources whose export lists profiles: the upload asks which one to import. */
+const PROFILE_SOURCES: Record<string, (file: File) => Promise<{ profiles: NetflixProfile[] }>> = {
+  [NETFLIX]: (file) => api.netflixProfiles(file),
+  [PRIME]: (file) => api.primeProfiles(file),
+}
+
+function hasProfiles(source: string): boolean {
+  return source in PROFILE_SOURCES
+}
+
+/** The profile the settings already point at (Netflix: app setting; Prime: subscription row). */
+function preferredProfile(source: string): string | null {
+  if (source === NETFLIX) return appSettings.data?.netflix_profile_name ?? null
+  if (source === PRIME) return subscriptions.items.find((s) => s.key === 'prime_video')?.selected_profile ?? 'ADULT'
+  return null
+}
 
 const { t, te } = useI18n()
 const sources = ref<ImportSource[]>([])
@@ -93,8 +110,11 @@ async function loadJobs(quiet = false) {
   } catch {
     // keep the last list
   }
-  // a finished Netflix import may have added profiles to the app settings
-  if (wasActive && !jobs.value.some(isActive)) void loadAppSettings()
+  // a finished Netflix/Prime import may have added profiles to the settings
+  if (wasActive && !jobs.value.some(isActive)) {
+    void loadAppSettings()
+    void loadSubscriptions(true)
+  }
   schedulePoll()
 }
 
@@ -108,12 +128,14 @@ async function onFile(source: string, e: Event) {
   const input = e.target as HTMLInputElement
   s.file = input.files?.[0] ?? null
   s.profiles = null
-  if (!s.file || source !== NETFLIX) return
+  const readProfiles = PROFILE_SOURCES[source]
+  if (!s.file || !readProfiles) return
   s.profilesLoading = true
   try {
-    const res = await api.netflixProfiles(s.file)
+    const res = await readProfiles(s.file)
     s.profiles = res.profiles
-    const preferred = appSettings.data?.netflix_profile_name
+    if (source === PRIME) void loadSubscriptions(true)
+    const preferred = preferredProfile(source)
     const names = res.profiles.map((p) => p.name)
     if (preferred && names.includes(preferred)) s.profile = preferred
     else if (!names.includes(s.profile)) s.profile = names[0] ?? ''
@@ -127,7 +149,7 @@ async function onFile(source: string, e: Event) {
 function canUpload(source: string): boolean {
   const s = st(source)
   if (!s.file || s.uploading || s.profilesLoading) return false
-  if (source === NETFLIX && s.profiles && s.profiles.length > 0 && !s.profile) return false
+  if (hasProfiles(source) && s.profiles && s.profiles.length > 0 && !s.profile) return false
   return true
 }
 
@@ -136,7 +158,7 @@ async function upload(source: string) {
   if (!s.file || !canUpload(source)) return
   s.uploading = true
   try {
-    const job = await api.uploadImport(source, s.file, source === NETFLIX ? s.profile || null : null)
+    const job = await api.uploadImport(source, s.file, hasProfiles(source) ? s.profile || null : null)
     jobs.value = [job, ...jobs.value.filter((j) => j.id !== job.id)]
     pushToast(t('import.uploaded'))
     s.file = null
@@ -210,11 +232,11 @@ onBeforeUnmount(() => {
           @change="onFile(src.source, $event)"
         />
       </label>
-      <template v-if="src.source === NETFLIX && st(src.source).file">
+      <template v-if="hasProfiles(src.source) && st(src.source).file">
         <p v-if="st(src.source).profilesLoading" class="small muted"><span class="spinner"></span> {{ t('import.readingProfiles') }}</p>
         <p v-else-if="st(src.source).profiles && !st(src.source).profiles!.length" class="small warn">{{ t('import.noProfiles') }}</p>
         <label v-else-if="st(src.source).profiles" class="field">
-          <span class="small">{{ t('import.profile') }}</span>
+          <span class="small">{{ src.source === PRIME ? t('import.profilePrime') : t('import.profile') }}</span>
           <select v-model="st(src.source).profile">
             <option v-for="p in st(src.source).profiles" :key="p.name" :value="p.name">{{ profileText(p) }}</option>
           </select>

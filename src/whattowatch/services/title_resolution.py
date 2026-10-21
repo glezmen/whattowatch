@@ -349,10 +349,50 @@ _NETFLIX_DATE_FIELDS: dict[str, str] = {
 }
 
 
+_PRIME_DATE_FIELDS: dict[str, str] = {
+    "prime_viewing": "start_time",
+    "prime_watchlist": "added_at",
+    "prime_feedback": "feedback_at",
+}
+
+
+def _hint(value: Any) -> MediaType | None:
+    return value if value in ("movie", "tv") else None
+
+
+def _prime_request(row: TitleResolution, rows: list[ImportRow]) -> ResolveRequest:
+    """Mirrors `import_prime`: lone `Episode-Series` viewing rows demoted to standalone
+    resolve under their full text with no hint; that variant is tried as well."""
+    parsed = rows[0].parsed or {}
+    common: dict[str, Any] = {
+        "language": "en",
+        "max_year": _min_year(rows, _PRIME_DATE_FIELDS[row.source]),
+        "expected_provider_key": "prime_video",
+    }
+    if row.source != "prime_viewing":
+        return ResolveRequest(
+            source=row.source,
+            title_text=str(parsed.get("lookup_title") or rows[0].title_text),
+            media_type_hint=_hint(parsed.get("media_type_hint")),
+            **common,
+        )
+    year = parsed.get("year")
+    req = ResolveRequest(
+        source=row.source,
+        title_text=str(parsed.get("display_title") or rows[0].title_text),
+        media_type_hint="tv" if parsed.get("kind") == "episode" else None,
+        year=year if isinstance(year, int) else None,
+        **common,
+    )
+    if build_lookup_key(req) != row.lookup_key and parsed.get("kind") == "episode":
+        req = ResolveRequest(source=row.source, title_text=rows[0].title_text, **common)
+    return req
+
+
 def request_for_rows(row: TitleResolution, rows: list[ImportRow]) -> ResolveRequest | None:
     """Rebuild the import's ResolveRequest for `row` from its linked import rows.
 
-    Mirrors the Netflix/IMDb importers; returns None if the rebuilt request does not
+    Mirrors the Netflix/Prime/IMDb importers; returns None if the rebuilt request does not
     map back to the same lookup key (or there are no rows), so nothing is guessed.
     """
     if not rows:
@@ -377,6 +417,8 @@ def request_for_rows(row: TitleResolution, rows: list[ImportRow]) -> ResolveRequ
             max_year=_min_year(rows, _NETFLIX_DATE_FIELDS[row.source]),
             expected_provider_key="netflix",
         )
+    elif row.source in _PRIME_DATE_FIELDS:
+        req = _prime_request(row, rows)
     elif row.source in ("imdb_ratings", "imdb_watchlist"):
         parts = row.lookup_key.split("|")
         hint = parts[1] if len(parts) > 1 and parts[1] in ("movie", "tv") else None

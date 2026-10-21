@@ -401,7 +401,7 @@ export interface AppSettings {
 
 export type AppSettingsPatch = Partial<Pick<AppSettings, 'ui_language' | 'netflix_profile_name' | 'onboarding_done'>>
 
-export type ImportSourceKey = 'imdb_ratings' | 'imdb_watchlist' | 'netflix_export' | string
+export type ImportSourceKey = 'imdb_ratings' | 'imdb_watchlist' | 'netflix_export' | 'prime_video_export' | string
 
 export interface ImportSource {
   source: ImportSourceKey
@@ -689,6 +689,12 @@ export const api = {
     const fd = new FormData()
     fd.set('file', file)
     return request<{ profiles: NetflixProfile[] }>('POST', '/import/netflix/profiles', fd)
+  },
+  /** Prime Video export: the two profile types (ADULT, CHILD) with viewing-row counts. */
+  primeProfiles: (file: File) => {
+    const fd = new FormData()
+    fd.set('file', file)
+    return request<{ profiles: NetflixProfile[] }>('POST', '/import/prime/profiles', fd)
   },
 
   /** Navigate an <a download> here; this helper is only the URL. */
