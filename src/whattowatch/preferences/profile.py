@@ -34,9 +34,15 @@ class PreferenceProfile:
     n_personal_ratings: int  # number of personal TitleRating rows (all sources)
 
 
-def _personal_scores(session: Session) -> tuple[dict[int, float], frozenset[int], int]:
+def _personal_scores(
+    session: Session, user_id: int
+) -> tuple[dict[int, float], frozenset[int], int]:
     """title_id -> normalized personal score used for scaling; rated ids; row count."""
-    ratings = list(session.scalars(select(TitleRating).where(TitleRating.is_personal)))
+    ratings = list(
+        session.scalars(
+            select(TitleRating).where(TitleRating.user_id == user_id, TitleRating.is_personal)
+        )
+    )
     app: dict[int, float] = {}
     other: dict[int, tuple[datetime | None, int, float]] = {}
     for r in ratings:
@@ -66,11 +72,12 @@ def _newer(a: tuple[datetime | None, int, float], b: tuple[datetime | None, int,
     return a[1] > b[1]
 
 
-def build_preference_profile(session: Session) -> PreferenceProfile:
-    scores, rated_ids, n_ratings = _personal_scores(session)
+def build_preference_profile(session: Session, *, user_id: int) -> PreferenceProfile:
+    """The profile of one user (their signals and personal ratings only)."""
+    scores, rated_ids, n_ratings = _personal_scores(session, user_id)
     # (polarity, label_key) -> title_id -> best per-title factor (weight x confidence)
     grouped: dict[tuple[str, str], dict[int, float]] = defaultdict(dict)
-    for sig in session.scalars(select(PreferenceSignal)):
+    for sig in session.scalars(select(PreferenceSignal).where(PreferenceSignal.user_id == user_id)):
         factor = sig.weight * (sig.confidence if sig.confidence is not None else 1.0)
         per_title = grouped[(sig.polarity, f"{sig.category}/{sig.label}")]
         per_title[sig.title_id] = max(factor, per_title.get(sig.title_id, 0.0))

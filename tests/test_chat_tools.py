@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -14,7 +15,7 @@ from whattowatch.services.chat.tools import TOOLS, ToolContext, execute_tool
 from whattowatch.services.recommend.config import RecommenderConfig
 from whattowatch.services.users import default_user_id
 
-CTX = ToolContext(config=RecommenderConfig(), now=NOW)
+CTX = ToolContext(user_id=0, config=RecommenderConfig(), now=NOW)  # user_id set in `run`
 Env = tuple[Session, dict[int, int]]
 
 
@@ -43,6 +44,7 @@ def _hit(tmdb_id: int, title: str) -> SearchHit:
 
 
 def run(env: Env, name: str, args: Any, tmdb: Any = None, ctx: ToolContext = CTX) -> Any:
+    ctx = replace(ctx, user_id=default_user_id(env[0]))  # the fixture's (admin) profile
     return execute_tool(name, args, session=env[0], tmdb=tmdb, ctx=ctx)
 
 
@@ -180,7 +182,7 @@ def test_get_watchlist(recommend_db: Env) -> None:
 @pytest.mark.parametrize("send_text", [True, False])
 def test_record_feedback(recommend_db: Env, send_text: bool) -> None:
     session, ids = recommend_db
-    ctx = ToolContext(config=RecommenderConfig(), now=NOW, send_feedback_text=send_text)
+    ctx = ToolContext(user_id=0, config=RecommenderConfig(), now=NOW, send_feedback_text=send_text)
     args = {
         "title_id": ids[106],
         "stars": 3.5,

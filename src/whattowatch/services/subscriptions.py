@@ -4,9 +4,10 @@
 this module is the runtime filter. A registry provider without a `user_subscriptions`
 row counts as enabled, matching the seeded default.
 
-`user_id=None` falls back to `users.default_user_id` until A2 passes the current user
-(docs/multiuser.md); the Netflix/Prime app settings mirrored here keep the given
-`user_id` (None = global row) for the same reason.
+Every per-user function takes a required `user_id`. The global catalog jobs (TMDB
+discover, Streaming Availability changes) use the `any_user_*` unions: a provider counts
+when at least one profile has it switched on (with no profile at all: every provider).
+Per-user filtering stays in the listings and the recommender.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ from whattowatch.config import Settings
 from whattowatch.db.models import Provider, UserSubscription
 from whattowatch.providers import BY_KEY, SUBSCRIPTIONS, SubscriptionProvider
 from whattowatch.services import app_settings as app_cfg
-from whattowatch.services.users import default_user_id
+from whattowatch.services.users import all_user_ids
 
 if TYPE_CHECKING:
     from whattowatch.adapters.tmdb import TmdbClient
@@ -36,18 +37,8 @@ PROFILE_SUPPORT: dict[str, str] = {"netflix": "export", "prime_video": "export"}
 UNSET: Any = object()
 
 
-def _owner(session: Session, user_id: int | None, *, create: bool) -> int | None:
-    # A1 interim: no user given -> the default user (TODO(A2): the request's user).
-    return user_id if user_id is not None else default_user_id(session, create=create)
-
-
-def _rows(
-    session: Session, user_id: int | None = None, *, create: bool = False
-) -> dict[str, UserSubscription]:
+def _rows(session: Session, uid: int, *, create: bool = False) -> dict[str, UserSubscription]:
     """The user's rows of the six subscriptions; `create` adds missing ones (enabled)."""
-    uid = _owner(session, user_id, create=create)
-    if uid is None:
-        return {}
     rows = {
         r.provider_key: r
         for r in session.scalars(
@@ -65,24 +56,22 @@ def _rows(
     return rows
 
 
-def _flags(session: Session, user_id: int | None) -> dict[str, bool]:
+def _flags(session: Session, user_id: int) -> dict[str, bool]:
     return {key: bool(row.enabled) for key, row in _rows(session, user_id).items()}
 
 
-def enabled_subscriptions(
-    session: Session, *, user_id: int | None = None
-) -> list[SubscriptionProvider]:
+def enabled_subscriptions(session: Session, *, user_id: int) -> list[SubscriptionProvider]:
     """Enabled subscriptions in registry order."""
     flags = _flags(session, user_id)
     return [p for p in SUBSCRIPTIONS if flags.get(p.key, True)]
 
 
-def enabled_keys(session: Session, *, user_id: int | None = None) -> list[str]:
+def enabled_keys(session: Session, *, user_id: int) -> list[str]:
     return [p.key for p in enabled_subscriptions(session, user_id=user_id)]
 
 
 def subscription_states(
-    session: Session, *, user_id: int | None = None
+    session: Session, *, user_id: int
 ) -> list[tuple[SubscriptionProvider, bool]]:
     """All six with their enabled flag, registry order."""
     flags = _flags(session, user_id)
@@ -121,7 +110,7 @@ def _logos(session: Session) -> dict[str, str | None]:
     return {key: logo for key, logo in rows}
 
 
-def set_enabled(session: Session, keys: Iterable[str], *, user_id: int | None = None) -> list[str]:
+def set_enabled(session: Session, keys: Iterable[str], *, user_id: int) -> list[str]:
     """Enable exactly `keys` (others disabled); unknown keys raise ValueError. Flushes."""
     wanted = set(keys)
     _check_keys(wanted)
@@ -139,9 +128,7 @@ class SubscriptionUpdate:
     selected_profile: Any = UNSET  # UNSET: unchanged; None/"": cleared
 
 
-def apply_updates(
-    session: Session, updates: Iterable[SubscriptionUpdate], *, user_id: int | None = None
-) -> None:
+def apply_updates(session: Session, updates: Iterable[SubscriptionUpdate], *, user_id: int) -> None:
     """Partial update of some rows; unknown keys raise ValueError before any change.
 
     Netflix's `selected_profile` is kept in sync with the `netflix_profile_name` app
@@ -167,7 +154,7 @@ def apply_updates(
 
 
 def set_provider_profiles(
-    session: Session, key: str, profiles: list[dict[str, Any]], *, user_id: int | None = None
+    session: Session, key: str, profiles: list[dict[str, Any]], *, user_id: int
 ) -> None:
     """Remember the profiles found in a provider export (`[{name, primary_lang?, rows?}]`)."""
     _check_keys([key])
@@ -192,7 +179,7 @@ class SubscriptionRow:
 
 
 def subscription_rows(
-    session: Session, settings: Settings, *, user_id: int | None = None
+    session: Session, settings: Settings, *, user_id: int
 ) -> list[SubscriptionRow]:
     """The six subscriptions with logo, export profiles and the selected profile."""
     rows = _rows(session, user_id)
@@ -224,7 +211,7 @@ def subscription_rows(
     return out
 
 
-def missing_logos(session: Session, *, user_id: int | None = None) -> bool:
+def missing_logos(session: Session, *, user_id: int) -> bool:
     """True when an enabled subscription has no cached logo yet."""
     logos = _logos(session)
     return any(logos.get(s.key) is None for s in enabled_subscriptions(session, user_id=user_id))
@@ -247,11 +234,38 @@ def refresh_provider_logos(session: Session, tmdb: TmdbClient) -> int:
     return changed
 
 
-def enabled_tmdb_ids(session: Session, *, user_id: int | None = None) -> list[int]:
+def enabled_tmdb_ids(session: Session, *, user_id: int) -> list[int]:
     return [i for p in enabled_subscriptions(session, user_id=user_id) for i in p.tmdb_provider_ids]
 
 
-def enabled_sa_catalogs(session: Session, *, user_id: int | None = None) -> tuple[str, ...]:
+def enabled_sa_catalogs(session: Session, *, user_id: int) -> tuple[str, ...]:
     return tuple(
         p.sa_catalog_id for p in enabled_subscriptions(session, user_id=user_id) if p.sa_catalog_id
     )
+
+
+# --- unions for the global catalog jobs ---------------------------------------------------
+
+
+def any_user_subscriptions(session: Session) -> list[SubscriptionProvider]:
+    """Providers switched on by at least one profile, registry order; every provider when
+    there is no profile yet (nothing to filter for, and the default is "enabled")."""
+    uids = all_user_ids(session)
+    if not uids:
+        return list(SUBSCRIPTIONS)
+    on: set[str] = set()
+    for uid in uids:
+        on.update(p.key for p in enabled_subscriptions(session, user_id=uid))
+    return [p for p in SUBSCRIPTIONS if p.key in on]
+
+
+def any_user_enabled_keys(session: Session) -> list[str]:
+    return [p.key for p in any_user_subscriptions(session)]
+
+
+def any_user_tmdb_ids(session: Session) -> list[int]:
+    return [i for p in any_user_subscriptions(session) for i in p.tmdb_provider_ids]
+
+
+def any_user_sa_catalogs(session: Session) -> tuple[str, ...]:
+    return tuple(p.sa_catalog_id for p in any_user_subscriptions(session) if p.sa_catalog_id)

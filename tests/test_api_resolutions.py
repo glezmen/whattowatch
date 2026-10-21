@@ -69,6 +69,19 @@ def _resolutions(api: ApiEnv) -> dict[str, int]:
                 resolution_id=rows["amb"].id,
             )
         )
+    # Listed resolutions are those the profile's own import rows point at.
+    api.session.add(
+        ImportRow(
+            user_id=default_user_id(api.session),
+            source="imdb_ratings",
+            file_sha256="f",
+            row_hash="h-unres",
+            raw={},
+            title_text="xyz",
+            parsed={},
+            resolution_id=rows["unres"].id,
+        )
+    )
     api.session.commit()
     return {k: v.id for k, v in rows.items()}
 
@@ -81,7 +94,7 @@ def test_list_resolutions(api: ApiEnv) -> None:
     assert amb["title_text"] == "Csillagok között" and amb["import_rows"] == 2
     assert amb["candidates"][0]["on_provider"] is True
     assert amb["candidates"][1]["on_provider"] is None
-    assert page["items"][1]["candidates"] == [] and page["items"][1]["import_rows"] == 0
+    assert page["items"][1]["candidates"] == [] and page["items"][1]["import_rows"] == 1
     only = api.client.get("/api/resolutions", params={"status": "unresolved"}).json()
     assert [i["id"] for i in only["items"]] == [ids["unres"]]
     by_src = api.client.get("/api/resolutions", params={"source": "imdb_ratings"}).json()
@@ -261,7 +274,7 @@ def test_resolution_context_mylist(api: ApiEnv) -> None:
     assert ctx["rows"] == 1 and ctx["first_at"].startswith("2024-02-03")
     assert ctx["total_seconds"] is None and ctx["seasons"] == [] and ctx["standalone"] is False
     empty = api.client.get(f"/api/resolutions/{ids['unres']}").json()["context"]
-    assert empty["rows"] == 0 and empty["first_at"] is None
+    assert empty["rows"] == 1 and empty["first_at"] is None  # one undated import row
 
 
 @respx.mock

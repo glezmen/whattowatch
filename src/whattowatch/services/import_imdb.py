@@ -32,7 +32,6 @@ from whattowatch.db.models import (
     WatchlistItem,
 )
 from whattowatch.services.title_resolution import ResolveRequest, resolve_title
-from whattowatch.services.users import default_user_id
 
 Change = Literal["created", "updated", "unchanged"]
 SOURCES: dict[str, ImportSource] = {"ratings": "imdb_ratings", "watchlist": "imdb_watchlist"}
@@ -72,6 +71,7 @@ def _resources(
 def _upsert_rating(
     session: Session,
     *,
+    user_id: int,
     title_id: int,
     source: str,
     is_personal: bool,
@@ -82,7 +82,11 @@ def _upsert_rating(
     import_row_id: int,
 ) -> Change:
     rating = session.scalar(
-        select(TitleRating).where(TitleRating.title_id == title_id, TitleRating.source == source)
+        select(TitleRating).where(
+            TitleRating.user_id == user_id,
+            TitleRating.title_id == title_id,
+            TitleRating.source == source,
+        )
     )
     values: dict[str, Any] = {
         "is_personal": is_personal,
@@ -94,7 +98,7 @@ def _upsert_rating(
     if rating is None:
         session.add(
             TitleRating(
-                user_id=default_user_id(session),  # A1 interim, TODO(A2): current user
+                user_id=user_id,
                 title_id=title_id,
                 source=source,
                 import_row_id=import_row_id,
@@ -118,17 +122,24 @@ def _same(a: Any, b: Any) -> bool:
 
 
 def _upsert_watchlist(
-    session: Session, *, title_id: int, added_at: datetime | None, import_row_id: int
+    session: Session,
+    *,
+    user_id: int,
+    title_id: int,
+    added_at: datetime | None,
+    import_row_id: int,
 ) -> Change:
     item = session.scalar(
         select(WatchlistItem).where(
-            WatchlistItem.title_id == title_id, WatchlistItem.source == "imdb_watchlist"
+            WatchlistItem.user_id == user_id,
+            WatchlistItem.title_id == title_id,
+            WatchlistItem.source == "imdb_watchlist",
         )
     )
     if item is None:
         session.add(
             WatchlistItem(
-                user_id=default_user_id(session),  # A1 interim, TODO(A2): current user
+                user_id=user_id,
                 title_id=title_id,
                 source="imdb_watchlist",
                 added_at=added_at,
@@ -145,12 +156,18 @@ def _upsert_watchlist(
 
 
 def _apply(
-    session: Session, kind: ImdbKind, row: ImdbRow, title_id: int, import_row_id: int
+    session: Session,
+    kind: ImdbKind,
+    row: ImdbRow,
+    title_id: int,
+    import_row_id: int,
+    user_id: int,
 ) -> Change:
     """Upsert downstream rows; returns the change of the primary entity."""
     if row.imdb_rating is not None and 0 <= row.imdb_rating <= 10:
         _upsert_rating(
             session,
+            user_id=user_id,
             title_id=title_id,
             source="imdb_community",
             is_personal=False,
@@ -166,6 +183,7 @@ def _apply(
             raise ValueError(f"rating out of range: {row.your_rating}")
         personal = _upsert_rating(
             session,
+            user_id=user_id,
             title_id=title_id,
             source="imdb_user",
             is_personal=True,
@@ -180,7 +198,11 @@ def _apply(
             raise ValueError("missing 'Your Rating'")
         return personal
     return _upsert_watchlist(
-        session, title_id=title_id, added_at=row.created, import_row_id=import_row_id
+        session,
+        user_id=user_id,
+        title_id=title_id,
+        added_at=row.created,
+        import_row_id=import_row_id,
     )
 
 
@@ -191,15 +213,18 @@ def _process_row(
     source: ImportSource,
     file_sha: str,
     row: ImdbRow,
+    user_id: int,
 ) -> tuple[bool, Change]:
-    """Returns (row was already imported, downstream change)."""
+    """Returns (row was already imported by this user, downstream change)."""
     digest = row_hash(source, row.raw)
-    import_row = session.scalar(select(ImportRow).where(ImportRow.row_hash == digest))
+    import_row = session.scalar(
+        select(ImportRow).where(ImportRow.user_id == user_id, ImportRow.row_hash == digest)
+    )
     existed = import_row is not None
     is_episode = row.title_kind == "episode"
     if import_row is None:
         import_row = ImportRow(
-            user_id=default_user_id(session),  # A1 interim, TODO(A2): current user
+            user_id=user_id,
             source=source,
             file_sha256=file_sha,
             row_hash=digest,
@@ -231,16 +256,18 @@ def _process_row(
     # Episode ratings/IMDb scores belong to the episode, not the show: keep only the import row.
     if is_episode or resolution.title_id is None or resolution.status not in ("resolved", "manual"):
         return existed, "unchanged"
-    return existed, _apply(session, kind, row, resolution.title_id, import_row.id)
+    return existed, _apply(session, kind, row, resolution.title_id, import_row.id, user_id)
 
 
 def run_import(
     path: Path,
     *,
+    user_id: int,
     kind: str = "ratings",
     session: Session | None = None,
     tmdb: TmdbClient | None = None,
 ) -> SyncRun:
+    """Import one IMDb CSV for `user_id` (import rows, ratings, watchlist are theirs)."""
     if kind not in SOURCES:
         raise _fail(f"ismeretlen IMDb import típus: {kind} (ratings | watchlist).")
     imdb_kind = cast(ImdbKind, kind)
@@ -254,7 +281,9 @@ def run_import(
     file_sha = hashlib.sha256(path.read_bytes()).hexdigest()
 
     with _resources(session, tmdb) as (db, client):
-        run = SyncRun(source=source, started_at=datetime.now(UTC), status="running")
+        run = SyncRun(
+            source=source, user_id=user_id, started_at=datetime.now(UTC), status="running"
+        )
         run.file_sha256 = file_sha
         db.add(run)
         db.commit()
@@ -263,7 +292,9 @@ def run_import(
         for index, row in enumerate(rows, start=1):
             processed += 1
             try:
-                existed, change = _process_row(db, client, imdb_kind, source, file_sha, row)
+                existed, change = _process_row(
+                    db, client, imdb_kind, source, file_sha, row, user_id
+                )
                 db.commit()
             except Exception as exc:  # one bad row must not abort the run
                 db.rollback()

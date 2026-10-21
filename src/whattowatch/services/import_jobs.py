@@ -3,13 +3,17 @@
 No external queue: a thread-safe registry in memory, one `threading.Thread` per job, each
 job opening its own DB session. Results point at the `sync_runs` row the import wrote.
 The registry is lost on restart; the `sync_runs` history is not.
+
+Each job belongs to the profile that uploaded it (`user_id`). A Netflix/Prime export can
+be imported into several profiles at once with `params["assign"]` (export profile ->
+user id); every pair writes its own `sync_runs` row, listed in `params["runs"]`.
 """
 
 from __future__ import annotations
 
 import threading
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -66,6 +70,7 @@ class ImportJob:
     source: str
     file_name: str
     path: Path
+    user_id: int
     params: dict[str, Any] = field(default_factory=dict)
     status: JobStatus = "queued"
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
@@ -76,7 +81,7 @@ class ImportJob:
     sync_run_id: int | None = None
 
 
-JobRunner = Callable[[ImportJob], SyncRun | None]
+JobRunner = Callable[[ImportJob], "SyncRun | list[SyncRun] | None"]
 
 
 class ImportJobRegistry:
@@ -90,11 +95,16 @@ class ImportJobRegistry:
         self._next_id = 1
 
     def create(
-        self, *, source: str, file_name: str, path: Path, params: dict[str, Any]
+        self, *, source: str, file_name: str, path: Path, params: dict[str, Any], user_id: int
     ) -> ImportJob:
         with self._lock:
             job = ImportJob(
-                id=self._next_id, source=source, file_name=file_name, path=path, params=params
+                id=self._next_id,
+                source=source,
+                file_name=file_name,
+                path=path,
+                user_id=user_id,
+                params=params,
             )
             self._next_id += 1
             self._jobs[job.id] = job
@@ -132,10 +142,11 @@ class ImportJobRegistry:
             )
             return
         changes: dict[str, Any] = {"finished_at": datetime.now(UTC)}
-        if run is not None:
-            changes["sync_run_id"] = run.id
-            changes["summary"] = summarize(run)
-            if run.status == "failed":
+        runs = run if isinstance(run, list) else [run] if run is not None else []
+        if runs:
+            changes["sync_run_id"] = runs[-1].id
+            changes["summary"] = _merge_summaries([summarize(r) for r in runs])
+            if any(r.status == "failed" for r in runs):
                 changes["status"] = "failed"
                 changes["error"] = "Az import sikertelen (lásd a szinkronizálási naplót)."
             else:
@@ -149,9 +160,11 @@ class ImportJobRegistry:
             job = self._jobs.get(job_id)
             return _copy(job) if job is not None else None
 
-    def list(self, limit: int = 50) -> list[ImportJob]:
+    def list(self, *, user_id: int, limit: int = 50) -> list[ImportJob]:
+        """The jobs of one profile, newest first."""
         with self._lock:
-            jobs = sorted(self._jobs.values(), key=lambda j: j.id, reverse=True)[:limit]
+            mine = [j for j in self._jobs.values() if j.user_id == user_id]
+            jobs = sorted(mine, key=lambda j: j.id, reverse=True)[:limit]
             return [_copy(j) for j in jobs]
 
     def wait(self, job_id: int, timeout: float | None = None) -> ImportJob | None:
@@ -175,6 +188,14 @@ def _error_text(exc: Exception) -> str:
     if isinstance(exc, click.ClickException):
         return exc.format_message()
     return str(exc)[:500] or type(exc).__name__
+
+
+def _merge_summaries(items: list[dict[str, int]]) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for item in items:
+        for key, value in item.items():
+            out[key] = out.get(key, 0) + value
+    return out
 
 
 def summarize(run: SyncRun) -> dict[str, int]:
@@ -248,7 +269,7 @@ def make_runner(
 ) -> JobRunner:
     """The job body: validates the file, then calls the existing import service."""
 
-    def runner(job: ImportJob) -> SyncRun | None:
+    def runner(job: ImportJob) -> SyncRun | list[SyncRun] | None:
         if job.source in ("imdb_ratings", "imdb_watchlist"):
             return _run_imdb(job, session_factory, tmdb_factory)
         if job.source == "netflix_export":
@@ -283,7 +304,27 @@ def _run_imdb(
         raise ImportJobError(f"Nem értelmezhető IMDb CSV: {exc}") from exc
     factory = _require_tmdb(tmdb_factory)
     with session_factory() as session, factory() as tmdb:
-        return import_imdb.run_import(job.path, kind=kind, session=session, tmdb=tmdb)
+        return import_imdb.run_import(
+            job.path, user_id=job.user_id, kind=kind, session=session, tmdb=tmdb
+        )
+
+
+def _assignments(job: ImportJob, default_profile: str | None) -> dict[str, int]:
+    """Export profile -> user id: `params["assign"]`, else the chosen profile -> the
+    uploader. Validated in the API (known users); empty when no profile is chosen."""
+    raw = job.params.get("assign")
+    if isinstance(raw, dict) and raw:
+        return {str(k): int(v) for k, v in raw.items()}
+    profile = job.params.get("profile_name") or default_profile
+    return {str(profile): job.user_id} if profile else {}
+
+
+def _check_users(session: Session, user_ids: Iterable[int]) -> None:
+    from whattowatch.db.models import User
+
+    missing = sorted(u for u in set(user_ids) if session.get(User, u) is None)
+    if missing:
+        raise ImportJobError(f"Ismeretlen profil(ok): {', '.join(map(str, missing))}")
 
 
 def _run_netflix(
@@ -291,7 +332,7 @@ def _run_netflix(
     session_factory: SessionFactory,
     settings: Settings,
     tmdb_factory: TmdbFactory | None,
-) -> SyncRun:
+) -> list[SyncRun]:
     import zipfile
 
     from whattowatch.services import app_settings, import_netflix, subscriptions
@@ -302,26 +343,38 @@ def _run_netflix(
         raise ImportJobError(f"Nem olvasható Netflix-export (ZIP): {exc}") from exc
     names = [p.name for p in profiles]
     with session_factory() as session:
+        default = app_settings.effective_netflix_profile(session, settings, user_id=job.user_id)
+        assign = _assignments(job, default)
+        _check_users(session, [job.user_id, *assign.values()])
         if names:
-            subscriptions.set_provider_profiles(session, "netflix", profile_dicts(profiles))
+            for uid in dict.fromkeys([job.user_id, *assign.values()]):
+                subscriptions.set_provider_profiles(
+                    session, "netflix", profile_dicts(profiles), user_id=uid
+                )
             session.commit()
-        profile = job.params.get("profile_name") or app_settings.effective_netflix_profile(
-            session, settings
-        )
     listed = ", ".join(names) or "—"
-    if not profile:
+    if not assign:
         raise ImportJobError(f"Nincs kiválasztva Netflix-profil. Az exportban: {listed}")
-    if names and profile not in names:
-        raise ImportJobError(f"Ismeretlen Netflix-profil: {profile}. Az exportban: {listed}")
-    job.params["profile_name"] = profile
+    unknown = [p for p in assign if names and p not in names]
+    if unknown:
+        raise ImportJobError(f"Ismeretlen Netflix-profil: {unknown[0]}. Az exportban: {listed}")
+    if "assign" not in job.params:
+        job.params["profile_name"] = next(iter(assign))
     factory = _require_tmdb(tmdb_factory)
-    with session_factory() as session, factory() as tmdb:
-        return import_netflix.run_import(job.path, profile_name=profile, session=session, tmdb=tmdb)
+    return _run_pairs(
+        job,
+        assign,
+        session_factory,
+        factory,
+        lambda profile, uid, session, tmdb: import_netflix.run_import(
+            job.path, user_id=uid, profile_name=profile, session=session, tmdb=tmdb
+        ),
+    )
 
 
 def _run_prime(
     job: ImportJob, session_factory: SessionFactory, tmdb_factory: TmdbFactory | None
-) -> SyncRun:
+) -> list[SyncRun]:
     import zipfile
 
     from whattowatch.services import app_settings, import_prime, subscriptions
@@ -331,16 +384,52 @@ def _run_prime(
     except (zipfile.BadZipFile, UnicodeDecodeError, OSError, ValueError) as exc:
         raise ImportJobError(f"Nem olvasható Prime Video-export (ZIP): {exc}") from exc
     with session_factory() as session:
-        subscriptions.set_provider_profiles(session, "prime_video", profile_dicts(profiles))
+        default = app_settings.prime_profile_type(session, user_id=job.user_id)
+        requested = _assignments(job, default)
+        _check_users(session, [job.user_id, *requested.values()])
+        for uid in dict.fromkeys([job.user_id, *requested.values()]):
+            subscriptions.set_provider_profiles(
+                session, "prime_video", profile_dicts(profiles), user_id=uid
+            )
         session.commit()
-        requested = job.params.get("profile_name") or app_settings.prime_profile_type(session)
-    profile = str(requested).strip().upper()
-    if profile not in app_settings.PRIME_PROFILE_TYPES:
-        allowed = ", ".join(app_settings.PRIME_PROFILE_TYPES)
-        raise ImportJobError(
-            f"Ismeretlen Prime Video-profiltípus: {requested}. Lehetséges: {allowed}"
-        )
-    job.params["profile_name"] = profile
+    assign: dict[str, int] = {}
+    for name, uid in requested.items():
+        profile = name.strip().upper()
+        if profile not in app_settings.PRIME_PROFILE_TYPES:
+            allowed = ", ".join(app_settings.PRIME_PROFILE_TYPES)
+            raise ImportJobError(
+                f"Ismeretlen Prime Video-profiltípus: {name}. Lehetséges: {allowed}"
+            )
+        assign[profile] = uid
+    if "assign" not in job.params:
+        job.params["profile_name"] = next(iter(assign))
     factory = _require_tmdb(tmdb_factory)
-    with session_factory() as session, factory() as tmdb:
-        return import_prime.run_import(job.path, profile_type=profile, session=session, tmdb=tmdb)
+    return _run_pairs(
+        job,
+        assign,
+        session_factory,
+        factory,
+        lambda profile, uid, session, tmdb: import_prime.run_import(
+            job.path, user_id=uid, profile_type=profile, session=session, tmdb=tmdb
+        ),
+    )
+
+
+def _run_pairs(
+    job: ImportJob,
+    assign: dict[str, int],
+    session_factory: SessionFactory,
+    tmdb_factory: TmdbFactory,
+    run_one: Callable[[str, int, Session, TmdbClient], SyncRun],
+) -> list[SyncRun]:
+    """One import per (export profile, user); each pair in its own session and SyncRun."""
+    runs: list[SyncRun] = []
+    for profile, uid in assign.items():
+        with session_factory() as session, tmdb_factory() as tmdb:
+            run = run_one(profile, uid, session, tmdb)
+        runs.append(run)
+        if "assign" in job.params:
+            job.params.setdefault("runs", []).append(
+                {"profile": profile, "user_id": uid, "sync_run_id": run.id}
+            )
+    return runs

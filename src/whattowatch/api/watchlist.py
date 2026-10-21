@@ -9,7 +9,7 @@ from fastapi import APIRouter, Query, Response
 from sqlalchemy import select
 
 from whattowatch.api.cards import fresh_verified_title_ids, seen_title_ids, title_cards
-from whattowatch.api.deps import NowDep, RecommenderConfigDep, SessionDep
+from whattowatch.api.deps import CurrentUserDep, NowDep, RecommenderConfigDep, SessionDep
 from whattowatch.api.schemas import Page, WatchlistEntry, WatchlistSourceEntry
 from whattowatch.db.models import Title, WatchlistItem
 
@@ -27,6 +27,7 @@ def _aware(dt: datetime | None) -> datetime | None:
 def get_watchlist(
     response: Response,
     session: SessionDep,
+    user: CurrentUserDep,
     cfg: RecommenderConfigDep,
     now: NowDep,
     source: str | None = None,
@@ -39,19 +40,23 @@ def get_watchlist(
 
     `hide_watched` drops titles the card marks seen (count in `X-Filtered-Watched`).
     """
-    query = select(WatchlistItem).where(WatchlistItem.status == "active")
+    query = select(WatchlistItem).where(
+        WatchlistItem.user_id == user.id, WatchlistItem.status == "active"
+    )
     if source:
         query = query.where(WatchlistItem.source == source)
     grouped: dict[int, list[WatchlistItem]] = {}
     for item in session.scalars(query.order_by(WatchlistItem.source)):
         grouped.setdefault(item.title_id, []).append(item)
     if available is not None:
-        fresh = fresh_verified_title_ids(session, now=now, max_age_days=cfg.verified_max_age_days)
+        fresh = fresh_verified_title_ids(
+            session, user_id=user.id, now=now, max_age_days=cfg.verified_max_age_days
+        )
         grouped = {tid: v for tid, v in grouped.items() if (tid in fresh) == available}
 
     filtered = 0
     if hide_watched:
-        seen = seen_title_ids(session)
+        seen = seen_title_ids(session, user_id=user.id)
         filtered = sum(1 for tid in grouped if tid in seen)
         grouped = {tid: v for tid, v in grouped.items() if tid not in seen}
     response.headers["X-Filtered-Watched"] = str(filtered)
@@ -64,7 +69,11 @@ def get_watchlist(
     page_ids = order[offset : offset + limit]
     titles = {t.id: t for t in session.scalars(select(Title).where(Title.id.in_(page_ids)))}
     cards = title_cards(
-        session, [titles[tid] for tid in page_ids], now=now, max_age_days=cfg.verified_max_age_days
+        session,
+        [titles[tid] for tid in page_ids],
+        user_id=user.id,
+        now=now,
+        max_age_days=cfg.verified_max_age_days,
     )
     return Page[WatchlistEntry](
         items=[

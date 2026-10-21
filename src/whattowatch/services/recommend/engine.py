@@ -31,15 +31,14 @@ from whattowatch.services.recommend.scoring import (
     reasons,
     score_candidate,
 )
-from whattowatch.services.users import default_user_id
 
 LabelFn = Callable[[Iterable[str]], frozenset[str]]
 
 
-def _preference_profile(session: Session) -> PreferenceProfileLike:
+def _preference_profile(session: Session, user_id: int) -> PreferenceProfileLike:
     from whattowatch.preferences.profile import build_preference_profile
 
-    return cast(PreferenceProfileLike, build_preference_profile(session))
+    return cast(PreferenceProfileLike, build_preference_profile(session, user_id=user_id))
 
 
 def _label_fn() -> LabelFn:
@@ -58,26 +57,38 @@ def _label_names() -> dict[str, str]:
 
 
 def build_context(
-    session: Session, candidates: list[Candidate], *, now: datetime
+    session: Session, candidates: list[Candidate], *, user_id: int, now: datetime
 ) -> ScoringContext:
     ratings = session.execute(
         select(Title.genres, TitleRating.normalized)
         .join(Title, Title.id == TitleRating.title_id)
-        .where(TitleRating.is_personal, TitleRating.normalized.is_not(None))
+        .where(
+            TitleRating.user_id == user_id,
+            TitleRating.is_personal,
+            TitleRating.normalized.is_not(None),
+        )
     ).all()
     pos, neg = genre_profile((genres or [], norm or 0.0) for genres, norm in ratings)
     watchlist = frozenset(
-        session.scalars(select(WatchlistItem.title_id).where(WatchlistItem.status == "active"))
+        session.scalars(
+            select(WatchlistItem.title_id).where(
+                WatchlistItem.user_id == user_id, WatchlistItem.status == "active"
+            )
+        )
     )
     abandoned = frozenset(
-        session.scalars(select(WatchEvent.title_id).where(WatchEvent.status == "abandoned"))
+        session.scalars(
+            select(WatchEvent.title_id).where(
+                WatchEvent.user_id == user_id, WatchEvent.status == "abandoned"
+            )
+        )
     )
     return ScoringContext(
         genre_pos=pos,
         genre_neg=neg,
         watchlist_title_ids=watchlist,
         abandoned_title_ids=abandoned,
-        pref=_preference_profile(session),
+        pref=_preference_profile(session, user_id),
         pool_vote_counts=tuple(c.title.vote_count or 0 for c in candidates),
         now=now,
         n_personal_ratings=len(ratings),
@@ -146,6 +157,7 @@ def _maybe_tmdb(tmdb: WatchProviderSource | None) -> Iterator[WatchProviderSourc
 
 def run_recommendations(
     *,
+    user_id: int,
     limit: int = 20,
     media_type: str | None = None,
     session: Session | None = None,
@@ -155,7 +167,8 @@ def run_recommendations(
     echo: bool = True,
     include_watchlist: bool = False,
 ) -> list[Recommendation]:
-    """Generate, persist and print one recommendation batch; returns its rows by rank.
+    """Generate, persist and print one recommendation batch of `user_id`; returns its rows
+    by rank.
 
     Titles on an active watchlist are excluded unless ``include_watchlist``; the flag is
     stored in each row's ``components`` under ``_include_watchlist``.
@@ -167,6 +180,7 @@ def run_recommendations(
     with _maybe_session(session) as s:
         cands = load_candidates(
             s,
+            user_id=user_id,
             media_type=cast(MediaType | None, media_type),
             pool=cfg.candidate_pool,
             now=now,
@@ -184,14 +198,19 @@ def run_recommendations(
                 )
                 for c in cands
             ]
-        ctx = build_context(s, cands, now=now)
+        ctx = build_context(s, cands, user_id=user_id, now=now)
         ranked = _rank(cands, ctx, cfg)
         to_verify = [x.cand for x in ranked if x.cand.estimated_only][: limit * 2]
         verified_ids: set[int] = set()
         if to_verify:
             with _maybe_tmdb(tmdb) as client:
                 checked = verify_candidates(
-                    s, to_verify, client, now=now, max_age_days=cfg.verified_max_age_days
+                    s,
+                    to_verify,
+                    client,
+                    user_id=user_id,
+                    now=now,
+                    max_age_days=cfg.verified_max_age_days,
                 )
             confirmed = {c.title.id: c for c in checked}
             verified_ids = set(confirmed)
@@ -209,12 +228,11 @@ def run_recommendations(
         # Wall-clock (not `now`) so re-runs always get a fresh batch id.
         batch_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
         rows: list[Recommendation] = []
-        owner = default_user_id(s)  # A1 interim, TODO(A2): current user
         subs_by_title: dict[int, tuple[str, ...]] = {}
         for rank, x in enumerate(picked, start=1):
             why = reasons(x.breakdown, x.cand, ctx)
             row = Recommendation(
-                user_id=owner,
+                user_id=user_id,
                 batch_id=batch_id,
                 title_id=x.cand.title.id,
                 rank=rank,

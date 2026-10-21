@@ -20,6 +20,7 @@ from whattowatch.db.models import Availability, Provider, Title
 from whattowatch.providers import BY_KEY, search_url
 from whattowatch.services.deep_links import SA_SOURCE, get_links, refresh_deep_links
 from whattowatch.services.subscriptions import set_enabled
+from whattowatch.services.users import default_user_id
 
 EXPIRES = datetime(2026, 11, 30, tzinfo=UTC)
 
@@ -117,17 +118,21 @@ def test_refresh_upserts_and_maps_offer_types(db: tuple[Session, Title]) -> None
 def test_get_links_uses_fresh_cache(db: tuple[Session, Title]) -> None:
     session, title = db
     sa = FakeSA(DEFAULT_OPTIONS)
-    first = get_links(session, sa, title, now=NOW)  # type: ignore[arg-type]
+    first = get_links(session, sa, title, user_id=default_user_id(session), now=NOW)  # type: ignore[arg-type]
     assert first.refreshed and len(sa.calls) == 1
     assert [(i.provider_key, i.offer_type) for i in first.items] == [
         ("netflix", "flatrate"),
         ("prime_video", "flatrate"),
         ("prime_video", "rent"),
     ]
-    again = get_links(session, sa, title, now=NOW + timedelta(days=6))  # type: ignore[arg-type]
+    again = get_links(
+        session, sa, title, user_id=default_user_id(session), now=NOW + timedelta(days=6)
+    )  # type: ignore[arg-type]
     assert not again.refreshed and len(sa.calls) == 1
     assert again.items == first.items
-    stale = get_links(session, sa, title, now=NOW + timedelta(days=8))  # type: ignore[arg-type]
+    stale = get_links(
+        session, sa, title, user_id=default_user_id(session), now=NOW + timedelta(days=8)
+    )  # type: ignore[arg-type]
     assert stale.refreshed and len(sa.calls) == 2
 
 
@@ -144,29 +149,33 @@ def test_get_links_checked_title_without_options_is_not_refetched(
     db: tuple[Session, Title], sa: FakeSA
 ) -> None:
     session, title = db
-    first = get_links(session, sa, title, now=NOW)  # type: ignore[arg-type]
+    first = get_links(session, sa, title, user_id=default_user_id(session), now=NOW)  # type: ignore[arg-type]
     assert first.refreshed and first.items == [] and len(sa.calls) == 1
     assert sa_rows(session, title) == {}
     assert title.deep_links_checked_at is not None
     assert title.deep_links_checked_at.replace(tzinfo=UTC) == NOW
-    again = get_links(session, sa, title, now=NOW + timedelta(days=6))  # type: ignore[arg-type]
+    again = get_links(
+        session, sa, title, user_id=default_user_id(session), now=NOW + timedelta(days=6)
+    )  # type: ignore[arg-type]
     assert not again.refreshed and len(sa.calls) == 1
-    stale = get_links(session, sa, title, now=NOW + timedelta(days=8))  # type: ignore[arg-type]
+    stale = get_links(
+        session, sa, title, user_id=default_user_id(session), now=NOW + timedelta(days=8)
+    )  # type: ignore[arg-type]
     assert stale.refreshed and len(sa.calls) == 2
 
 
 def test_failed_sa_call_does_not_mark_checked(db: tuple[Session, Title]) -> None:
     session, title = db
     failing = FakeSA(error=True)
-    get_links(session, failing, title, now=NOW)  # type: ignore[arg-type]
+    get_links(session, failing, title, user_id=default_user_id(session), now=NOW)  # type: ignore[arg-type]
     assert title.deep_links_checked_at is None
-    get_links(session, failing, title, now=NOW)  # type: ignore[arg-type]
+    get_links(session, failing, title, user_id=default_user_id(session), now=NOW)  # type: ignore[arg-type]
     assert len(failing.calls) == 2
 
 
 def test_get_links_without_sa_is_fallback_only(db: tuple[Session, Title]) -> None:
     session, title = db
-    result = get_links(session, None, title, now=NOW)
+    result = get_links(session, None, title, user_id=default_user_id(session), now=NOW)
     assert result.items == [] and not result.refreshed
     assert set(result.fallback_search) == set(BY_KEY)
     assert result.fallback_search["netflix"].endswith("?q=Original+101")
@@ -174,10 +183,12 @@ def test_get_links_without_sa_is_fallback_only(db: tuple[Session, Title]) -> Non
 
 def test_get_links_error_and_disabled_providers(db: tuple[Session, Title]) -> None:
     session, title = db
-    get_links(session, FakeSA(DEFAULT_OPTIONS), title, now=NOW)  # type: ignore[arg-type]
-    set_enabled(session, ["netflix"])
+    get_links(session, FakeSA(DEFAULT_OPTIONS), title, user_id=default_user_id(session), now=NOW)  # type: ignore[arg-type]
+    set_enabled(session, ["netflix"], user_id=default_user_id(session))
     failing = FakeSA(error=True)
-    result = get_links(session, failing, title, now=NOW + timedelta(days=30))  # type: ignore[arg-type]
+    result = get_links(
+        session, failing, title, user_id=default_user_id(session), now=NOW + timedelta(days=30)
+    )  # type: ignore[arg-type]
     assert failing.calls and not result.refreshed
     assert [i.provider_key for i in result.items] == ["netflix"]  # cached, enabled only
     assert set(result.fallback_search) == {"netflix"}
@@ -229,7 +240,7 @@ WEB = "https://www.primevideo.com/detail/0J0SQMKFG51K9S3UTU9SDEMT7D?ref_=atv_dp"
 def test_get_links_prefers_web_link_over_app_link(db: tuple[Session, Title]) -> None:
     session, title = db
     sa = FakeSA([opt("prime", "subscription", APP), opt("prime", "buy", WEB)])
-    res = get_links(session, sa, title, now=NOW)  # type: ignore[arg-type]
+    res = get_links(session, sa, title, user_id=default_user_id(session), now=NOW)  # type: ignore[arg-type]
     urls = {(i.provider_key, i.offer_type): i.url for i in res.items}
     assert urls == {("prime_video", "flatrate"): WEB, ("prime_video", "buy"): WEB}
     stored = sa_rows(session, title)[(119, "flatrate")]
@@ -239,5 +250,5 @@ def test_get_links_prefers_web_link_over_app_link(db: tuple[Session, Title]) -> 
 def test_get_links_keeps_app_link_when_only_option(db: tuple[Session, Title]) -> None:
     session, title = db
     sa = FakeSA([opt("prime", "subscription", APP)])
-    res = get_links(session, sa, title, now=NOW)  # type: ignore[arg-type]
+    res = get_links(session, sa, title, user_id=default_user_id(session), now=NOW)  # type: ignore[arg-type]
     assert [(i.offer_type, i.url) for i in res.items] == [("flatrate", APP)]

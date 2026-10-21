@@ -254,7 +254,7 @@ def recommend_db(
         n_personal_ratings=len(RATED_TITLES),
     )
     monkeypatch.setattr(
-        "whattowatch.preferences.profile.build_preference_profile", lambda session: profile
+        "whattowatch.preferences.profile.build_preference_profile", lambda session, **_: profile
     )
     monkeypatch.setattr("whattowatch.preferences.vocabulary.labels_for_title", fake_labels)
     return migrated_session, build_recommend_db(migrated_session)

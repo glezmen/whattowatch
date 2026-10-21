@@ -1,6 +1,6 @@
 # Többfelhasználós működés — terv (M8/A és M9/B)
 
-Állapot: A1 folyamatban, 2026-10-21. Két szakasz: **A) profilok egy háztartáson belül**
+Állapot: A1 kész, A2 1. rész (service-réteg, `CurrentUser`-függőség) kész, 2026-10-21. Két szakasz: **A) profilok egy háztartáson belül**
 (profilválasztó induláskor, opcionális jelszó), majd **B) valódi fiókok
 hálózaton**. Az A szakasz úgy épül, hogy a B ne igényeljen újabb sémamódosítást.
 
@@ -62,6 +62,52 @@ hálózaton**. Az A szakasz úgy épül, hogy a B ne igényeljen újabb sémamó
   a feltöltés (importsor → felhasználó), a mentés (közös DB) mind átmegy.
 - CLI: `--user <név>` kapcsoló az importokhoz, ajánláshoz, feloldáshoz;
   alapértelmezés az admin.
+
+#### A2, 1. rész — elkészült (2026-10-21), döntések
+
+- **Egy függőség**: `api/deps.py` `CurrentUserDep` (`current_user_dep`) adja minden
+  személyes végpont felhasználóját; most átmenetileg az admin (különben az első)
+  profil, üres adatbázison „Profil 1”-et hoz létre. A 2. rész csak ezt cseréli a
+  sütis változatra. `AdminDep` (403 `admin_required`): `/settings/secrets` (GET, PUT),
+  `/backup/*` (router-szintű függőség), `POST /refresh`.
+- **Service-réteg**: minden személyes függvény kötelező, kulcsszavas `user_id`-t kap;
+  `default_user_id` csak az átmeneti függőség és a CLI alapértelmezése, service nem
+  hívja. `app_settings.get_setting/set_setting` `ValueError`-t dob, ha `PER_USER_KEYS`
+  kulcsot `user_id` nélkül, vagy globális kulcsot `user_id`-val kérnek (nincs csendes
+  globális visszaesés). `Title.feedback` kapcsolat megszűnt: `feedback.get_feedback`.
+- **Globális katalógusmunkák**: a TMDB discover és az SA-változások a profilok
+  előfizetéseinek **uniója** szerint futnak (`subscriptions.any_user_*`); profil nélkül
+  mind a hat. A listázás, a jelöltek és az értesítések profilonként szűrnek.
+- **Frissítés**: `run_refresh` a watchlist-észlelést és az értesítéseket minden
+  profilra lefuttatja; az új évad figyelése a profilok által követett sorozatok
+  uniója (ahol az adott profil nem jelölte „nem érdekel”-nek). A katalógus-események
+  közösek; a `watchlist_available` értesítés és szekció csak a profil saját aktív
+  watchlistjén lévő címre szól, és a profil kikapcsolt szolgáltatóinak eseményeiről
+  nem megy értesítés. A deduplikáció profilonkénti (`(user_id, dedupe_key)`).
+- **Címfeloldás**: a `title_resolutions` gyorsítótár közös (lookup key szerint); a
+  `/resolutions` lista és a részletek csak azokat mutatják, amelyekre a profil saját
+  importsora hivatkozik, kontextusként csak a saját sorokkal. A kézi javítás a közös
+  sort módosítja (minden profil importjára hat az újrafuttatáskor).
+- **Import**: a feladat (`ImportJob.user_id`) a feltöltőé, a `/import/jobs` csak a
+  sajátokat listázza. Netflix/Prime feltöltésnél opcionális `assign` űrlapmező (JSON
+  `{exportprofil: user_id}`): exportprofilonként külön import és külön `sync_runs`
+  sor (`params.runs`), ismeretlen profil → 422. A Prime watchlist és értékelés nem
+  profiltípushoz kötött, ezért `assign` esetén minden hozzárendelt profilba bekerül.
+  A `sync_runs` listában a globális futások és a saját importok látszanak.
+- **TMDB-fiók**: a munkamenet-azonosító továbbra is egyetlen `.env`-érték (B-ben
+  profilonkénti, titkosított tárolás). Egyszerre egy profil birtokolja (akinek a
+  `tmdb_account` beállítása van; régi, csak `.env`-es kapcsolatnál az admin); a többi
+  profilnak „nincs összekapcsolva”, nem indíthat új kapcsolást
+  (`409 tmdb_linked_by_other_profile`), és az értékelése nem megy fel a fiókba.
+- **Profilok**: `services/users.py` — `create_user` (az első profil mindig admin),
+  `rename_user`, `set_password`/`clear_password`/`verify_password` (argon2id,
+  `argon2-cffi`, elavult hash cseréje ellenőrzéskor), `delete_user` (minden személyes
+  tábla explicit törlése, nem csak FK-kaszkád; az utolsó admin nem törölhető),
+  `list_users`, `touch_last_active`. CLI: `wtw users list|add|rename|delete --yes`, és
+  `--user <név>` a személyes parancsokon (alapértelmezés: admin).
+- Teszt: `tests/test_user_isolation.py` (két profil ugyanazon a címen, minden
+  személyes végpont A-ként és B-ként, előfizetés-unió, `assign`-import, admin-végpontok,
+  argon2, kaszkád, utolsó admin).
 
 ### A3. Felület
 

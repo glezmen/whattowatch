@@ -7,10 +7,11 @@ from contextlib import contextmanager
 from typing import Annotated, Literal
 
 import typer
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, select
 from sqlalchemy.orm import Session
 
 from whattowatch.adapters.tmdb import TmdbClient, TmdbError
+from whattowatch.cli_users import UserOption, user_id_for
 from whattowatch.config import get_settings
 from whattowatch.db.engine import create_engine_from_settings, session_factory
 from whattowatch.db.models import ImportRow, MediaType, Title, TitleResolution
@@ -38,23 +39,44 @@ def _missing(resolution_id: int) -> typer.Exit:
     return typer.Exit(code=1)
 
 
+def _mine(user_id: int) -> ColumnElement[bool]:
+    """Resolutions referenced by an import row of the profile (the cache itself is shared)."""
+    return TitleResolution.id.in_(
+        select(ImportRow.resolution_id).where(
+            ImportRow.user_id == user_id, ImportRow.resolution_id.is_not(None)
+        )
+    )
+
+
+def _check_mine(session: Session, resolution_id: int, user_id: int) -> None:
+    found = session.scalar(
+        select(TitleResolution.id).where(TitleResolution.id == resolution_id, _mine(user_id))
+    )
+    if found is None:
+        raise _missing(resolution_id)
+
+
 @resolve_app.command("list")
 def list_cmd(
     status: Annotated[
         Literal["ambiguous", "unresolved"] | None, typer.Option(help="ambiguous | unresolved")
     ] = None,
+    user: UserOption = None,
 ) -> None:
-    """List open (ambiguous/unresolved) resolutions with their candidates."""
+    """List a profile's open (ambiguous/unresolved) resolutions with their candidates."""
     statuses = [status] if status else ["ambiguous", "unresolved"]
     with _session() as session:
+        uid = user_id_for(session, user)
         rows = session.scalars(
             select(TitleResolution)
-            .where(TitleResolution.status.in_(statuses))
+            .where(TitleResolution.status.in_(statuses), _mine(uid))
             .order_by(TitleResolution.id)
         ).all()
         for r in rows:
             text = session.scalar(
-                select(ImportRow.title_text).where(ImportRow.resolution_id == r.id).limit(1)
+                select(ImportRow.title_text)
+                .where(ImportRow.user_id == uid, ImportRow.resolution_id == r.id)
+                .limit(1)
             )
             typer.echo(f"#{r.id} [{r.status}] {r.source}: {text or r.lookup_key}")
             for c in r.candidates or []:
@@ -70,8 +92,9 @@ def refresh_candidates_cmd(
     status: Annotated[
         Literal["ambiguous", "unresolved"] | None, typer.Option(help="ambiguous | unresolved")
     ] = None,
+    user: UserOption = None,
 ) -> None:
-    """Re-run resolution for open rows (fills candidate posters, overviews, votes)."""
+    """Re-run resolution for a profile's open rows (fills candidate posters, votes...)."""
     key = get_settings().tmdb_api_key
     if not key:
         typer.echo("Hiba: a TMDB_API_KEY nincs beállítva (.env).", err=True)
@@ -79,10 +102,11 @@ def refresh_candidates_cmd(
     statuses = [status] if status else ["ambiguous", "unresolved"]
     counts: dict[str, int] = {}
     with _session() as session, TmdbClient(key) as tmdb:
+        uid = user_id_for(session, user)
         ids = list(
             session.scalars(
                 select(TitleResolution.id)
-                .where(TitleResolution.status.in_(statuses))
+                .where(TitleResolution.status.in_(statuses), _mine(uid))
                 .order_by(TitleResolution.id)
             )
         )
@@ -104,13 +128,16 @@ def refresh_candidates_cmd(
 
 
 @resolve_app.command("set")
-def set_cmd(resolution_id: int, media_type: MediaType, tmdb_id: int) -> None:
+def set_cmd(
+    resolution_id: int, media_type: MediaType, tmdb_id: int, user: UserOption = None
+) -> None:
     """Manually link a resolution to a TMDB title (re-run the import to apply it)."""
     key = get_settings().tmdb_api_key
     if not key:
         typer.echo("Hiba: a TMDB_API_KEY nincs beállítva (.env).", err=True)
         raise typer.Exit(code=2)
     with _session() as session, TmdbClient(key) as tmdb:
+        _check_mine(session, resolution_id, user_id_for(session, user))
         try:
             row = set_manual_resolution(session, tmdb, resolution_id, media_type, tmdb_id)
         except LookupError:
@@ -122,9 +149,10 @@ def set_cmd(resolution_id: int, media_type: MediaType, tmdb_id: int) -> None:
 
 
 @resolve_app.command("reject")
-def reject_cmd(resolution_id: int) -> None:
+def reject_cmd(resolution_id: int, user: UserOption = None) -> None:
     """Mark a resolution as rejected (no title; not retried)."""
     with _session() as session:
+        _check_mine(session, resolution_id, user_id_for(session, user))
         try:
             row = reject_resolution(session, resolution_id)
         except LookupError:

@@ -1,4 +1,7 @@
-"""Build `TitleCard`s (catalog data + subscription availability + user state) in bulk."""
+"""Build `TitleCard`s (catalog data + subscription availability + user state) in bulk.
+
+The `user` part and the `enabled` flags are always those of one profile (`user_id`).
+"""
 
 from __future__ import annotations
 
@@ -81,7 +84,7 @@ def _dated(rows: list[Availability], at: str, conf: str) -> tuple[datetime | Non
 
 
 def _availability(
-    session: Session, ids: list[int], now: datetime, max_age_days: int
+    session: Session, ids: list[int], now: datetime, max_age_days: int, user_id: int
 ) -> dict[int, list[AvailabilityEntry]]:
     """Flatrate offers on the six subscriptions, one entry per provider.
 
@@ -103,7 +106,7 @@ def _availability(
     for row, key in rows:
         grouped.setdefault((row.title_id, key), []).append(row)
     cutoff = now - timedelta(days=max_age_days)
-    enabled = set(enabled_keys(session))
+    enabled = set(enabled_keys(session, user_id=user_id))
     out: dict[int, list[AvailabilityEntry]] = {}
     for (title_id, key), group in sorted(grouped.items(), key=lambda kv: _KEY_ORDER[kv[0][1]]):
         row = max(
@@ -135,28 +138,44 @@ def _availability(
     return out
 
 
-def _user_states(session: Session, ids: list[int]) -> dict[int, UserState]:
+def _user_states(session: Session, ids: list[int], user_id: int) -> dict[int, UserState]:
     events: dict[int, list[WatchEvent]] = {}
-    for ev in session.scalars(select(WatchEvent).where(WatchEvent.title_id.in_(ids))):
+    for ev in session.scalars(
+        select(WatchEvent).where(WatchEvent.user_id == user_id, WatchEvent.title_id.in_(ids))
+    ):
         events.setdefault(ev.title_id, []).append(ev)
     ratings: dict[int, list[TitleRating]] = {}
     for r in session.scalars(
         select(TitleRating)
-        .where(TitleRating.title_id.in_(ids), TitleRating.is_personal)
+        .where(
+            TitleRating.user_id == user_id,
+            TitleRating.title_id.in_(ids),
+            TitleRating.is_personal,
+        )
         .order_by(TitleRating.source)
     ):
         ratings.setdefault(r.title_id, []).append(r)
     states = {
         s.title_id: s
-        for s in session.scalars(select(TitleUserState).where(TitleUserState.title_id.in_(ids)))
+        for s in session.scalars(
+            select(TitleUserState).where(
+                TitleUserState.user_id == user_id, TitleUserState.title_id.in_(ids)
+            )
+        )
     }
     feedback = {
         f.title_id: f
-        for f in session.scalars(select(TitleFeedback).where(TitleFeedback.title_id.in_(ids)))
+        for f in session.scalars(
+            select(TitleFeedback).where(
+                TitleFeedback.user_id == user_id, TitleFeedback.title_id.in_(ids)
+            )
+        )
     }
     watchlist: dict[int, list[WatchlistItem]] = {}
     for w in session.scalars(
-        select(WatchlistItem).where(WatchlistItem.title_id.in_(ids)).order_by(WatchlistItem.source)
+        select(WatchlistItem)
+        .where(WatchlistItem.user_id == user_id, WatchlistItem.title_id.in_(ids))
+        .order_by(WatchlistItem.source)
     ):
         watchlist.setdefault(w.title_id, []).append(w)
 
@@ -217,14 +236,15 @@ def _user_states(session: Session, ids: list[int]) -> dict[int, UserState]:
     return out
 
 
-def user_state(session: Session, title_id: int) -> UserState:
-    return _user_states(session, [title_id])[title_id]
+def user_state(session: Session, title_id: int, *, user_id: int) -> UserState:
+    return _user_states(session, [title_id], user_id)[title_id]
 
 
 def title_cards(
     session: Session,
     titles: Sequence[Title],
     *,
+    user_id: int,
     now: datetime | None = None,
     max_age_days: int = DEFAULT_MAX_AGE_DAYS,
 ) -> list[TitleCard]:
@@ -233,8 +253,8 @@ def title_cards(
         return []
     now = now or datetime.now(UTC)
     ids = [t.id for t in titles]
-    avail = _availability(session, ids, now, max_age_days)
-    users = _user_states(session, ids)
+    avail = _availability(session, ids, now, max_age_days, user_id)
+    users = _user_states(session, ids, user_id)
     imdb = {
         r.title_id: r
         for r in session.scalars(
@@ -280,23 +300,40 @@ def title_card(
     session: Session,
     title: Title,
     *,
+    user_id: int,
     now: datetime | None = None,
     max_age_days: int = DEFAULT_MAX_AGE_DAYS,
 ) -> TitleCard:
-    return title_cards(session, [title], now=now, max_age_days=max_age_days)[0]
+    return title_cards(session, [title], user_id=user_id, now=now, max_age_days=max_age_days)[0]
 
 
-def seen_title_ids(session: Session) -> set[int]:
+def seen_title_ids(session: Session, *, user_id: int) -> set[int]:
     """Titles `UserState.seen` is true for (same rules as `_user_states`)."""
     ids: set[int] = set()
-    ids.update(session.scalars(select(WatchEvent.title_id).where(WatchEvent.status == "watched")))
-    ids.update(session.scalars(select(TitleRating.title_id).where(TitleRating.is_personal)))
     ids.update(
-        session.scalars(select(WatchlistItem.title_id).where(WatchlistItem.status == "watched"))
+        session.scalars(
+            select(WatchEvent.title_id).where(
+                WatchEvent.user_id == user_id, WatchEvent.status == "watched"
+            )
+        )
+    )
+    ids.update(
+        session.scalars(
+            select(TitleRating.title_id).where(
+                TitleRating.user_id == user_id, TitleRating.is_personal
+            )
+        )
+    )
+    ids.update(
+        session.scalars(
+            select(WatchlistItem.title_id).where(
+                WatchlistItem.user_id == user_id, WatchlistItem.status == "watched"
+            )
+        )
     )
     overrides = session.execute(
         select(TitleUserState.title_id, TitleUserState.seen_override).where(
-            TitleUserState.seen_override.is_not(None)
+            TitleUserState.user_id == user_id, TitleUserState.seen_override.is_not(None)
         )
     ).all()
     ids.update(tid for tid, flag in overrides if flag)
@@ -307,6 +344,7 @@ def seen_title_ids(session: Session) -> set[int]:
 def fresh_verified_title_ids(
     session: Session,
     *,
+    user_id: int,
     now: datetime | None = None,
     max_age_days: int = DEFAULT_MAX_AGE_DAYS,
     provider_key: str | None = None,
@@ -314,7 +352,7 @@ def fresh_verified_title_ids(
     """Titles with a fresh verified HU flatrate offer on an enabled subscription (or on
     `provider_key`, which must itself be enabled)."""
     cutoff = (now or datetime.now(UTC)) - timedelta(days=max_age_days)
-    enabled = enabled_keys(session)
+    enabled = enabled_keys(session, user_id=user_id)
     keys = [k for k in enabled if k == provider_key] if provider_key else enabled
     rows = session.execute(
         select(Availability.title_id, Availability.last_seen_at)

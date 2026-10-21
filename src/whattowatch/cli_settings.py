@@ -9,6 +9,8 @@ from typing import Annotated
 import typer
 from sqlalchemy.orm import Session
 
+from whattowatch.cli_users import UserOption, user_id_for
+
 app = typer.Typer(help="App settings (subscriptions, language)", no_args_is_help=True)
 
 
@@ -29,10 +31,10 @@ def _keys(value: str | None) -> set[str]:
     return {k.strip() for k in (value or "").split(",") if k.strip()}
 
 
-def _print_subscriptions(session: Session) -> None:
+def _print_subscriptions(session: Session, user_id: int) -> None:
     from whattowatch.services.subscriptions import subscription_states
 
-    for sub, enabled in subscription_states(session):
+    for sub, enabled in subscription_states(session, user_id=user_id):
         typer.echo(f"  [{'x' if enabled else ' '}] {sub.key:<14} {sub.display_name}")
 
 
@@ -40,8 +42,9 @@ def _print_subscriptions(session: Session) -> None:
 def subscriptions(
     enable: Annotated[str | None, typer.Option(help="Comma-separated keys to switch on")] = None,
     disable: Annotated[str | None, typer.Option(help="Comma-separated keys to switch off")] = None,
+    user: UserOption = None,
 ) -> None:
-    """Show or change which of the six subscriptions are enabled."""
+    """Show or change which of the six subscriptions a profile has enabled."""
     from whattowatch.providers import BY_KEY
     from whattowatch.services.subscriptions import enabled_keys, set_enabled
 
@@ -57,31 +60,37 @@ def subscriptions(
         typer.echo(f"Hiba: egyszerre be- és kikapcsolva: {', '.join(sorted(on & off))}.", err=True)
         raise typer.Exit(code=2)
     with _session() as session:
+        uid = user_id_for(session, user)
         if on or off:
-            set_enabled(session, (set(enabled_keys(session)) | on) - off)
+            set_enabled(session, (set(enabled_keys(session, user_id=uid)) | on) - off, user_id=uid)
             session.commit()
         typer.echo("Előfizetések:")
-        _print_subscriptions(session)
-        if not enabled_keys(session):
+        _print_subscriptions(session, uid)
+        if not enabled_keys(session, user_id=uid):
             typer.echo("Figyelem: egy előfizetés sincs bekapcsolva, az ajánló üres lesz.")
 
 
 @app.command("show")
-def show() -> None:
-    """Print the app settings (no secrets)."""
+def show(user: UserOption = None) -> None:
+    """Print a profile's app settings (no secrets)."""
     from whattowatch.config import get_settings
     from whattowatch.services import app_settings
 
     settings = get_settings()
     with _session() as session:
-        own = app_settings.netflix_profile_name(session)
+        uid = user_id_for(session, user)
+        own = app_settings.netflix_profile_name(session, user_id=uid)
         profile = own or settings.netflix_profile_name
         origin = "app" if own else (".env" if profile else "—")
-        typer.echo(f"Felület nyelve (ui_language): {app_settings.ui_language(session)}")
+        typer.echo(
+            f"Felület nyelve (ui_language): {app_settings.ui_language(session, user_id=uid)}"
+        )
         typer.echo(f"Netflix-profil: {profile or '—'} (forrás: {origin})")
-        known = app_settings.netflix_profiles(session)
+        known = app_settings.netflix_profiles(session, user_id=uid)
         typer.echo(f"Ismert Netflix-profilok: {', '.join(known) or '—'}")
-        typer.echo(f"Bevezető kész (onboarding_done): {app_settings.onboarding_done(session)}")
+        typer.echo(
+            f"Bevezető kész (onboarding_done): {app_settings.onboarding_done(session, user_id=uid)}"
+        )
         typer.echo(f"Feltöltések könyvtára (IMPORTS_DIR): {settings.imports_dir}")
         typer.echo("Előfizetések:")
-        _print_subscriptions(session)
+        _print_subscriptions(session, uid)

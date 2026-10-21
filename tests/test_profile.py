@@ -75,7 +75,7 @@ def test_single_vs_repeated_label(session: Session) -> None:
     add_signal(session, a, "humor/szaraz")
     add_signal(session, a, "tempo/lassu")
     add_signal(session, b, "humor/szaraz")
-    profile = build_preference_profile(session)
+    profile = build_preference_profile(session, user_id=default_user_id(session))
     assert profile.positive["tempo/lassu"] == pytest.approx(0.5 * 0.6)
     assert profile.positive["humor/szaraz"] == pytest.approx(1.0 * 0.6)
     assert profile.negative == {}
@@ -92,7 +92,7 @@ def test_star_scaling_and_negative(session: Session) -> None:
     add_signal(session, meh, "tempo/gyors")
     add_signal(session, meh, "stilus/veres", polarity="-", confidence=1.0)
     add_signal(session, loved, "karakter/irritalo", polarity="-", confidence=1.0)
-    profile = build_preference_profile(session)
+    profile = build_preference_profile(session, user_id=default_user_id(session))
     assert profile.positive["humor/abszurd"] == pytest.approx(0.5 * 1.0 * 0.6)
     assert profile.positive["tempo/gyors"] == pytest.approx(0.5 * 0.25 * 0.6)
     assert profile.negative["stilus/veres"] == pytest.approx(0.5 * 0.75)
@@ -105,4 +105,6 @@ def test_fallback_to_other_personal_rating(session: Session) -> None:
     t = make_title(session, 1)
     rate(session, t, "imdb_ratings", "1-10", "7", 0.5)
     add_signal(session, t, "tema/sport", confidence=1.0)
-    assert build_preference_profile(session).positive["tema/sport"] == pytest.approx(0.25)
+    assert build_preference_profile(session, user_id=default_user_id(session)).positive[
+        "tema/sport"
+    ] == pytest.approx(0.25)

@@ -230,13 +230,22 @@ def extract_llm_for_feedback(
     )
 
 
+def _feedback_rows(session: Session, user_id: int) -> list[TitleFeedback]:
+    return list(
+        session.scalars(
+            select(TitleFeedback).where(TitleFeedback.user_id == user_id).order_by(TitleFeedback.id)
+        )
+    )
+
+
 def run_llm_extraction(
-    session: Session, provider: LLMProvider, settings: Settings
+    session: Session, provider: LLMProvider, settings: Settings, *, user_id: int
 ) -> LLMExtractionResult:
-    """LLM extraction over every feedback row. Cloud providers only receive the raw text
-    when `llm_cloud_send_feedback_text` is set; otherwise every row is skipped."""
+    """LLM extraction over every feedback row of one user. Cloud providers only receive
+    the raw text when `llm_cloud_send_feedback_text` is set; otherwise every row is
+    skipped."""
     result = LLMExtractionResult()
-    rows = list(session.scalars(select(TitleFeedback).order_by(TitleFeedback.id)))
+    rows = _feedback_rows(session, user_id)
     for fb in rows:
         if not ((fb.liked_text or "").strip() or (fb.disliked_text or "").strip()):
             result.skip("empty")
@@ -269,6 +278,7 @@ def _session(session: Session | None) -> Iterator[tuple[Session, bool]]:
 
 def run_extraction(
     *,
+    user_id: int,
     session: Session | None = None,
     extractor: str = RULES_EXTRACTOR,
     model_version: str = "",
@@ -276,7 +286,7 @@ def run_extraction(
     provider: LLMProvider | None = None,
     settings: Settings | None = None,
 ) -> int:
-    """Re-run extraction over every TitleFeedback row; returns signals upserted.
+    """Re-run extraction over every TitleFeedback row of `user_id`; returns signals upserted.
 
     `extractor="llm"` uses `provider` (default: the configured one); its model_version is
     `provider:model` and prompt_version the extractor's own. Commits only when it opened
@@ -293,10 +303,12 @@ def run_extraction(
                 get_provider,
             )
 
-            config = effective_llm_config(db, settings)
+            config = effective_llm_config(db, settings, user_id)
             if provider is None:
                 provider = get_provider(settings, config=config)
-            result = run_llm_extraction(db, provider, apply_config(settings, config))
+            result = run_llm_extraction(
+                db, provider, apply_config(settings, config), user_id=user_id
+            )
             if owned:
                 db.commit()
             skipped = ", ".join(f"{k}: {v}" for k, v in sorted(result.skipped.items()))
@@ -312,7 +324,7 @@ def run_extraction(
                     "LLM_CLOUD_SEND_FEEDBACK_TEXT=true esetén küldhető el."
                 )
             return result.upserted
-        feedback_rows = list(db.scalars(select(TitleFeedback).order_by(TitleFeedback.id)))
+        feedback_rows = _feedback_rows(db, user_id)
         total = sum(
             extract_for_feedback(db, fb, model_version=model_version, prompt_version=prompt_version)
             for fb in feedback_rows

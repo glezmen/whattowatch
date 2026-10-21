@@ -7,6 +7,8 @@ from typing import Annotated
 
 import typer
 
+from whattowatch.cli_users import UserOption, lookup_user_id
+
 app = typer.Typer(help="Import personal exports (IMDb, Netflix, Prime Video)", no_args_is_help=True)
 
 
@@ -14,11 +16,12 @@ app = typer.Typer(help="Import personal exports (IMDb, Netflix, Prime Video)", n
 def import_imdb(
     path: Annotated[Path, typer.Argument(help="IMDb ratings or watchlist CSV")],
     kind: Annotated[str, typer.Option(help="ratings | watchlist")] = "ratings",
+    user: UserOption = None,
 ) -> None:
-    """Import an IMDb CSV export."""
+    """Import an IMDb CSV export into a profile."""
     from whattowatch.services.import_imdb import run_import
 
-    run_import(path, kind=kind)
+    run_import(path, user_id=lookup_user_id(user), kind=kind)
 
 
 @app.command("netflix")
@@ -28,11 +31,13 @@ def import_netflix(
         str | None,
         typer.Option(help="Profile name; default: app setting, then NETFLIX_PROFILE_NAME"),
     ] = None,
+    user: UserOption = None,
 ) -> None:
-    """Import a Netflix personal data export (viewing, my list, ratings)."""
+    """Import a Netflix personal data export (viewing, my list, ratings) into a profile."""
     from whattowatch.services.import_netflix import run_import
 
-    run_import(path, profile_name=profile or _app_netflix_profile())
+    uid = lookup_user_id(user)
+    run_import(path, user_id=uid, profile_name=profile or _app_netflix_profile(uid))
 
 
 @app.command("prime")
@@ -42,14 +47,16 @@ def import_prime(
         str | None,
         typer.Option(help="Profile type ADULT | CHILD; default: app setting, then ADULT"),
     ] = None,
+    user: UserOption = None,
 ) -> None:
     """Import an Amazon Prime Video data export (viewing history, watchlist, likes)."""
     from whattowatch.services.import_prime import run_import
 
-    run_import(path, profile_type=profile or _app_prime_profile())
+    uid = lookup_user_id(user)
+    run_import(path, user_id=uid, profile_type=profile or _app_prime_profile(uid))
 
 
-def _app_prime_profile() -> str:
+def _app_prime_profile(user_id: int) -> str:
     """The profile type chosen in the web UI / settings (DB); ADULT if unset or no DB."""
     from sqlalchemy.exc import SQLAlchemyError
 
@@ -60,14 +67,14 @@ def _app_prime_profile() -> str:
     engine = create_engine_from_settings(get_settings())
     try:
         with session_factory(engine)() as session:
-            return prime_profile_type(session)
+            return prime_profile_type(session, user_id=user_id)
     except SQLAlchemyError:
         return DEFAULT_PRIME_PROFILE
     finally:
         engine.dispose()
 
 
-def _app_netflix_profile() -> str | None:
+def _app_netflix_profile(user_id: int) -> str | None:
     """The profile chosen in the web UI / `wtw settings` (DB); None if unset or no DB."""
     from sqlalchemy.exc import SQLAlchemyError
 
@@ -78,7 +85,7 @@ def _app_netflix_profile() -> str | None:
     engine = create_engine_from_settings(get_settings())
     try:
         with session_factory(engine)() as session:
-            return netflix_profile_name(session)
+            return netflix_profile_name(session, user_id=user_id)
     except SQLAlchemyError:
         return None  # e.g. not migrated yet: fall back to .env
     finally:

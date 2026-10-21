@@ -26,6 +26,7 @@ from whattowatch.db.models import (
 )
 from whattowatch.services import import_netflix
 from whattowatch.services.import_netflix import run_import
+from whattowatch.services.users import default_user_id
 
 # title_text -> (media_type, tmdb_id) or None for ambiguous
 RESOLUTIONS: dict[str, tuple[str, int] | None] = {
@@ -192,7 +193,13 @@ def _counts(session: Session) -> dict[str, int]:
 
 
 def _import(export_dir: Path, session: Session) -> SyncRun:
-    return run_import(export_dir, profile_name="Anna", session=session, tmdb=object())  # type: ignore[arg-type]
+    return run_import(
+        export_dir,
+        user_id=default_user_id(session),
+        profile_name="Anna",
+        session=session,
+        tmdb=object(),
+    )  # type: ignore[arg-type]
 
 
 def test_viewing_import(export_dir: Path, session: Session) -> None:
@@ -269,9 +276,15 @@ def test_profile_required(
     monkeypatch.delenv("NETFLIX_PROFILE_NAME", raising=False)
     monkeypatch.setattr(import_netflix, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
     with pytest.raises(typer.BadParameter, match="Anna, Bela"):
-        run_import(export_dir, session=session, tmdb=object())  # type: ignore[arg-type]
+        run_import(export_dir, user_id=default_user_id(session), session=session, tmdb=object())  # type: ignore[arg-type]
     with pytest.raises(typer.BadParameter, match="Ismeretlen"):
-        run_import(export_dir, profile_name="Cecil", session=session, tmdb=object())  # type: ignore[arg-type]
+        run_import(
+            export_dir,
+            user_id=default_user_id(session),
+            profile_name="Cecil",
+            session=session,
+            tmdb=object(),
+        )  # type: ignore[arg-type]
 
 
 def test_later_withdrawn_thumb_removes_rating(export_dir: Path, session: Session) -> None:

@@ -413,7 +413,7 @@ def test_detect_tmdb_new_titles_and_confidence_upgrade(
     pair = events(session, event_type="new", title_id=known)
     assert {e.source for e in pair} == {"tmdb/justwatch", SA_SOURCE}
     assert {e.confidence for e in pair} == {"verified"}
-    listed = list_events(session, section="new", now=NOW)
+    listed = list_events(session, user_id=default_user_id(session), section="new", now=NOW)
     assert [e.title_id for e in listed].count(known) == 1
 
 
@@ -503,16 +503,28 @@ def test_detect_new_seasons(migrated_session: Session) -> None:
     assert ("tv", 504) not in tmdb.details_calls and ignored
     assert detect_new_seasons(session, cast(TmdbClient, tmdb), now=NOW) == 0
     # watched series still listed for new seasons
-    assert [e.title_id for e in list_events(session, section="new_season", now=NOW)] == [watched]
+    assert [
+        e.title_id
+        for e in list_events(
+            session, user_id=default_user_id(session), section="new_season", now=NOW
+        )
+    ] == [watched]
 
 
 def test_detect_watchlist_available(db: tuple[Session, dict[int, int]]) -> None:
     session, ids = db
-    assert detect_watchlist_available(session, now=NOW) == 1  # 107 on HBO; 108 only estimated
+    assert (
+        detect_watchlist_available(session, user_id=default_user_id(session), now=NOW) == 1
+    )  # 107 on HBO; 108 only estimated
     (event,) = events(session, event_type="watchlist_available")
     assert event.title_id == ids[107] and event.payload == {"providers": ["hbo_max"]}
     assert event.provider_id == pid(session, "hbo_max")
-    assert detect_watchlist_available(session, now=NOW + timedelta(days=5)) == 0
+    assert (
+        detect_watchlist_available(
+            session, user_id=default_user_id(session), now=NOW + timedelta(days=5)
+        )
+        == 0
+    )
 
 
 # --- notifications --------------------------------------------------------------------------
@@ -553,7 +565,7 @@ def test_notifications_thresholds_and_dedupe(db: tuple[Session, dict[int, int]])
     _expiring(session, ids[101], 5)  # not on watchlist nor in a batch -> not relevant
     session.commit()
 
-    assert generate_notifications(session, now=NOW) == 4
+    assert generate_notifications(session, user_id=default_user_id(session), now=NOW) == 4
     keys = set(session.scalars(select(Notification.dedupe_key)))
     net = pid(session, "netflix")
     assert keys == {
@@ -562,19 +574,21 @@ def test_notifications_thresholds_and_dedupe(db: tuple[Session, dict[int, int]])
         f"expiring:{two}:{net}:3",
         f"expiring:{soon}:{net}:soon",
     }
-    assert generate_notifications(session, now=NOW) == 0  # no duplicates on re-run
+    assert (
+        generate_notifications(session, user_id=default_user_id(session), now=NOW) == 0
+    )  # no duplicates on re-run
 
     later = NOW + timedelta(days=4)  # ten -> 6 days left (7), five -> 1 (3), far -> 16
-    assert generate_notifications(session, now=later) == 2
+    assert generate_notifications(session, user_id=default_user_id(session), now=later) == 2
     keys = set(session.scalars(select(Notification.dedupe_key)))
     assert f"expiring:{ten}:{net}:7" in keys and f"expiring:{five}:{net}:3" in keys
-    assert generate_notifications(session, now=later) == 0
+    assert generate_notifications(session, user_id=default_user_id(session), now=later) == 0
     assert all(n.channel == "inapp" for n in session.scalars(select(Notification)))
 
 
 def test_notifications_watchlist_and_new_season(db: tuple[Session, dict[int, int]]) -> None:
     session, ids = db
-    detect_watchlist_available(session, now=NOW)
+    detect_watchlist_available(session, user_id=default_user_id(session), now=NOW)
     upsert_event(
         session,
         title_id=ids[112],  # watched, but new seasons of watched shows are the point
@@ -596,15 +610,17 @@ def test_notifications_watchlist_and_new_season(db: tuple[Session, dict[int, int
         now=NOW,
     )
     session.commit()
-    assert generate_notifications(session, now=NOW) == 2
-    unread = list_notifications(session)
+    assert generate_notifications(session, user_id=default_user_id(session), now=NOW) == 2
+    unread = list_notifications(session, user_id=default_user_id(session))
     assert {n.event.event_type for n in unread} == {"watchlist_available", "new_season"}
-    read = mark_notification_read(session, unread[0].id, now=NOW)
+    read = mark_notification_read(session, unread[0].id, user_id=default_user_id(session), now=NOW)
     assert read.read_at is not None
-    assert len(list_notifications(session)) == 1
-    assert len(list_notifications(session, unread_only=False)) == 2
+    assert len(list_notifications(session, user_id=default_user_id(session))) == 1
+    assert (
+        len(list_notifications(session, user_id=default_user_id(session), unread_only=False)) == 2
+    )
     with pytest.raises(LookupError):
-        mark_notification_read(session, 9999)
+        mark_notification_read(session, 9999, user_id=default_user_id(session))
 
 
 def test_list_events_leaving_excludes_seen(db: tuple[Session, dict[int, int]]) -> None:
@@ -614,7 +630,7 @@ def test_list_events_leaving_excludes_seen(db: tuple[Session, dict[int, int]]) -
     _expiring(session, ids[105], None)  # undated -> "soon"
     _expiring(session, ids[106], -2)  # already gone
     session.commit()
-    leaving = list_events(session, section="leaving", now=NOW)
+    leaving = list_events(session, user_id=default_user_id(session), section="leaving", now=NOW)
     assert [e.title_id for e in leaving] == [ids[105], ids[103]]
     assert leaving[0].title.tmdb_id == 105
 
@@ -713,7 +729,7 @@ def test_run_refresh_baseline_then_diff(db: tuple[Session, dict[int, int]]) -> N
     assert summary["new_titles"] == 1 and summary["watchlist_available"] == 1
     assert [e.title_id for e in events(session, event_type="new")] == [fresh]
     assert [e.title_id for e in events(session, event_type="watchlist_available")] == [fresh]
-    notes = list_notifications(session)
+    notes = list_notifications(session, user_id=default_user_id(session))
     assert [(n.event.event_type, n.event.title_id) for n in notes] == [
         ("watchlist_available", fresh)
     ]
@@ -745,7 +761,10 @@ def test_watchlist_available_since(db: tuple[Session, dict[int, int]]) -> None:
     )
     session.commit()
     since = NOW - timedelta(hours=1)
-    assert detect_watchlist_available(session, now=NOW, since=since) == 1
+    assert (
+        detect_watchlist_available(session, user_id=default_user_id(session), now=NOW, since=since)
+        == 1
+    )
     assert [e.title_id for e in events(session, event_type="watchlist_available")] == [old_offer]
 
 

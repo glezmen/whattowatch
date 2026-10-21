@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 
 from whattowatch.api.cards import title_cards
 from whattowatch.api.deps import (
+    CurrentUserDep,
     NowDep,
     OptionalTmdbDep,
     RecommenderConfigDep,
@@ -37,6 +38,7 @@ def _aware(dt: datetime) -> datetime:
 def get_recommendations(
     response: Response,
     session: SessionDep,
+    user: CurrentUserDep,
     tmdb: OptionalTmdbDep,
     cfg: RecommenderConfigDep,
     now: NowDep,
@@ -54,6 +56,7 @@ def get_recommendations(
         if tmdb is None:
             raise no_tmdb_key()
         rows = recommend_engine.run_recommendations(
+            user_id=user.id,
             limit=limit,
             media_type=media_type,
             session=session,
@@ -67,6 +70,7 @@ def get_recommendations(
     else:
         batch_id = session.scalar(
             select(Recommendation.batch_id)
+            .where(Recommendation.user_id == user.id)
             .order_by(Recommendation.generated_at.desc(), Recommendation.batch_id.desc())
             .limit(1)
         )
@@ -76,25 +80,33 @@ def get_recommendations(
     query = (
         select(Recommendation)
         .join(Title, Title.id == Recommendation.title_id)
-        .where(Recommendation.batch_id == batch_id)
+        .where(Recommendation.user_id == user.id, Recommendation.batch_id == batch_id)
         .order_by(Recommendation.rank)
         .limit(limit)
     )
     if media_type is not None:
         query = query.where(Title.media_type == media_type)
     if not include_watchlist:
-        on_list = active_watchlist_ids(session)
+        on_list = active_watchlist_ids(session, user_id=user.id)
         if on_list:
             hidden = (
                 select(func.count())
                 .select_from(Recommendation)
-                .where(Recommendation.batch_id == batch_id, Recommendation.title_id.in_(on_list))
+                .where(
+                    Recommendation.user_id == user.id,
+                    Recommendation.batch_id == batch_id,
+                    Recommendation.title_id.in_(on_list),
+                )
             )
             response.headers["X-Filtered-Watchlist"] = str(session.scalar(hidden) or 0)
             query = query.where(Recommendation.title_id.not_in(on_list))
     recs = list(session.scalars(query))
     cards = title_cards(
-        session, [r.title for r in recs], now=now, max_age_days=cfg.verified_max_age_days
+        session,
+        [r.title for r in recs],
+        user_id=user.id,
+        now=now,
+        max_age_days=cfg.verified_max_age_days,
     )
     return [
         RecommendationItem(
@@ -114,11 +126,17 @@ def get_recommendations(
 
 @router.post("/{batch_id}/{title_id}/feedback", response_model=RecommendationFeedbackOut)
 def recommendation_feedback(
-    batch_id: str, title_id: int, body: RecommendationFeedbackIn, session: SessionDep
+    batch_id: str,
+    title_id: int,
+    body: RecommendationFeedbackIn,
+    session: SessionDep,
+    user: CurrentUserDep,
 ) -> RecommendationFeedbackOut:
     rec = session.scalar(
         select(Recommendation).where(
-            Recommendation.batch_id == batch_id, Recommendation.title_id == title_id
+            Recommendation.user_id == user.id,
+            Recommendation.batch_id == batch_id,
+            Recommendation.title_id == title_id,
         )
     )
     if rec is None:

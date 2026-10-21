@@ -51,16 +51,18 @@ def test_effective_config_prefers_app_settings(recommend_db: tuple[object, objec
 
     from whattowatch.llm.registry import LLMConfig, effective_llm_config
     from whattowatch.services.app_settings import set_setting
+    from whattowatch.services.users import default_user_id
 
     session = recommend_db[0]
     assert isinstance(session, Session)
+    uid = default_user_id(session)
     s = settings(llm_provider="lmstudio", llm_model="env-model", anthropic_api_key="a")
-    assert effective_llm_config(session, s) == LLMConfig("lmstudio", "env-model", False, False)
-    set_setting(session, "llm_provider", "anthropic")
-    set_setting(session, "llm_model", "claude-haiku-4-5")
-    set_setting(session, "llm_cloud_send_feedback_text", True)
-    set_setting(session, "llm_fallback_allowed", True)
-    config = effective_llm_config(session, s)
+    assert effective_llm_config(session, s, uid) == LLMConfig("lmstudio", "env-model", False, False)
+    set_setting(session, "llm_provider", "anthropic", user_id=uid)
+    set_setting(session, "llm_model", "claude-haiku-4-5", user_id=uid)
+    set_setting(session, "llm_cloud_send_feedback_text", True, user_id=uid)
+    set_setting(session, "llm_fallback_allowed", True, user_id=uid)
+    config = effective_llm_config(session, s, uid)
     assert config == LLMConfig("anthropic", "claude-haiku-4-5", True, True)
     p = get_provider(s, config=config)
     assert isinstance(p, AnthropicProvider) and p.model == "claude-haiku-4-5"
@@ -68,5 +70,5 @@ def test_effective_config_prefers_app_settings(recommend_db: tuple[object, objec
     lms = get_provider(s, "lmstudio", config=config)
     assert isinstance(lms, LMStudioProvider) and lms._model is None
     # an invalid stored provider falls back to .env
-    set_setting(session, "llm_provider", "gemini")
-    assert effective_llm_config(session, s).provider == "lmstudio"
+    set_setting(session, "llm_provider", "gemini", user_id=uid)
+    assert effective_llm_config(session, s, uid).provider == "lmstudio"

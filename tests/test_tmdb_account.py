@@ -22,6 +22,7 @@ from whattowatch.services import feedback as fb
 from whattowatch.services import tmdb_account
 from whattowatch.services.app_settings import get_setting, set_setting
 from whattowatch.services.env_file import read_env
+from whattowatch.services.users import default_user_id
 
 SESSION_ID = "sess-secret-0123456789"
 TOKEN = "req-token-abc"
@@ -169,35 +170,40 @@ def test_adapter_unapproved_token_raises_with_message() -> None:
 def test_link_start_finish_unlink(migrated_session: Session, env_path: Path) -> None:
     session, tmdb = migrated_session, FakeTmdb()
     settings = _settings(tmdb_api_key="k")
-    started = tmdb_account.start_link(session, settings, tmdb)
+    started = tmdb_account.start_link(session, settings, tmdb, user_id=default_user_id(session))
     assert started["approval_url"] == f"https://www.themoviedb.org/authenticate/{TOKEN}"
-    assert tmdb_account.status(session, settings).pending is True
+    assert tmdb_account.status(session, settings, user_id=default_user_id(session)).pending is True
 
-    result = tmdb_account.finish_link(session, settings, tmdb)
+    result = tmdb_account.finish_link(session, settings, tmdb, user_id=default_user_id(session))
     assert result.session_id == SESSION_ID
     assert result.status.linked and result.status.pending is False
     assert result.status.account is not None and result.status.account["username"] == "nbokor"
     env = read_env(env_path)
     assert env["TMDB_SESSION_ID"] == SESSION_ID and env["TMDB_API_KEY"] == "k"
-    assert get_setting(session, tmdb_account.TMDB_PENDING_TOKEN) is None
-    stored = get_setting(session, tmdb_account.TMDB_ACCOUNT)
+    assert (
+        get_setting(session, tmdb_account.TMDB_PENDING_TOKEN, user_id=default_user_id(session))
+        is None
+    )
+    stored = get_setting(session, tmdb_account.TMDB_ACCOUNT, user_id=default_user_id(session))
     assert stored["id"] == 42 and "linked_at" in stored and SESSION_ID not in json.dumps(stored)
 
     linked = settings.model_copy(update={"tmdb_session_id": SESSION_ID})
-    st = tmdb_account.unlink(session, linked, tmdb)
+    st = tmdb_account.unlink(session, linked, tmdb, user_id=default_user_id(session))
     assert ("delete_session", SESSION_ID) in tmdb.calls
     assert not st.linked and st.account is None
     assert "TMDB_SESSION_ID" not in read_env(env_path)
-    assert get_setting(session, tmdb_account.TMDB_ACCOUNT) is None
+    assert get_setting(session, tmdb_account.TMDB_ACCOUNT, user_id=default_user_id(session)) is None
 
 
 def test_finish_without_approval_keeps_pending(migrated_session: Session, env_path: Path) -> None:
     session = migrated_session
     settings = _settings(tmdb_api_key="k")
-    tmdb_account.start_link(session, settings, FakeTmdb())
+    tmdb_account.start_link(session, settings, FakeTmdb(), user_id=default_user_id(session))
     with pytest.raises(tmdb_account.TmdbLinkError, match="Session denied"):
-        tmdb_account.finish_link(session, settings, FakeTmdb(deny=True))
-    assert tmdb_account.status(session, settings).pending is True
+        tmdb_account.finish_link(
+            session, settings, FakeTmdb(deny=True), user_id=default_user_id(session)
+        )
+    assert tmdb_account.status(session, settings, user_id=default_user_id(session)).pending is True
     assert "TMDB_SESSION_ID" not in read_env(env_path)
 
 
@@ -205,21 +211,30 @@ def test_finish_with_expired_or_missing_token(migrated_session: Session, env_pat
     session = migrated_session
     settings = _settings(tmdb_api_key="k")
     with pytest.raises(tmdb_account.TmdbLinkError):
-        tmdb_account.finish_link(session, settings, FakeTmdb())
+        tmdb_account.finish_link(session, settings, FakeTmdb(), user_id=default_user_id(session))
     past = (datetime.now(UTC) - timedelta(minutes=1)).isoformat()
     set_setting(
-        session, tmdb_account.TMDB_PENDING_TOKEN, {"request_token": TOKEN, "expires_at": past}
+        session,
+        tmdb_account.TMDB_PENDING_TOKEN,
+        {"request_token": TOKEN, "expires_at": past},
+        user_id=default_user_id(session),
     )
-    assert tmdb_account.status(session, settings).pending is False
+    assert tmdb_account.status(session, settings, user_id=default_user_id(session)).pending is False
     with pytest.raises(tmdb_account.TmdbLinkError):
-        tmdb_account.finish_link(session, settings, FakeTmdb())
-    assert get_setting(session, tmdb_account.TMDB_PENDING_TOKEN) is None
+        tmdb_account.finish_link(session, settings, FakeTmdb(), user_id=default_user_id(session))
+    assert (
+        get_setting(session, tmdb_account.TMDB_PENDING_TOKEN, user_id=default_user_id(session))
+        is None
+    )
 
 
 def test_unlink_survives_revoke_failure(migrated_session: Session, env_path: Path) -> None:
     env_path.write_text(f"TMDB_SESSION_ID={SESSION_ID}\n")
     settings = _settings(tmdb_api_key="k", tmdb_session_id=SESSION_ID)
-    st = tmdb_account.unlink(migrated_session, settings, FakeTmdb(fail=TmdbError(500, "x")))
+    uid = default_user_id(migrated_session)
+    st = tmdb_account.unlink(
+        migrated_session, settings, FakeTmdb(fail=TmdbError(500, "x")), user_id=uid
+    )
     assert not st.linked and read_env(env_path) == {}
 
 
@@ -232,12 +247,29 @@ LINKED = {"tmdb_api_key": "k", "tmdb_session_id": SESSION_ID}
 def test_sync_on_set_and_clear(migrated_session: Session) -> None:
     session, tmdb = migrated_session, FakeTmdb()
     t = _title(session, 1396, "tv")
-    rating = fb.set_star_rating(session, t.id, 3.5, settings=_settings(**LINKED), tmdb=tmdb)
+    rating = fb.set_star_rating(
+        session,
+        t.id,
+        3.5,
+        settings=_settings(**LINKED),
+        tmdb=tmdb,
+        user_id=default_user_id(session),
+    )
     assert tmdb.calls == [("rate", "tv", 1396, 7.0, SESSION_ID)]
     assert rating is not None and rating.external_sync is not None
     sync = rating.external_sync["tmdb"]
     assert sync["status"] == "ok" and sync["value"] == 7.0 and sync["error"] is None
-    assert fb.set_star_rating(session, t.id, None, settings=_settings(**LINKED), tmdb=tmdb) is None
+    assert (
+        fb.set_star_rating(
+            session,
+            t.id,
+            None,
+            settings=_settings(**LINKED),
+            tmdb=tmdb,
+            user_id=default_user_id(session),
+        )
+        is None
+    )
     assert tmdb.calls[-1] == ("unrate", "tv", 1396, SESSION_ID)
 
 
@@ -246,7 +278,12 @@ def test_sync_error_is_recorded_and_local_save_kept(migrated_session: Session) -
     t = _title(session)
     for exc in (TmdbError(401, "Authentication failed"), httpx.ConnectError("down")):
         rating = fb.set_star_rating(
-            session, t.id, 0.5, settings=_settings(**LINKED), tmdb=FakeTmdb(fail=exc)
+            session,
+            t.id,
+            0.5,
+            user_id=default_user_id(session),
+            settings=_settings(**LINKED),
+            tmdb=FakeTmdb(fail=exc),
         )
         assert rating is not None and rating.raw_value == "0.5"
         assert rating.external_sync is not None
@@ -258,16 +295,27 @@ def test_sync_error_is_recorded_and_local_save_kept(migrated_session: Session) -
 def test_sync_skipped_when_disabled_or_not_linked(migrated_session: Session) -> None:
     session, tmdb = migrated_session, FakeTmdb()
     t = _title(session)
-    tmdb_account.set_rating_sync_enabled(session, False)
-    r = fb.set_star_rating(session, t.id, 4, settings=_settings(**LINKED), tmdb=tmdb)
+    tmdb_account.set_rating_sync_enabled(session, False, user_id=default_user_id(session))
+    r = fb.set_star_rating(
+        session, t.id, 4, settings=_settings(**LINKED), tmdb=tmdb, user_id=default_user_id(session)
+    )
     assert r is not None and r.external_sync is not None
     assert r.external_sync["tmdb"]["status"] == "skipped"
     assert r.external_sync["tmdb"]["reason"] == "disabled"
-    tmdb_account.set_rating_sync_enabled(session, True)
-    r = fb.set_star_rating(session, t.id, 4, settings=_settings(tmdb_api_key="k"), tmdb=tmdb)
+    tmdb_account.set_rating_sync_enabled(session, True, user_id=default_user_id(session))
+    r = fb.set_star_rating(
+        session,
+        t.id,
+        4,
+        settings=_settings(tmdb_api_key="k"),
+        tmdb=tmdb,
+        user_id=default_user_id(session),
+    )
     assert r is not None and r.external_sync is not None
     assert r.external_sync["tmdb"]["reason"] == "not_linked"
-    r = fb.set_star_rating(session, t.id, 4, settings=_settings(**LINKED), tmdb=None)
+    r = fb.set_star_rating(
+        session, t.id, 4, settings=_settings(**LINKED), tmdb=None, user_id=default_user_id(session)
+    )
     assert r is not None and r.external_sync is not None
     assert r.external_sync["tmdb"]["reason"] == "no_tmdb_key"
     assert tmdb.calls == []
@@ -278,7 +326,7 @@ def test_resync_counts(migrated_session: Session) -> None:
     off = _settings()
     a, b, c = _title(session, 1), _title(session, 2), _title(session, 3)
     for t, stars in ((a, 5.0), (b, 2.5), (c, 1.0)):
-        fb.set_star_rating(session, t.id, stars, settings=off)
+        fb.set_star_rating(session, t.id, stars, settings=off, user_id=default_user_id(session))
 
     class Flaky(FakeTmdb):
         def rate(self, media_type: str, tmdb_id: int, value: float, session_id: str) -> None:
@@ -287,7 +335,9 @@ def test_resync_counts(migrated_session: Session) -> None:
                 raise TmdbError(500, "boom")
 
     tmdb = Flaky()
-    result = tmdb_account.resync_ratings(session, _settings(**LINKED), tmdb)
+    result = tmdb_account.resync_ratings(
+        session, _settings(**LINKED), tmdb, user_id=default_user_id(session)
+    )
     assert (result.total, result.ok, result.error, result.skipped) == (3, 2, 1, 0)
     assert [c[3] for c in tmdb.calls] == [10.0, 5.0, 2.0]
     b_rating = _app_rating(session, b.id)
@@ -397,8 +447,12 @@ def test_api_resync(client: TestClient, migrated_session: Session) -> None:
     r = client.post("/api/settings/tmdb-account/resync")
     assert r.status_code == 409 and r.json()["detail_code"] == "tmdb_not_linked"
     a, b = _title(migrated_session, 1), _title(migrated_session, 2)
-    fb.set_star_rating(migrated_session, a.id, 4, settings=_settings())
-    fb.set_star_rating(migrated_session, b.id, 3, settings=_settings())
+    fb.set_star_rating(
+        migrated_session, a.id, 4, settings=_settings(), user_id=default_user_id(migrated_session)
+    )
+    fb.set_star_rating(
+        migrated_session, b.id, 3, settings=_settings(), user_id=default_user_id(migrated_session)
+    )
     migrated_session.commit()
     respx.post(f"{BASE_URL}/movie/1/rating").mock(return_value=httpx.Response(201, json={}))
     respx.post(f"{BASE_URL}/movie/2/rating").mock(

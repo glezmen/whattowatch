@@ -5,7 +5,9 @@
 
 Since 0013 a row is either global (`user_id` NULL) or a user's own. `PER_USER_KEYS` are
 the keys that belong to a profile (docs/multiuser.md A1); everything else is global.
-The `user_id` parameters default to None (global) until A2 passes the current user.
+`get_setting`/`set_setting` require `user_id` for a per-user key and refuse it for a
+global one (`ValueError`), so a missing user filter cannot silently read a global row;
+the typed helpers below are all per user and take a required `user_id`.
 """
 
 from __future__ import annotations
@@ -51,7 +53,15 @@ PER_USER_KEYS: frozenset[str] = frozenset(
 )
 
 
+def _check_scope(key: str, user_id: int | None) -> None:
+    if key in PER_USER_KEYS and user_id is None:
+        raise ValueError(f"app setting {key!r} is per user: user_id is required")
+    if key not in PER_USER_KEYS and user_id is not None:
+        raise ValueError(f"app setting {key!r} is global: user_id must not be given")
+
+
 def _row(session: Session, key: str, user_id: int | None) -> AppSetting | None:
+    _check_scope(key, user_id)
     owner = AppSetting.user_id.is_(None) if user_id is None else AppSetting.user_id == user_id
     return session.scalars(select(AppSetting).where(AppSetting.key == key, owner)).one_or_none()
 
@@ -59,13 +69,13 @@ def _row(session: Session, key: str, user_id: int | None) -> AppSetting | None:
 def get_setting(
     session: Session, key: str, default: Any = None, *, user_id: int | None = None
 ) -> Any:
-    """The value of `key` for `user_id` (None = the global row)."""
+    """The value of `key` for `user_id` (None = the global row of a global key)."""
     row = _row(session, key, user_id)
     return default if row is None or row.value is None else row.value
 
 
 def set_setting(session: Session, key: str, value: Any, *, user_id: int | None = None) -> None:
-    """Upsert (flush, no commit) for `user_id` (None = global). `None` deletes the key."""
+    """Upsert (flush, no commit) for `user_id` (None = global key). `None` deletes it."""
     row = _row(session, key, user_id)
     if value is None:
         if row is not None:
@@ -77,55 +87,49 @@ def set_setting(session: Session, key: str, value: Any, *, user_id: int | None =
     session.flush()
 
 
-def ui_language(session: Session, *, user_id: int | None = None) -> UiLanguage:
+def ui_language(session: Session, *, user_id: int) -> UiLanguage:
     value = get_setting(session, UI_LANGUAGE, "hu", user_id=user_id)
     return cast(UiLanguage, value) if value in UI_LANGUAGES else "hu"
 
 
-def set_ui_language(session: Session, value: str, *, user_id: int | None = None) -> None:
+def set_ui_language(session: Session, value: str, *, user_id: int) -> None:
     if value not in UI_LANGUAGES:
         raise ValueError(f"unknown ui_language: {value!r} (allowed: {', '.join(UI_LANGUAGES)})")
     set_setting(session, UI_LANGUAGE, value, user_id=user_id)
 
 
-def netflix_profile_name(session: Session, *, user_id: int | None = None) -> str | None:
+def netflix_profile_name(session: Session, *, user_id: int) -> str | None:
     value = get_setting(session, NETFLIX_PROFILE_NAME, user_id=user_id)
     return value if isinstance(value, str) and value else None
 
 
-def set_netflix_profile_name(
-    session: Session, value: str | None, *, user_id: int | None = None
-) -> None:
+def set_netflix_profile_name(session: Session, value: str | None, *, user_id: int) -> None:
     set_setting(session, NETFLIX_PROFILE_NAME, (value or "").strip() or None, user_id=user_id)
 
 
-def effective_netflix_profile(
-    session: Session, settings: Settings, *, user_id: int | None = None
-) -> str | None:
+def effective_netflix_profile(session: Session, settings: Settings, *, user_id: int) -> str | None:
     """App setting first, then `NETFLIX_PROFILE_NAME` from `.env`."""
     return netflix_profile_name(session, user_id=user_id) or settings.netflix_profile_name or None
 
 
-def netflix_profiles(session: Session, *, user_id: int | None = None) -> list[str]:
+def netflix_profiles(session: Session, *, user_id: int) -> list[str]:
     value = get_setting(session, NETFLIX_PROFILES, [], user_id=user_id)
     return [str(v) for v in value] if isinstance(value, list) else []
 
 
-def set_netflix_profiles(session: Session, names: list[str], *, user_id: int | None = None) -> None:
+def set_netflix_profiles(session: Session, names: list[str], *, user_id: int) -> None:
     set_setting(
         session, NETFLIX_PROFILES, list(dict.fromkeys(n for n in names if n)), user_id=user_id
     )
 
 
-def prime_profile_type(session: Session, *, user_id: int | None = None) -> str:
+def prime_profile_type(session: Session, *, user_id: int) -> str:
     """Prime Video export profile type (`ADULT`/`CHILD`) the import uses; default ADULT."""
     value = get_setting(session, PRIME_PROFILE_TYPE, user_id=user_id)
     return value if value in PRIME_PROFILE_TYPES else DEFAULT_PRIME_PROFILE
 
 
-def set_prime_profile_type(
-    session: Session, value: str | None, *, user_id: int | None = None
-) -> None:
+def set_prime_profile_type(session: Session, value: str | None, *, user_id: int) -> None:
     """`None`/"" resets to the default; anything but ADULT/CHILD raises ValueError."""
     clean = (value or "").strip().upper() or None
     if clean is not None and clean not in PRIME_PROFILE_TYPES:
@@ -134,20 +138,20 @@ def set_prime_profile_type(
     set_setting(session, PRIME_PROFILE_TYPE, clean, user_id=user_id)
 
 
-def prime_profiles(session: Session, *, user_id: int | None = None) -> list[str]:
+def prime_profiles(session: Session, *, user_id: int) -> list[str]:
     value = get_setting(session, PRIME_PROFILES, [], user_id=user_id)
     return [str(v) for v in value] if isinstance(value, list) else []
 
 
-def set_prime_profiles(session: Session, names: list[str], *, user_id: int | None = None) -> None:
+def set_prime_profiles(session: Session, names: list[str], *, user_id: int) -> None:
     set_setting(
         session, PRIME_PROFILES, list(dict.fromkeys(n for n in names if n)), user_id=user_id
     )
 
 
-def onboarding_done(session: Session, *, user_id: int | None = None) -> bool:
+def onboarding_done(session: Session, *, user_id: int) -> bool:
     return bool(get_setting(session, ONBOARDING_DONE, False, user_id=user_id))
 
 
-def set_onboarding_done(session: Session, value: bool, *, user_id: int | None = None) -> None:
+def set_onboarding_done(session: Session, value: bool, *, user_id: int) -> None:
     set_setting(session, ONBOARDING_DONE, bool(value), user_id=user_id)

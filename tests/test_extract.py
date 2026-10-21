@@ -97,14 +97,14 @@ def test_run_extraction_idempotent_and_edit(session: Session) -> None:
     session.add(llm)
     session.flush()
 
-    n = run_extraction(session=session)
+    n = run_extraction(user_id=default_user_id(session), session=session)
     first = signals(session)
     assert ("+", "humor", "szaraz") in first
     assert ("+", "tortenet", "lassan_kibontakozo") in first
     assert ("-", "stilus", "eroszakos") in first
     assert n == len(first) - 1  # llm row not counted
 
-    assert run_extraction(session=session) == n
+    assert run_extraction(user_id=default_user_id(session), session=session) == n
     assert signals(session) == first
     rule_rows = session.scalars(
         select(PreferenceSignal).where(PreferenceSignal.extractor == "rules")
@@ -114,7 +114,7 @@ def test_run_extraction_idempotent_and_edit(session: Session) -> None:
 
     fb.liked_text = "száraz humor"
     fb.disliked_text = None
-    run_extraction(session=session)
+    run_extraction(user_id=default_user_id(session), session=session)
     after = signals(session)
     assert ("+", "humor", "szaraz") in after
     assert ("+", "tortenet", "lassan_kibontakozo") not in after

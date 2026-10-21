@@ -39,6 +39,7 @@ def _run(db: DB, cfg: RecommenderConfig | None = None, **kw: object) -> list[int
     session, ids = db
     inv = {v: k for k, v in ids.items()}
     rows = run_recommendations(
+        user_id=default_user_id(session),
         limit=kw.pop("limit", 20),  # type: ignore[arg-type]
         session=session,
         tmdb=kw.pop("tmdb", StubTmdb()),  # type: ignore[arg-type]
@@ -74,7 +75,12 @@ def test_estimated_only_dropped_without_tmdb(
     session, ids = recommend_db
     inv = {v: k for k, v in ids.items()}
     rows = run_recommendations(
-        session=session, tmdb=None, config=RecommenderConfig(), now=NOW, echo=False
+        user_id=default_user_id(session),
+        session=session,
+        tmdb=None,
+        config=RecommenderConfig(),
+        now=NOW,
+        echo=False,
     )
     got = {inv[r.title_id] for r in rows}
     assert 108 not in got and 109 not in got
@@ -88,7 +94,10 @@ def _no_key_settings() -> object:
 
 def test_candidates_flag_estimated_only(recommend_db: DB) -> None:
     session, ids = recommend_db
-    cands = {c.title.tmdb_id: c for c in load_candidates(session, now=NOW)}
+    cands = {
+        c.title.tmdb_id: c
+        for c in load_candidates(session, user_id=default_user_id(session), now=NOW)
+    }
     assert cands[108].estimated_only and cands[108].verified_subscriptions == ()
     assert not cands[101].estimated_only and cands[101].verified_subscriptions == ("netflix",)
     assert cands[102].verified_subscriptions == ("hbo_max",)
@@ -112,11 +121,18 @@ def test_media_type_filter(recommend_db: DB) -> None:
     session.get_one(Title, ids[102]).media_type = "tv"
     session.commit()
     rows = run_recommendations(
-        media_type="tv", session=session, tmdb=StubTmdb(), now=NOW, echo=False
+        user_id=default_user_id(session),
+        media_type="tv",
+        session=session,
+        tmdb=StubTmdb(),
+        now=NOW,
+        echo=False,
     )
     assert [r.title_id for r in rows] == [ids[102]]
     with pytest.raises(ValueError):
-        run_recommendations(media_type="anime", session=session, echo=False)
+        run_recommendations(
+            user_id=default_user_id(session), media_type="anime", session=session, echo=False
+        )
 
 
 def test_expected_ranking_is_stable(recommend_db: DB) -> None:
@@ -131,10 +147,13 @@ def test_watchlist_titles_excluded_by_default(recommend_db: DB) -> None:
     assert 107 not in default and 108 not in default
     assert set(default) == set(EXPECTED_DEFAULT) - {107, 108}
     assert 107 in _run(recommend_db, include_watchlist=True)
-    kept = {c.title.id for c in load_candidates(session, now=NOW)}
+    kept = {c.title.id for c in load_candidates(session, user_id=default_user_id(session), now=NOW)}
     assert ids[107] in kept
     assert ids[107] not in {
-        c.title.id for c in load_candidates(session, now=NOW, exclude_watchlist=True)
+        c.title.id
+        for c in load_candidates(
+            session, user_id=default_user_id(session), now=NOW, exclude_watchlist=True
+        )
     }
     # the batch is still `limit` long
     assert len(_run(recommend_db, limit=4)) == 4
@@ -142,9 +161,22 @@ def test_watchlist_titles_excluded_by_default(recommend_db: DB) -> None:
 
 def test_include_watchlist_flag_persisted(recommend_db: DB) -> None:
     session, _ = recommend_db
-    off = run_recommendations(limit=3, session=session, tmdb=StubTmdb(), now=NOW, echo=False)
+    off = run_recommendations(
+        user_id=default_user_id(session),
+        limit=3,
+        session=session,
+        tmdb=StubTmdb(),
+        now=NOW,
+        echo=False,
+    )
     on = run_recommendations(
-        limit=3, session=session, tmdb=StubTmdb(), now=NOW, echo=False, include_watchlist=True
+        user_id=default_user_id(session),
+        limit=3,
+        session=session,
+        tmdb=StubTmdb(),
+        now=NOW,
+        echo=False,
+        include_watchlist=True,
     )
     assert all(r.components["_include_watchlist"] is False for r in off)
     assert all(r.components["_include_watchlist"] is True for r in on)
@@ -160,7 +192,12 @@ def test_cold_start_switches_weights(recommend_db: DB) -> None:
     session.execute(delete(TitleRating).where(TitleRating.title_id.in_([ids[204], ids[205]])))
     session.commit()  # 4 personal ratings < 5
     rows = run_recommendations(
-        session=session, tmdb=StubTmdb(), now=NOW, echo=False, include_watchlist=True
+        user_id=default_user_id(session),
+        session=session,
+        tmdb=StubTmdb(),
+        now=NOW,
+        echo=False,
+        include_watchlist=True,
     )
     by_tmdb = {r.title.tmdb_id: r for r in rows}
     assert all(r.weighted["genre_affinity"] == 0 for r in rows)
@@ -175,6 +212,7 @@ def test_diversity_caps_same_genre_run(recommend_db: DB) -> None:
         session, ids = recommend_db
         inv = {v: k for k, v in ids.items()}
         rows = run_recommendations(
+            user_id=default_user_id(session),
             limit=5,
             session=session,
             tmdb=StubTmdb(),
@@ -193,7 +231,12 @@ def test_diversity_caps_same_genre_run(recommend_db: DB) -> None:
 def test_reasons_are_hungarian_and_non_empty(recommend_db: DB) -> None:
     session, _ = recommend_db
     rows = run_recommendations(
-        session=session, tmdb=StubTmdb(), now=NOW, echo=False, include_watchlist=True
+        user_id=default_user_id(session),
+        session=session,
+        tmdb=StubTmdb(),
+        now=NOW,
+        echo=False,
+        include_watchlist=True,
     )
     for r in rows:
         assert 1 <= len(r.reasons) <= 3
@@ -209,10 +252,19 @@ def test_batch_persisted_and_rerun_creates_new_batch(
     recommend_db: DB, capsys: pytest.CaptureFixture[str]
 ) -> None:
     session, ids = recommend_db
-    first = run_recommendations(limit=5, session=session, tmdb=StubTmdb(), now=NOW)
+    first = run_recommendations(
+        user_id=default_user_id(session), limit=5, session=session, tmdb=StubTmdb(), now=NOW
+    )
     out = capsys.readouterr().out
     assert "Sötét erdő" in out and "Netflix" in out and "Indoklás" in out
-    second = run_recommendations(limit=5, session=session, tmdb=StubTmdb(), now=NOW, echo=False)
+    second = run_recommendations(
+        user_id=default_user_id(session),
+        limit=5,
+        session=session,
+        tmdb=StubTmdb(),
+        now=NOW,
+        echo=False,
+    )
     stored = session.scalars(select(Recommendation)).all()
     assert len(stored) == 10
     batches = {r.batch_id for r in stored}

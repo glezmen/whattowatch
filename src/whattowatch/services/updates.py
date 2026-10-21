@@ -10,6 +10,10 @@ Event sources and certainty:
 
 All writers are idempotent; nothing here commits except `sync_sa_changes` and
 `run_refresh`, which own their SyncRun bookkeeping.
+
+Profiles (docs/multiuser.md A2): catalog events are shared, so the global steps use the
+union of every profile's subscriptions / followed series; watchlist detection, the
+notifications and the read helpers run per user (`user_id`).
 """
 
 from __future__ import annotations
@@ -51,9 +55,13 @@ from whattowatch.providers import provider_for_sa as _provider_for_sa
 from whattowatch.services.catalog import ensure_title
 from whattowatch.services.catalog_sync import run_sync
 from whattowatch.services.recommend.candidates import excluded_title_ids
-from whattowatch.services.subscriptions import enabled_keys, enabled_sa_catalogs
+from whattowatch.services.subscriptions import (
+    any_user_enabled_keys,
+    any_user_sa_catalogs,
+    enabled_keys,
+)
 from whattowatch.services.title_resolution import ResolveRequest, resolve_title
-from whattowatch.services.users import default_user_id
+from whattowatch.services.users import all_user_ids
 
 SA_SOURCE = "streaming_availability"
 VERIFIED_SOURCE = "tmdb/justwatch"
@@ -339,7 +347,8 @@ def sync_sa_changes(
     max_pages: int = 10,
     now: datetime | None = None,
 ) -> SyncRun:
-    """Import SA `changes` for the enabled catalogs as `catalog_events` (commits)."""
+    """Import SA `changes` for the catalogs any profile has enabled as `catalog_events`
+    (commits)."""
     now = now or datetime.now(UTC)
     run = SyncRun(source="sa_changes", started_at=now, status="running", errors=[])
     session.add(run)
@@ -348,8 +357,8 @@ def sync_sa_changes(
     counts: Counter[str] = Counter()
     errors: list[str] = []
     resolved: dict[str, int | None] = {}
-    catalogs = enabled_sa_catalogs(session)
-    enabled = set(enabled_keys(session))
+    catalogs = any_user_sa_catalogs(session)
+    enabled = set(any_user_enabled_keys(session))
 
     for change_type in types if catalogs else ():
         try:
@@ -503,17 +512,23 @@ def detect_tmdb_new_titles(
 
 
 def _followed_tv_titles(session: Session, limit: int) -> list[Title]:
-    watched = select(WatchEvent.title_id).where(WatchEvent.status.in_(("watched", "in_progress")))
-    listed = select(WatchlistItem.title_id).where(WatchlistItem.status == "active")
-    rejected = select(TitleUserState.title_id).where(TitleUserState.not_interested.is_(True))
+    """Series some profile follows (watched / in progress / on an active watchlist) without
+    having marked them not interested; the union over all profiles."""
+    followed: set[int] = set()
+    for uid in all_user_ids(session):
+        watched = select(WatchEvent.title_id).where(
+            WatchEvent.user_id == uid, WatchEvent.status.in_(("watched", "in_progress"))
+        )
+        listed = select(WatchlistItem.title_id).where(
+            WatchlistItem.user_id == uid, WatchlistItem.status == "active"
+        )
+        followed |= set(session.scalars(watched.union(listed))) - _not_interested_ids(session, uid)
+    if not followed:
+        return []
     return list(
         session.scalars(
             select(Title)
-            .where(
-                Title.media_type == "tv",
-                Title.id.in_(watched.union(listed)),
-                Title.id.not_in(rejected),
-            )
+            .where(Title.media_type == "tv", Title.id.in_(followed))
             .order_by(Title.id.desc())
             .limit(limit)
         )
@@ -562,7 +577,9 @@ def detect_new_seasons(
     return created
 
 
-def _verified_offers(session: Session, title_ids: Iterable[int]) -> dict[int, list[str]]:
+def _verified_offers(
+    session: Session, title_ids: Iterable[int], user_id: int
+) -> dict[int, list[str]]:
     ids = list(title_ids)
     if not ids:
         return {}
@@ -575,7 +592,7 @@ def _verified_offers(session: Session, title_ids: Iterable[int]) -> dict[int, li
             Availability.region == REGION,
             Availability.offer_type == "flatrate",
             Availability.confidence == "verified",
-            Provider.key.in_(enabled_keys(session)),
+            Provider.key.in_(enabled_keys(session, user_id=user_id)),
         )
     )
     out: dict[int, set[str]] = {}
@@ -585,21 +602,24 @@ def _verified_offers(session: Session, title_ids: Iterable[int]) -> dict[int, li
 
 
 def detect_watchlist_available(
-    session: Session, *, now: datetime | None = None, since: datetime | None = None
+    session: Session,
+    *,
+    user_id: int,
+    now: datetime | None = None,
+    since: datetime | None = None,
 ) -> int:
-    """One `watchlist_available` event per active watchlist title with a verified offer,
-    at most once per WATCHLIST_REPEAT_DAYS. The event's provider is the first by registry
-    order; all provider keys are in the payload.
+    """One `watchlist_available` event per title on `user_id`'s active watchlist with a
+    verified offer on one of their subscriptions, at most once per WATCHLIST_REPEAT_DAYS
+    (events are shared: another profile's recent event counts). The event's provider is
+    the first by registry order; all provider keys are in the payload.
 
     With `since`, only titles whose verified offer was first seen, or whose watchlist item
     was added, at/after `since` qualify: an offer that predates both is not news.
     """
     now = now or datetime.now(UTC)
     today = now.date()
-    active = set(
-        session.scalars(select(WatchlistItem.title_id).where(WatchlistItem.status == "active"))
-    )
-    offers = _verified_offers(session, active)
+    active = _active_watchlist(session, user_id)
+    offers = _verified_offers(session, active, user_id)
     if since is not None:
         since = _aware(since)
         fresh_offer = set(
@@ -617,6 +637,7 @@ def detect_watchlist_available(
         fresh_item = set(
             session.scalars(
                 select(WatchlistItem.title_id).where(
+                    WatchlistItem.user_id == user_id,
                     WatchlistItem.title_id.in_(list(offers)),
                     WatchlistItem.status == "active",
                     WatchlistItem.added_at >= since,
@@ -657,26 +678,42 @@ def detect_watchlist_available(
 # --- Notifications ------------------------------------------------------------------------
 
 
-def _not_interested_ids(session: Session) -> set[int]:
+def _active_watchlist(session: Session, user_id: int) -> set[int]:
     return set(
         session.scalars(
-            select(TitleUserState.title_id).where(TitleUserState.not_interested.is_(True))
+            select(WatchlistItem.title_id).where(
+                WatchlistItem.user_id == user_id, WatchlistItem.status == "active"
+            )
         )
     )
 
 
-def _relevant_for_leaving(session: Session) -> set[int]:
-    """Expiring notices only for titles the user cares about: active watchlist + latest batch."""
-    ids = set(
-        session.scalars(select(WatchlistItem.title_id).where(WatchlistItem.status == "active"))
+def _not_interested_ids(session: Session, user_id: int) -> set[int]:
+    return set(
+        session.scalars(
+            select(TitleUserState.title_id).where(
+                TitleUserState.user_id == user_id, TitleUserState.not_interested.is_(True)
+            )
+        )
     )
+
+
+def _relevant_for_leaving(session: Session, user_id: int) -> set[int]:
+    """Expiring notices only for titles the user cares about: active watchlist + their
+    latest recommendation batch."""
+    ids = _active_watchlist(session, user_id)
     latest = session.scalar(
-        select(Recommendation.batch_id).order_by(Recommendation.generated_at.desc()).limit(1)
+        select(Recommendation.batch_id)
+        .where(Recommendation.user_id == user_id)
+        .order_by(Recommendation.generated_at.desc())
+        .limit(1)
     )
     if latest is not None:
         ids.update(
             session.scalars(
-                select(Recommendation.title_id).where(Recommendation.batch_id == latest)
+                select(Recommendation.title_id).where(
+                    Recommendation.user_id == user_id, Recommendation.batch_id == latest
+                )
             )
         )
     return ids
@@ -693,20 +730,28 @@ _NOTIFY_TYPES = ("expiring", "watchlist_available", "new_season")
 def generate_notifications(
     session: Session,
     *,
+    user_id: int,
     now: datetime,
     leaving_notice_days: Sequence[int] = DEFAULT_LEAVING_NOTICE_DAYS,
     baseline: bool = False,
 ) -> int:
-    """In-app notifications (docs/updates.md 4.5); `dedupe_key` prevents repeats.
+    """In-app notifications of one user (docs/updates.md 4.5); `dedupe_key` (unique per
+    user) prevents repeats. Events of providers the user has switched off are skipped;
+    `watchlist_available` only for titles on the user's own active watchlist.
 
     On a `baseline` run no `new` / `watchlist_available` notices are created: what we see
     for the first time is not evidence of a recent arrival.
     """
     today = now.date()
-    excluded = excluded_title_ids(session)  # watched / seen / rated / not interested
-    not_interested = _not_interested_ids(session)
-    relevant_leaving = _relevant_for_leaving(session)
-    existing = set(session.scalars(select(Notification.dedupe_key)))
+    excluded = excluded_title_ids(session, user_id=user_id)  # watched/seen/rated/rejected
+    not_interested = _not_interested_ids(session, user_id)
+    relevant_leaving = _relevant_for_leaving(session, user_id)
+    watchlist = _active_watchlist(session, user_id)
+    keys_by_id = {pid: key for key, pid in _provider_ids(session).items()}
+    enabled = set(enabled_keys(session, user_id=user_id))
+    existing = set(
+        session.scalars(select(Notification.dedupe_key).where(Notification.user_id == user_id))
+    )
     lookback = today - timedelta(days=WINDOW_DAYS)
     types = ("expiring", "new_season") if baseline else _NOTIFY_TYPES
     events = session.scalars(
@@ -720,6 +765,8 @@ def generate_notifications(
     created = 0
     for event in events:
         key: str | None = None
+        if event.provider_id is not None and keys_by_id.get(event.provider_id) not in enabled:
+            continue
         prefix = f"{event.event_type}:{event.title_id}:{event.provider_id}"
         if event.event_type == "expiring":
             if event.title_id in excluded or event.title_id not in relevant_leaving:
@@ -730,7 +777,7 @@ def generate_notifications(
                 bucket = _leaving_bucket((event.event_date - today).days, leaving_notice_days)
                 key = f"{prefix}:{bucket}" if bucket is not None else None
         elif event.event_type == "watchlist_available":
-            if event.title_id in excluded:
+            if event.title_id in excluded or event.title_id not in watchlist:
                 continue
             if event.event_date >= today - timedelta(days=WATCHLIST_NOTICE_DAYS):
                 key = f"{prefix}:{event.event_date.isoformat()}"
@@ -743,7 +790,7 @@ def generate_notifications(
             continue
         session.add(
             Notification(
-                user_id=default_user_id(session),  # A1 interim, TODO(A2): current user
+                user_id=user_id,
                 event_id=event.id,
                 channel="inapp",
                 dedupe_key=key,
@@ -759,12 +806,19 @@ def generate_notifications(
 
 
 def list_events(
-    session: Session, *, section: Section, days: int = WINDOW_DAYS, now: datetime
+    session: Session,
+    *,
+    user_id: int,
+    section: Section,
+    days: int = WINDOW_DAYS,
+    now: datetime,
 ) -> list[CatalogEvent]:
-    """Events of one UI section within ±`days`, titles loaded, one per title+provider.
+    """Events of one UI section within ±`days` for `user_id`, titles loaded, one per
+    title+provider.
 
-    Watched / not-interested titles are excluded, except for `new_season` (only
-    not-interested). Events of disabled subscriptions are dropped (provider-less ones,
+    The user's watched / not-interested titles are excluded, except for `new_season`
+    (only not-interested); `watchlist_available` keeps only titles on the user's own
+    active watchlist. Events of the user's disabled subscriptions are dropped (provider-less ones,
     e.g. `new_season`, are kept). Past sections (`new`, `watchlist_available`) look back, `upcoming`
     and `leaving` look forward (undated `estimated` ones are kept), `new_season` both.
     """
@@ -792,10 +846,15 @@ def list_events(
         # dated ones must still be ahead; undated ones are "soon" from their detection day
         events = [e for e in events if e.confidence == "estimated" or e.event_date >= today]
     hidden = (
-        _not_interested_ids(session) if section == "new_season" else excluded_title_ids(session)
+        _not_interested_ids(session, user_id)
+        if section == "new_season"
+        else excluded_title_ids(session, user_id=user_id)
     )
+    if section == "watchlist_available":
+        listed = _active_watchlist(session, user_id)
+        events = [e for e in events if e.title_id in listed]
     keys = {pid: key for key, pid in _provider_ids(session).items()}
-    enabled = set(enabled_keys(session))
+    enabled = set(enabled_keys(session, user_id=user_id))
     rank = {"verified": 0, "exact": 1, "estimated": 2}
     best: dict[tuple[int, int | None], CatalogEvent] = {}
     for e in events:
@@ -813,9 +872,13 @@ def list_events(
     return out
 
 
-def list_notifications(session: Session, unread_only: bool = True) -> list[Notification]:
-    query = select(Notification).options(
-        joinedload(Notification.event).joinedload(CatalogEvent.title)
+def list_notifications(
+    session: Session, *, user_id: int, unread_only: bool = True
+) -> list[Notification]:
+    query = (
+        select(Notification)
+        .options(joinedload(Notification.event).joinedload(CatalogEvent.title))
+        .where(Notification.user_id == user_id)
     )
     if unread_only:
         query = query.where(Notification.read_at.is_(None))
@@ -823,11 +886,11 @@ def list_notifications(session: Session, unread_only: bool = True) -> list[Notif
 
 
 def mark_notification_read(
-    session: Session, notification_id: int, *, now: datetime | None = None
+    session: Session, notification_id: int, *, user_id: int, now: datetime | None = None
 ) -> Notification:
-    """Raises LookupError for an unknown id; flushes, no commit."""
+    """Raises LookupError for an unknown id or another user's notification; flushes."""
     notification = session.get(Notification, notification_id)
-    if notification is None:
+    if notification is None or notification.user_id != user_id:
         raise LookupError(f"notification {notification_id} not found")
     if notification.read_at is None:
         notification.read_at = now or datetime.now(UTC)
@@ -839,8 +902,11 @@ def mark_notification_read(
 
 
 def _verify_ids(session: Session, today: date) -> list[int]:
-    """Titles whose availability must be re-checked: watchlist, latest batch, expiring."""
-    ids = list(_relevant_for_leaving(session))
+    """Titles whose availability must be re-checked: every profile's watchlist and latest
+    batch, plus expiring ones."""
+    ids: list[int] = []
+    for uid in all_user_ids(session):
+        ids.extend(_relevant_for_leaving(session, uid))
     ids.extend(
         session.scalars(
             select(CatalogEvent.title_id).where(
@@ -972,13 +1038,23 @@ def run_refresh(
                 lambda: (
                     "baseline"
                     if since is None
-                    else detect_watchlist_available(session, now=now, since=since)
+                    else sum(
+                        detect_watchlist_available(session, user_id=uid, now=now, since=since)
+                        for uid in all_user_ids(session)
+                    )
                 ),
             ),
             (
                 "notifications",
-                lambda: generate_notifications(
-                    session, now=now, leaving_notice_days=notice_days, baseline=baseline
+                lambda: sum(
+                    generate_notifications(
+                        session,
+                        user_id=uid,
+                        now=now,
+                        leaving_notice_days=notice_days,
+                        baseline=baseline,
+                    )
+                    for uid in all_user_ids(session)
                 ),
             ),
         ]

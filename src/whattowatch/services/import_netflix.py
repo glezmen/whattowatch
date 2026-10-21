@@ -37,7 +37,6 @@ from whattowatch.db.models import (
     WatchEvent,
     WatchlistItem,
 )
-from whattowatch.services.users import default_user_id
 
 if TYPE_CHECKING:
     from whattowatch.adapters.tmdb import MediaType, TmdbClient
@@ -97,10 +96,11 @@ def _same(a: Any, b: Any) -> bool:
 
 
 def _upsert(session: Session, model: Any, keys: dict[str, Any], values: dict[str, Any]) -> str:
+    """Upsert by `keys`, which must include the owner's `user_id`."""
+    if "user_id" not in keys:
+        raise ValueError("personal rows are always keyed by user_id")
     obj = session.scalars(select(model).filter_by(**keys)).one_or_none()
     if obj is None:
-        if "user_id" not in keys:
-            keys = {**keys, "user_id": default_user_id(session)}  # A1 interim, TODO(A2)
         session.add(model(**keys, **values))
         return "created"
     changed = False
@@ -123,8 +123,16 @@ def _usable(res: TitleResolution) -> bool:
 
 
 class _Importer:
-    def __init__(self, session: Session, tmdb: TmdbClient, export: NetflixExport, profile: str):
+    def __init__(
+        self,
+        session: Session,
+        tmdb: TmdbClient,
+        export: NetflixExport,
+        profile: str,
+        user_id: int,
+    ):
         self.session = session
+        self.user_id = user_id
         self.tmdb = tmdb
         self.export = export
         self.profile = profile
@@ -145,7 +153,7 @@ class _Importer:
         self._hashes.add(h)
         self.session.add(
             ImportRow(
-                user_id=default_user_id(self.session),  # A1 interim, TODO(A2): current user
+                user_id=self.user_id,
                 source=source,
                 file_sha256=self.export.file_hashes.get(csv_name, ""),
                 row_hash=h,
@@ -160,7 +168,9 @@ class _Importer:
     def _stored_rows(self, source: ImportSource) -> list[ImportRow]:
         self.session.flush()
         stmt = select(ImportRow).where(
-            ImportRow.source == source, ImportRow.profile_name == self.profile
+            ImportRow.user_id == self.user_id,
+            ImportRow.source == source,
+            ImportRow.profile_name == self.profile,
         )
         return list(self.session.scalars(stmt.order_by(ImportRow.id)))
 
@@ -197,7 +207,11 @@ class _Importer:
             self.stats[outcome] += 1
 
     def run(self, min_movie_seconds: int, min_episode_seconds: int) -> None:
-        self._hashes = set(self.session.scalars(select(ImportRow.row_hash)))
+        self._hashes = set(
+            self.session.scalars(
+                select(ImportRow.row_hash).where(ImportRow.user_id == self.user_id)
+            )
+        )
         self.viewing(min_movie_seconds, min_episode_seconds)
         self.my_list()
         self.ratings()
@@ -261,7 +275,12 @@ class _Importer:
                 "episode_count": len(distinct_eps) if episodes else None,
             }
             self._count(
-                _upsert(self.session, WatchEvent, {"title_id": title_id, "source": source}, values)
+                _upsert(
+                    self.session,
+                    WatchEvent,
+                    {"user_id": self.user_id, "title_id": title_id, "source": source},
+                    values,
+                )
             )
 
     def my_list(self) -> None:
@@ -285,7 +304,7 @@ class _Importer:
             dates = sorted(r.parsed["added_on"] for r in rows if r.parsed.get("added_on"))
             added_at = datetime.fromisoformat(dates[0]).replace(tzinfo=UTC) if dates else None
             values = {"added_at": added_at, "status": "active", "import_row_id": rows[0].id}
-            keys = {"title_id": title_id, "source": source}
+            keys = {"user_id": self.user_id, "title_id": title_id, "source": source}
             self._count(_upsert(self.session, WatchlistItem, keys, values))
 
     def ratings(self) -> None:
@@ -317,7 +336,7 @@ class _Importer:
                 # 0 = withdrawn rating (latest event wins): drop a previously imported one.
                 self.stats["withdrawn"] += 1
                 self.stats["skipped"] += len(rows)
-                keys = {"title_id": title_id, "source": "netflix_thumbs"}
+                keys = {"user_id": self.user_id, "title_id": title_id, "source": "netflix_thumbs"}
                 stale = self.session.scalars(select(TitleRating).filter_by(**keys)).one_or_none()
                 if stale is not None:
                     self.session.delete(stale)
@@ -332,7 +351,7 @@ class _Importer:
                 "rated_at": datetime.fromisoformat(ts) if ts else None,
                 "import_row_id": latest.id,
             }
-            keys = {"title_id": title_id, "source": "netflix_thumbs"}
+            keys = {"user_id": self.user_id, "title_id": title_id, "source": "netflix_thumbs"}
             self._count(_upsert(self.session, TitleRating, keys, values))
 
 
@@ -356,6 +375,7 @@ def _file_sha(path: Path) -> str | None:
 def run_import(
     path: Path,
     *,
+    user_id: int,
     profile_name: str | None = None,
     session: Session | None = None,
     tmdb: TmdbClient | None = None,
@@ -380,8 +400,13 @@ def run_import(
 
         session = session_factory(create_engine_from_settings(settings))()
 
-    run = SyncRun(source=SYNC_SOURCE, started_at=datetime.now(UTC), file_sha256=_file_sha(path))
-    importer = _Importer(session, tmdb, export, profile)
+    run = SyncRun(
+        source=SYNC_SOURCE,
+        user_id=user_id,
+        started_at=datetime.now(UTC),
+        file_sha256=_file_sha(path),
+    )
+    importer = _Importer(session, tmdb, export, profile, user_id)
     try:
         try:
             importer.run(min_movie_seconds, min_episode_seconds)

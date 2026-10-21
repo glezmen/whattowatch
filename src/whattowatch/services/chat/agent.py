@@ -266,6 +266,7 @@ def run_chat(
     session: Session,
     tmdb: ChatTmdb | None,
     provider: LLMProvider,
+    user_id: int,
     max_tool_rounds: int = 6,
     config: RecommenderConfig | None = None,
     now: datetime | None = None,
@@ -273,6 +274,7 @@ def run_chat(
 ) -> ChatResult:
     """Run the tool loop and return the final Hungarian reply; `LLMError` propagates."""
     ctx = ToolContext(
+        user_id=user_id,
         config=config or RecommenderConfig(),
         now=now,
         send_feedback_text=provider.is_local or allow_cloud_feedback_text,
@@ -281,7 +283,9 @@ def run_chat(
     from whattowatch.services.subscriptions import enabled_subscriptions
 
     system = system_prompt(
-        now, providers=enabled_subscriptions(session), language=ui_language(session)
+        now,
+        providers=enabled_subscriptions(session, user_id=user_id),
+        language=ui_language(session, user_id=user_id),
     )
     specs = tool_specs()
     history: list[Message] = [Message(role=m.role, content=m.content) for m in messages]

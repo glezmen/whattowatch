@@ -99,19 +99,42 @@ def rows(session: Session) -> list[tuple[str, str, str, str, float | None]]:
 def test_cloud_provider_skipped_without_flag(migrated_session: Session) -> None:
     _feedback(migrated_session)
     p = FakeProvider(is_local=False)
-    n = run_extraction(session=migrated_session, extractor="llm", provider=p, settings=settings())
+    n = run_extraction(
+        user_id=default_user_id(migrated_session),
+        session=migrated_session,
+        extractor="llm",
+        provider=p,
+        settings=settings(),
+    )
     assert n == 0 and p.calls == [] and rows(migrated_session) == []
 
     allowed = settings(llm_cloud_send_feedback_text=True)
-    n = run_extraction(session=migrated_session, extractor="llm", provider=p, settings=allowed)
+    n = run_extraction(
+        user_id=default_user_id(migrated_session),
+        session=migrated_session,
+        extractor="llm",
+        provider=p,
+        settings=allowed,
+    )
     assert n == 1 and len(p.calls) == 1
 
 
 def test_llm_signals_stored_beside_rules_without_duplicates(migrated_session: Session) -> None:
     _feedback(migrated_session)
     s = settings()
-    run_extraction(session=migrated_session, extractor="rules", settings=s)
-    run_extraction(session=migrated_session, extractor="llm", provider=FakeProvider(), settings=s)
+    run_extraction(
+        user_id=default_user_id(migrated_session),
+        session=migrated_session,
+        extractor="rules",
+        settings=s,
+    )
+    run_extraction(
+        user_id=default_user_id(migrated_session),
+        session=migrated_session,
+        extractor="llm",
+        provider=FakeProvider(),
+        settings=s,
+    )
     expected = [
         ("llm", "+", "humor/szaraz", "fake:m1", 0.9),
         ("rules", "+", "humor/szaraz", "", 0.6),
@@ -122,12 +145,22 @@ def test_llm_signals_stored_beside_rules_without_duplicates(migrated_session: Se
     ).one()
     assert llm_row.prompt_version == "v1"
 
-    run_extraction(session=migrated_session, extractor="llm", provider=FakeProvider(), settings=s)
+    run_extraction(
+        user_id=default_user_id(migrated_session),
+        session=migrated_session,
+        extractor="llm",
+        provider=FakeProvider(),
+        settings=s,
+    )
     assert rows(migrated_session) == expected
 
     # A new model version replaces the old LLM rows instead of duplicating them.
     run_extraction(
-        session=migrated_session, extractor="llm", provider=FakeProvider(model="m2"), settings=s
+        user_id=default_user_id(migrated_session),
+        session=migrated_session,
+        extractor="llm",
+        provider=FakeProvider(model="m2"),
+        settings=s,
     )
     assert rows(migrated_session) == [
         ("llm", "+", "humor/szaraz", "fake:m2", 0.9),

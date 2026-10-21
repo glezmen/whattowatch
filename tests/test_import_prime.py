@@ -36,6 +36,7 @@ from whattowatch.services.title_resolution import (
     build_lookup_key,
     request_for_rows,
 )
+from whattowatch.services.users import default_user_id
 
 # title_text -> (media_type, tmdb_id) or None for ambiguous
 RESOLUTIONS: dict[str, tuple[str, int] | None] = {
@@ -237,7 +238,9 @@ def _counts(session: Session) -> dict[str, int]:
 
 
 def _import(path: Path, session: Session, profile: str = "ADULT") -> SyncRun:
-    return run_import(path, profile_type=profile, session=session, tmdb=object())  # type: ignore[arg-type]
+    return run_import(
+        path, user_id=default_user_id(session), profile_type=profile, session=session, tmdb=object()
+    )  # type: ignore[arg-type]
 
 
 def test_viewing_import(export_zip: Path, session: Session) -> None:

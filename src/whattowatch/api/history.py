@@ -9,7 +9,7 @@ from fastapi import APIRouter, Query, Response
 from sqlalchemy import or_, select
 
 from whattowatch.api.cards import title_cards
-from whattowatch.api.deps import NowDep, RecommenderConfigDep, SessionDep
+from whattowatch.api.deps import CurrentUserDep, NowDep, RecommenderConfigDep, SessionDep
 from whattowatch.api.schemas import HistoryEntry, Page, WatchEventOut
 from whattowatch.db.models import Title, TitleRating, WatchEvent, WatchStatus
 from whattowatch.services.recommend.candidates import active_watchlist_ids
@@ -28,6 +28,7 @@ def _aware(dt: datetime | None) -> datetime | None:
 def get_history(
     response: Response,
     session: SessionDep,
+    user: CurrentUserDep,
     cfg: RecommenderConfigDep,
     now: NowDep,
     q: str | None = None,
@@ -47,13 +48,15 @@ def get_history(
     (`X-Filtered-Watchlist` = how many were hidden).
     """
     events: dict[int, list[WatchEvent]] = {}
-    for ev in session.scalars(select(WatchEvent).order_by(WatchEvent.source)):
+    for ev in session.scalars(
+        select(WatchEvent).where(WatchEvent.user_id == user.id).order_by(WatchEvent.source)
+    ):
         events.setdefault(ev.title_id, []).append(ev)
     rated_at: dict[int, datetime | None] = {}
     rating_sources: dict[int, set[str]] = {}
     for tid, src, at in session.execute(
         select(TitleRating.title_id, TitleRating.source, TitleRating.rated_at).where(
-            TitleRating.is_personal
+            TitleRating.user_id == user.id, TitleRating.is_personal
         )
     ):
         current, when = rated_at.get(tid), _aware(at)
@@ -87,7 +90,7 @@ def get_history(
 
     response.headers["X-Filtered-Watchlist"] = "0"
     if not include_watchlist and ids:
-        on_list = ids & active_watchlist_ids(session)
+        on_list = ids & active_watchlist_ids(session, user_id=user.id)
         response.headers["X-Filtered-Watchlist"] = str(len(on_list))
         ids -= on_list
 
@@ -103,7 +106,11 @@ def get_history(
     page_ids = order[offset : offset + limit]
     titles = {t.id: t for t in session.scalars(select(Title).where(Title.id.in_(page_ids)))}
     cards = title_cards(
-        session, [titles[tid] for tid in page_ids], now=now, max_age_days=cfg.verified_max_age_days
+        session,
+        [titles[tid] for tid in page_ids],
+        user_id=user.id,
+        now=now,
+        max_age_days=cfg.verified_max_age_days,
     )
     return Page[HistoryEntry](
         items=[

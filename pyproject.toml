@@ -16,6 +16,7 @@ dependencies = [
     "anthropic>=1.17.0",
     "python-multipart>=0.0.32",
     "claude-agent-sdk>=0.2.170",
+    "argon2-cffi>=25.1.0",
 ]
 
 [project.scripts]

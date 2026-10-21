@@ -16,6 +16,7 @@ from whattowatch.api.cards import (
     user_state,
 )
 from whattowatch.api.deps import (
+    CurrentUserDep,
     NowDep,
     OptionalSADep,
     OptionalTmdbDep,
@@ -59,11 +60,11 @@ from whattowatch.services.recommend.candidates import active_watchlist_ids
 router = APIRouter(tags=["titles"])
 
 
-def _signals(session: Session, title_id: int) -> list[Signal]:
+def _signals(session: Session, title_id: int, user_id: int) -> list[Signal]:
     names = {label.full_key: label.name_hu for label in all_labels()}
     rows = session.scalars(
         select(PreferenceSignal)
-        .where(PreferenceSignal.title_id == title_id)
+        .where(PreferenceSignal.user_id == user_id, PreferenceSignal.title_id == title_id)
         .order_by(PreferenceSignal.polarity, PreferenceSignal.category, PreferenceSignal.label)
     )
     return [
@@ -98,6 +99,7 @@ def page_titles(
 def list_titles(
     response: Response,
     session: SessionDep,
+    user: CurrentUserDep,
     cfg: RecommenderConfigDep,
     now: NowDep,
     q: str | None = None,
@@ -131,7 +133,11 @@ def list_titles(
         query = query.where(Title.media_type == media_type)
     if not include_unverified:
         ids = fresh_verified_title_ids(
-            session, now=now, max_age_days=cfg.verified_max_age_days, provider_key=provider
+            session,
+            user_id=user.id,
+            now=now,
+            max_age_days=cfg.verified_max_age_days,
+            provider_key=provider,
         )
         query = query.where(Title.id.in_(ids))
     elif provider is not None:
@@ -146,11 +152,11 @@ def list_titles(
         each = func.json_each(Title.genres).table_valued("value")
         query = query.where(exists(select(each.c.value).where(each.c.value == genre)))
     if seen is not None:
-        seen_ids = seen_title_ids(session)
+        seen_ids = seen_title_ids(session, user_id=user.id)
         query = query.where(Title.id.in_(seen_ids) if seen else Title.id.not_in(seen_ids))
     response.headers["X-Filtered-Watchlist"] = "0"
     if not include_watchlist:
-        on_list = active_watchlist_ids(session)
+        on_list = active_watchlist_ids(session, user_id=user.id)
         if on_list:
             hidden = select(func.count()).select_from(query.where(Title.id.in_(on_list)).subquery())
             response.headers["X-Filtered-Watchlist"] = str(session.scalar(hidden) or 0)
@@ -158,7 +164,9 @@ def list_titles(
     query = query.order_by(Title.popularity.desc().nulls_last(), Title.id)
     items, total = page_titles(query, session, limit, offset)
     return Page[TitleCard](
-        items=title_cards(session, items, now=now, max_age_days=cfg.verified_max_age_days),
+        items=title_cards(
+            session, items, user_id=user.id, now=now, max_age_days=cfg.verified_max_age_days
+        ),
         total=total,
         limit=limit,
         offset=offset,
@@ -167,20 +175,29 @@ def list_titles(
 
 @router.post("/titles/ensure", response_model=TitleCard)
 def ensure(
-    body: TitleRef, session: SessionDep, tmdb: TmdbDep, cfg: RecommenderConfigDep, now: NowDep
+    body: TitleRef,
+    session: SessionDep,
+    user: CurrentUserDep,
+    tmdb: TmdbDep,
+    cfg: RecommenderConfigDep,
+    now: NowDep,
 ) -> TitleCard:
     """Fetch a title from TMDB into the local catalog (no-op if already cached)."""
     title = ensure_title(session, tmdb, body.media_type, body.tmdb_id)
     session.commit()
-    return title_card(session, title, now=now, max_age_days=cfg.verified_max_age_days)
+    return title_card(
+        session, title, user_id=user.id, now=now, max_age_days=cfg.verified_max_age_days
+    )
 
 
 @router.get("/titles/{title_id}", response_model=TitleDetail)
 def get_title(
-    title_id: int, session: SessionDep, cfg: RecommenderConfigDep, now: NowDep
+    title_id: int, session: SessionDep, user: CurrentUserDep, cfg: RecommenderConfigDep, now: NowDep
 ) -> TitleDetail:
     title = get_title_or_404(session, title_id)
-    card = title_card(session, title, now=now, max_age_days=cfg.verified_max_age_days)
+    card = title_card(
+        session, title, user_id=user.id, now=now, max_age_days=cfg.verified_max_age_days
+    )
     resolutions = session.scalars(
         select(TitleResolution)
         .where(TitleResolution.title_id == title_id)
@@ -204,11 +221,13 @@ def get_title(
 
 
 @router.get("/titles/{title_id}/links", response_model=LinksResult)
-def get_links(title_id: int, session: SessionDep, sa: OptionalSADep, now: NowDep) -> LinksResult:
+def get_links(
+    title_id: int, session: SessionDep, user: CurrentUserDep, sa: OptionalSADep, now: NowDep
+) -> LinksResult:
     """Provider deep links (cached up to 7 days, refreshed from Streaming Availability when
     a key is set) plus unverified search URLs; an SA failure only drops the refresh."""
     title = get_title_or_404(session, title_id)
-    result = deep_links.get_links(session, sa, title, now=now)
+    result = deep_links.get_links(session, sa, title, user_id=user.id, now=now)
     session.commit()
     return LinksResult(
         items=[
@@ -227,30 +246,36 @@ def get_links(title_id: int, session: SessionDep, sa: OptionalSADep, now: NowDep
 
 
 @router.put("/titles/{title_id}/feedback", response_model=FeedbackResponse)
-def put_feedback(title_id: int, body: FeedbackIn, session: SessionDep) -> FeedbackResponse:
+def put_feedback(
+    title_id: int, body: FeedbackIn, session: SessionDep, user: CurrentUserDep
+) -> FeedbackResponse:
     """Missing key = unchanged; null or empty string = cleared. Re-extracts signals."""
     get_title_or_404(session, title_id)
     given = body.model_fields_set
     fb.set_feedback(
         session,
         title_id,
+        user_id=user.id,
         liked_text=body.liked_text if "liked_text" in given else fb.UNCHANGED,
         disliked_text=body.disliked_text if "disliked_text" in given else fb.UNCHANGED,
     )
     session.commit()
-    return FeedbackResponse(user=user_state(session, title_id), signals=_signals(session, title_id))
+    return FeedbackResponse(
+        user=user_state(session, title_id, user_id=user.id),
+        signals=_signals(session, title_id, user.id),
+    )
 
 
 @router.get("/titles/{title_id}/signals", response_model=list[Signal])
-def get_signals(title_id: int, session: SessionDep) -> list[Signal]:
+def get_signals(title_id: int, session: SessionDep, user: CurrentUserDep) -> list[Signal]:
     get_title_or_404(session, title_id)
-    return _signals(session, title_id)
+    return _signals(session, title_id, user.id)
 
 
 @router.delete("/signals/{signal_id}", status_code=204)
-def delete_signal(signal_id: int, session: SessionDep) -> Response:
+def delete_signal(signal_id: int, session: SessionDep, user: CurrentUserDep) -> Response:
     signal = session.get(PreferenceSignal, signal_id)
-    if signal is None:
+    if signal is None or signal.user_id != user.id:
         raise HTTPException(status_code=404, detail=f"Nincs ilyen jelzés: {signal_id}")
     session.delete(signal)
     session.commit()
@@ -262,46 +287,49 @@ def put_rating(
     title_id: int,
     body: RatingIn,
     session: SessionDep,
+    user: CurrentUserDep,
     settings: SettingsDep,
     tmdb: OptionalTmdbDep,
 ) -> UserState:
     """Saves the local rating first (committed), then pushes it to a linked TMDB account;
     the push result is in `tmdb_sync` and never fails the request."""
     get_title_or_404(session, title_id)
-    fb.set_star_rating(session, title_id, body.stars, sync=False)
+    fb.set_star_rating(session, title_id, body.stars, user_id=user.id, sync=False)
     session.commit()
-    fb.push_star_rating(session, title_id, settings=settings, tmdb=tmdb)
+    fb.push_star_rating(session, title_id, user_id=user.id, settings=settings, tmdb=tmdb)
     session.commit()
-    return user_state(session, title_id)
+    return user_state(session, title_id, user_id=user.id)
 
 
 @router.put("/titles/{title_id}/seen", response_model=UserState)
-def put_seen(title_id: int, body: SeenIn, session: SessionDep) -> UserState:
+def put_seen(title_id: int, body: SeenIn, session: SessionDep, user: CurrentUserDep) -> UserState:
     get_title_or_404(session, title_id)
-    fb.set_seen(session, title_id, body.seen)
+    fb.set_seen(session, title_id, body.seen, user_id=user.id)
     session.commit()
-    return user_state(session, title_id)
+    return user_state(session, title_id, user_id=user.id)
 
 
 @router.put("/titles/{title_id}/not-interested", response_model=UserState)
-def put_not_interested(title_id: int, body: FlagIn, session: SessionDep) -> UserState:
+def put_not_interested(
+    title_id: int, body: FlagIn, session: SessionDep, user: CurrentUserDep
+) -> UserState:
     get_title_or_404(session, title_id)
-    fb.set_not_interested(session, title_id, body.value)
+    fb.set_not_interested(session, title_id, body.value, user_id=user.id)
     session.commit()
-    return user_state(session, title_id)
+    return user_state(session, title_id, user_id=user.id)
 
 
 @router.post("/titles/{title_id}/watchlist", response_model=UserState)
-def add_watchlist(title_id: int, session: SessionDep) -> UserState:
+def add_watchlist(title_id: int, session: SessionDep, user: CurrentUserDep) -> UserState:
     get_title_or_404(session, title_id)
-    fb.add_to_watchlist(session, title_id)
+    fb.add_to_watchlist(session, title_id, user_id=user.id)
     session.commit()
-    return user_state(session, title_id)
+    return user_state(session, title_id, user_id=user.id)
 
 
 @router.delete("/titles/{title_id}/watchlist", response_model=UserState)
-def remove_watchlist(title_id: int, session: SessionDep) -> UserState:
+def remove_watchlist(title_id: int, session: SessionDep, user: CurrentUserDep) -> UserState:
     get_title_or_404(session, title_id)
-    fb.remove_from_watchlist(session, title_id)
+    fb.remove_from_watchlist(session, title_id, user_id=user.id)
     session.commit()
-    return user_state(session, title_id)
+    return user_state(session, title_id, user_id=user.id)

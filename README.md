@@ -88,6 +88,14 @@ uv run wtw tmdb unlink
 uv run wtw catalog sync                      # TMDB discover for the six subscriptions (HU)
 uv run wtw catalog backfill                  # refresh title details: poster, votes, popularity
 
+uv run wtw users list                        # profiles (households: one per person)
+uv run wtw users add <name> [--admin]
+uv run wtw users rename <name> <new name>
+uv run wtw users delete <name> --yes         # deletes all of the profile's personal data
+
+# Personal commands act on the admin profile unless `--user <name>` is given
+# (import, recommend, resolve, llm test, tmdb link/unlink/resync-ratings, settings,
+# refresh notifications).
 uv run wtw import imdb <ratings.csv> --kind ratings     # your IMDb ratings
 uv run wtw import imdb <watchlist.csv> --kind watchlist
 uv run wtw import netflix <export.zip> --profile <name>  # Netflix personal data export

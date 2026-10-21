@@ -19,6 +19,7 @@ from whattowatch.db.engine import create_engine_from_settings
 from whattowatch.db.models import ImportRow, Title, TitleRating, WatchlistItem
 from whattowatch.services import import_imdb
 from whattowatch.services.import_imdb import run_import
+from whattowatch.services.users import default_user_id
 
 TMDB_FX = Path(__file__).parent / "fixtures" / "tmdb"
 IMDB_FX = Path(__file__).parent / "fixtures" / "imdb"
@@ -70,12 +71,16 @@ def test_parse_ratings_csv_with_bom() -> None:
 
 
 def test_ratings_import_is_idempotent(session: Session, tmdb: TmdbClient) -> None:
-    run1 = run_import(RATINGS, kind="ratings", session=session, tmdb=tmdb)
+    run1 = run_import(
+        RATINGS, user_id=default_user_id(session), kind="ratings", session=session, tmdb=tmdb
+    )
     assert (run1.processed, run1.created, run1.updated, run1.skipped) == (3, 2, 0, 0)
     assert run1.errors == [] and run1.status == "success"
     calls = len(respx.calls)
 
-    run2 = run_import(RATINGS, kind="ratings", session=session, tmdb=tmdb)
+    run2 = run_import(
+        RATINGS, user_id=default_user_id(session), kind="ratings", session=session, tmdb=tmdb
+    )
     assert (run2.processed, run2.created, run2.updated, run2.skipped) == (3, 0, 0, 3)
     assert len(respx.calls) == calls  # cached resolutions, no TMDB traffic
 
@@ -99,8 +104,12 @@ def test_ratings_import_is_idempotent(session: Session, tmdb: TmdbClient) -> Non
 
 
 def test_watchlist_import(session: Session, tmdb: TmdbClient) -> None:
-    run_import(RATINGS, kind="ratings", session=session, tmdb=tmdb)
-    run = run_import(WATCHLIST, kind="watchlist", session=session, tmdb=tmdb)
+    run_import(
+        RATINGS, user_id=default_user_id(session), kind="ratings", session=session, tmdb=tmdb
+    )
+    run = run_import(
+        WATCHLIST, user_id=default_user_id(session), kind="watchlist", session=session, tmdb=tmdb
+    )
     assert (run.processed, run.created, run.skipped) == (2, 1, 0)
     items = session.scalars(select(WatchlistItem)).all()
     assert len(items) == 1
@@ -109,7 +118,9 @@ def test_watchlist_import(session: Session, tmdb: TmdbClient) -> None:
     # community rating already imported from the ratings file: upserted, not duplicated
     assert count(session, TitleRating) == 4
 
-    again = run_import(WATCHLIST, kind="watchlist", session=session, tmdb=tmdb)
+    again = run_import(
+        WATCHLIST, user_id=default_user_id(session), kind="watchlist", session=session, tmdb=tmdb
+    )
     assert (again.created, again.skipped) == (0, 2)
     assert count(session, WatchlistItem) == 1
 
@@ -119,7 +130,9 @@ def test_bad_row_does_not_abort(session: Session, tmdb: TmdbClient, tmp_path: Pa
     lines[1] = lines[1].replace("tt0816692,9,", "tt0816692,,", 1)
     bad = tmp_path / "ratings.csv"
     bad.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    run = run_import(bad, kind="ratings", session=session, tmdb=tmdb)
+    run = run_import(
+        bad, user_id=default_user_id(session), kind="ratings", session=session, tmdb=tmdb
+    )
     assert run.status == "partial" and run.processed == 3 and run.created == 1
     assert [e["imdb_id"] for e in run.errors] == ["tt0816692"]
     assert count(session, ImportRow) == 2  # failed row rolled back, retried next run
@@ -130,5 +143,5 @@ def test_missing_tmdb_key_exits_2(monkeypatch: pytest.MonkeyPatch, session: Sess
         import_imdb, "get_settings", lambda: Settings(_env_file=None, tmdb_api_key=None)
     )
     with pytest.raises(typer.Exit) as exc:
-        run_import(RATINGS, kind="ratings", session=session)
+        run_import(RATINGS, user_id=default_user_id(session), kind="ratings", session=session)
     assert exc.value.exit_code == 2

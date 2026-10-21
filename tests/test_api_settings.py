@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from conftest import ApiEnv
 
+from whattowatch.services.users import default_user_id
+
 ALL = ["netflix", "disney_plus", "hbo_max", "prime_video", "apple_tv_plus", "skyshowtime"]
 
 
@@ -85,6 +87,7 @@ def test_subscriptions_new_form_profiles_and_netflix_sync(api: ApiEnv) -> None:
         api.session,
         "netflix",
         [{"name": "Anna", "primary_lang": "hu", "rows": 12}, {"name": "Béla", "rows": 3}],
+        user_id=default_user_id(api.session),
     )
     api.session.commit()
     r = api.client.put(

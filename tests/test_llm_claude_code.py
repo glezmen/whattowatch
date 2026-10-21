@@ -22,6 +22,7 @@ from whattowatch.llm.base import AgentCapable, AgentRun, LLMError, Message, Tool
 from whattowatch.llm.claude_code_provider import DISALLOWED_TOOLS, ClaudeCodeProvider
 from whattowatch.services.chat.agent import ChatMessage, run_chat
 from whattowatch.services.recommend.config import RecommenderConfig
+from whattowatch.services.users import default_user_id
 
 Env = tuple[Session, dict[int, int]]
 
@@ -292,6 +293,7 @@ def test_run_chat_uses_run_agent(recommend_db: Env) -> None:
         session=session,
         tmdb=StubTmdb(),
         provider=provider,
+        user_id=default_user_id(session),
         config=RecommenderConfig(),
         now=NOW,
     )

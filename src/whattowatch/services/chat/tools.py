@@ -46,6 +46,8 @@ class ChatTmdb(Protocol):
 
 @dataclass(frozen=True)
 class ToolContext:
+    # The profile the chat runs for: every personal read/write of the tools uses it.
+    user_id: int
     config: RecommenderConfig = field(default_factory=RecommenderConfig)
     now: datetime | None = None
     # False for a cloud provider unless `llm_cloud_send_feedback_text` is set.
@@ -157,7 +159,11 @@ def _check_providers(value: list[str] | None) -> list[str] | None:
 
 def _subs(session: Session, ids: Sequence[int], ctx: ToolContext) -> dict[int, tuple[str, ...]]:
     return verified_subscriptions(
-        session, ids, now=ctx.clock(), max_age_days=ctx.config.verified_max_age_days
+        session,
+        ids,
+        user_id=ctx.user_id,
+        now=ctx.clock(),
+        max_age_days=ctx.config.verified_max_age_days,
     )
 
 
@@ -190,7 +196,11 @@ def _card(session: Session, title: Title, ctx: ToolContext) -> TitleCard:
     from whattowatch.api.cards import title_card
 
     return title_card(
-        session, title, now=ctx.clock(), max_age_days=ctx.config.verified_max_age_days
+        session,
+        title,
+        user_id=ctx.user_id,
+        now=ctx.clock(),
+        max_age_days=ctx.config.verified_max_age_days,
     )
 
 
@@ -304,6 +314,7 @@ def get_recommendations(
     ignored = [m for m in (args.mood_labels or []) if m not in known_labels]
     filtered = bool(args.providers or args.genres or moods)
     rows = engine.run_recommendations(
+        user_id=ctx.user_id,
         limit=min(max(args.limit * 5, 25), 50) if filtered else args.limit,
         media_type=args.media_type,
         session=session,
@@ -408,7 +419,11 @@ def get_watchlist(
     session: Session, tmdb: ChatTmdb | None, args: GetWatchlistIn, ctx: ToolContext
 ) -> dict[str, Any]:
     newest: dict[int, datetime | None] = {}
-    for item in session.scalars(select(WatchlistItem).where(WatchlistItem.status == "active")):
+    for item in session.scalars(
+        select(WatchlistItem).where(
+            WatchlistItem.user_id == ctx.user_id, WatchlistItem.status == "active"
+        )
+    ):
         added = item.added_at
         if added is not None and added.tzinfo is None:
             added = added.replace(tzinfo=UTC)
@@ -437,26 +452,28 @@ def record_feedback(
     if not given:
         raise ToolInputError("legalább egy mezőt meg kell adni")
     applied: list[str] = []
+    uid = ctx.user_id
     try:
         if "stars" in given:
-            fb.set_star_rating(session, t.id, args.stars)
+            fb.set_star_rating(session, t.id, args.stars, user_id=uid)
             applied.append("stars")
         if "seen" in given and args.seen is not None:
-            fb.set_seen(session, t.id, args.seen)
+            fb.set_seen(session, t.id, args.seen, user_id=uid)
             applied.append("seen")
         if "not_interested" in given and args.not_interested is not None:
-            fb.set_not_interested(session, t.id, args.not_interested)
+            fb.set_not_interested(session, t.id, args.not_interested, user_id=uid)
             applied.append("not_interested")
         if "watchlist" in given and args.watchlist is not None:
             if args.watchlist:
-                fb.add_to_watchlist(session, t.id)
+                fb.add_to_watchlist(session, t.id, user_id=uid)
             else:
-                fb.remove_from_watchlist(session, t.id)
+                fb.remove_from_watchlist(session, t.id, user_id=uid)
             applied.append("watchlist")
         if "liked_text" in given or "disliked_text" in given:
             fb.set_feedback(
                 session,
                 t.id,
+                user_id=uid,
                 liked_text=args.liked_text if "liked_text" in given else fb.UNCHANGED,
                 disliked_text=args.disliked_text if "disliked_text" in given else fb.UNCHANGED,
             )
@@ -465,7 +482,7 @@ def record_feedback(
     except Exception:
         session.rollback()
         raise
-    user = user_state(session, t.id)
+    user = user_state(session, t.id, user_id=uid)
     state: dict[str, Any] = {
         "seen": user.seen,
         "stars": user.stars,
@@ -583,7 +600,7 @@ def execute_tool(
     *,
     session: Session,
     tmdb: ChatTmdb | None,
-    ctx: ToolContext | None = None,
+    ctx: ToolContext,
 ) -> dict[str, Any]:
     """Validate and run one tool call; failures become `{"error": "..."}`."""
     tool = BY_NAME.get(name)
@@ -594,7 +611,7 @@ def execute_tool(
     except ValidationError as exc:
         return {"error": _error_text(exc)}
     try:
-        return tool.run(session, tmdb, args, ctx or ToolContext())
+        return tool.run(session, tmdb, args, ctx)
     except ToolInputError as exc:
         return {"error": str(exc)}
     except (TmdbError, httpx.HTTPError):

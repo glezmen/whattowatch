@@ -6,6 +6,8 @@ from typing import Annotated
 
 import typer
 
+from whattowatch.cli_users import UserOption
+
 app = typer.Typer(help="LLM provider commands", no_args_is_help=True)
 
 TEST_PROMPT = "Válaszolj egyetlen rövid magyar mondatban: mi a kedvenc filmműfajod?"
@@ -20,6 +22,7 @@ def llm_test(
             "(default: the UI choice, else LLM_PROVIDER)"
         ),
     ] = None,
+    user: UserOption = None,
 ) -> None:
     """Send a one-line Hungarian prompt and print model, reply and token usage."""
     from whattowatch.config import get_settings
@@ -28,7 +31,7 @@ def llm_test(
 
     settings = get_settings()
     try:
-        llm = get_provider(settings, provider, config=load_llm_config(settings))
+        llm = get_provider(settings, provider, config=load_llm_config(settings, user))
         resp = llm.complete([Message(role="user", content=TEST_PROMPT)], max_tokens=200)
     except LLMError as exc:
         typer.echo(f"Hiba: {exc}", err=True)

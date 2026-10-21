@@ -18,7 +18,7 @@ from whattowatch.config import get_settings
 from whattowatch.db.engine import create_engine_from_settings, session_factory
 from whattowatch.db.models import Availability, SyncRun, Title
 from whattowatch.services.availability import record_snapshot
-from whattowatch.services.subscriptions import enabled_tmdb_ids
+from whattowatch.services.subscriptions import any_user_tmdb_ids
 
 DISCOVER_SOURCE = "tmdb/discover"
 VERIFIED_SOURCE = "tmdb/justwatch"
@@ -124,9 +124,9 @@ def sync_catalog(
     session.add(run)
     session.flush()
     errors: list[str] = []
-    # Only the enabled subscriptions; with none enabled, discover is skipped entirely
+    # Subscriptions any profile has switched on; with none, discover is skipped entirely
     # (an empty provider filter would return the whole catalog).
-    provider_ids = enabled_tmdb_ids(session)
+    provider_ids = any_user_tmdb_ids(session)
     seen: dict[int, Title] = {}
     created = 0
 

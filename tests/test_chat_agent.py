@@ -19,6 +19,7 @@ from whattowatch.services.chat.agent import (
     system_prompt,
 )
 from whattowatch.services.recommend.config import RecommenderConfig
+from whattowatch.services.users import default_user_id
 
 Env = tuple[Session, dict[int, int]]
 
@@ -67,6 +68,7 @@ def chat(env: Env, provider: FakeProvider, **kw: Any) -> Any:
         session=env[0],
         tmdb=StubTmdb(),
         provider=provider,
+        user_id=default_user_id(env[0]),
         config=RecommenderConfig(),
         now=NOW,
         **kw,

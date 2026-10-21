@@ -16,6 +16,7 @@ import typer
 from sqlalchemy.orm import Session
 
 from whattowatch.adapters.tmdb import OFFER_TYPES, MediaType, SearchHit, TmdbClient
+from whattowatch.cli_users import UserOption, user_id_for
 from whattowatch.config import get_settings
 from whattowatch.providers import SUBSCRIPTIONS, match_provider
 
@@ -203,18 +204,23 @@ def _db_session() -> Iterator[Session]:
 
 
 @tmdb_app.command("link")
-def link() -> None:
-    """Link your TMDB account: approve in the browser, then press Enter."""
+def link(user: UserOption = None) -> None:
+    """Link your TMDB account to a profile: approve in the browser, then press Enter."""
     from whattowatch.services import tmdb_account
 
     with _client() as client, _db_session() as session:
-        started = tmdb_account.start_link(session, get_settings(), client)
+        uid = user_id_for(session, user)
+        try:
+            started = tmdb_account.start_link(session, get_settings(), client, user_id=uid)
+        except tmdb_account.TmdbLinkError as exc:
+            typer.echo(f"Hiba: {exc.message}", err=True)
+            raise typer.Exit(code=1) from exc
         session.commit()
         typer.echo("Hagyd jóvá a hozzáférést a TMDB oldalán (jelszót az app nem kér):")
         typer.echo(f"  {started['approval_url']}")
         typer.prompt("Jóváhagyás után nyomj Entert", default="", show_default=False)
         try:
-            result = tmdb_account.finish_link(session, get_settings(), client)
+            result = tmdb_account.finish_link(session, get_settings(), client, user_id=uid)
         except tmdb_account.TmdbLinkError as exc:
             session.commit()
             typer.echo(f"Hiba: az összekapcsolás nem sikerült: {exc.message}", err=True)
@@ -225,33 +231,38 @@ def link() -> None:
 
 
 @tmdb_app.command("unlink")
-def unlink() -> None:
-    """Revoke the TMDB session and remove it from .env."""
+def unlink(user: UserOption = None) -> None:
+    """Revoke the profile's TMDB session and remove it from .env."""
     from whattowatch.services import tmdb_account
 
     settings = get_settings()
     key = settings.tmdb_api_key
     with _db_session() as session:
+        uid = user_id_for(session, user)
+        if tmdb_account.link_owner(session, settings) not in (None, uid):
+            typer.echo("Hiba: a TMDB-fiókot egy másik profil kapcsolta össze.", err=True)
+            raise typer.Exit(code=1)
         if key:
             with TmdbClient(key) as client:
-                tmdb_account.unlink(session, settings, client)
+                tmdb_account.unlink(session, settings, client, user_id=uid)
         else:
-            tmdb_account.unlink(session, settings, None)
+            tmdb_account.unlink(session, settings, None, user_id=uid)
         session.commit()
     typer.echo("A TMDB-fiók leválasztva.")
 
 
 @tmdb_app.command("resync-ratings")
-def resync_ratings() -> None:
-    """Push every local app rating to the linked TMDB account."""
+def resync_ratings(user: UserOption = None) -> None:
+    """Push every local app rating of a profile to its linked TMDB account."""
     from whattowatch.services import tmdb_account
 
     settings = get_settings()
-    if not settings.tmdb_session_id:
-        typer.echo("Hiba: nincs összekapcsolt TMDB-fiók (wtw tmdb link).", err=True)
-        raise typer.Exit(code=2)
     with _client() as client, _db_session() as session:
-        result = tmdb_account.resync_ratings(session, settings, client)
+        uid = user_id_for(session, user)
+        if tmdb_account.link_owner(session, settings) != uid:
+            typer.echo("Hiba: nincs összekapcsolt TMDB-fiók (wtw tmdb link).", err=True)
+            raise typer.Exit(code=2)
+        result = tmdb_account.resync_ratings(session, settings, client, user_id=uid)
         session.commit()
     typer.echo(
         f"Összesen {result.total}: ok {result.ok}, hiba {result.error}, kihagyva {result.skipped}"

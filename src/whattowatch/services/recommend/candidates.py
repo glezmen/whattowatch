@@ -52,40 +52,65 @@ def _aware(dt: datetime) -> datetime:
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
 
 
-def excluded_title_ids(session: Session) -> set[int]:
-    """Hard exclusions: watched (any source), seen override, not interested, personally rated.
-
-    A personal rating implies the user has seen the title.
+def excluded_title_ids(session: Session, *, user_id: int) -> set[int]:
+    """Hard exclusions of one user: watched (any source), seen override, not interested,
+    personally rated. A personal rating implies the user has seen the title.
     """
     ids: set[int] = set()
-    ids.update(session.scalars(select(WatchEvent.title_id).where(WatchEvent.status == "watched")))
     ids.update(
         session.scalars(
-            select(TitleUserState.title_id).where(
-                or_(
-                    TitleUserState.seen_override.is_(True),
-                    TitleUserState.not_interested.is_(True),
-                )
+            select(WatchEvent.title_id).where(
+                WatchEvent.user_id == user_id, WatchEvent.status == "watched"
             )
         )
     )
     ids.update(
-        session.scalars(select(WatchlistItem.title_id).where(WatchlistItem.status == "watched"))
+        session.scalars(
+            select(TitleUserState.title_id).where(
+                TitleUserState.user_id == user_id,
+                or_(
+                    TitleUserState.seen_override.is_(True),
+                    TitleUserState.not_interested.is_(True),
+                ),
+            )
+        )
     )
-    ids.update(session.scalars(select(TitleRating.title_id).where(TitleRating.is_personal)))
+    ids.update(
+        session.scalars(
+            select(WatchlistItem.title_id).where(
+                WatchlistItem.user_id == user_id, WatchlistItem.status == "watched"
+            )
+        )
+    )
+    ids.update(
+        session.scalars(
+            select(TitleRating.title_id).where(
+                TitleRating.user_id == user_id, TitleRating.is_personal
+            )
+        )
+    )
     return ids
 
 
-def active_watchlist_ids(session: Session) -> set[int]:
+def active_watchlist_ids(session: Session, *, user_id: int) -> set[int]:
     return set(
-        session.scalars(select(WatchlistItem.title_id).where(WatchlistItem.status == "active"))
+        session.scalars(
+            select(WatchlistItem.title_id).where(
+                WatchlistItem.user_id == user_id, WatchlistItem.status == "active"
+            )
+        )
     )
 
 
 def verified_subscriptions(
-    session: Session, title_ids: Iterable[int], *, now: datetime, max_age_days: int = 14
+    session: Session,
+    title_ids: Iterable[int],
+    *,
+    user_id: int,
+    now: datetime,
+    max_age_days: int = 14,
 ) -> dict[int, tuple[str, ...]]:
-    """Enabled provider keys with a fresh, verified flatrate HU offer, per title id."""
+    """The user's enabled provider keys with a fresh, verified flatrate HU offer, per title."""
     ids = list(title_ids)
     if not ids:
         return {}
@@ -99,7 +124,7 @@ def verified_subscriptions(
             Availability.offer_type == "flatrate",
             Availability.confidence == "verified",
             Availability.region == REGION,
-            Provider.key.in_(enabled_keys(session)),
+            Provider.key.in_(enabled_keys(session, user_id=user_id)),
         )
     )
     found: dict[int, set[str]] = {}
@@ -112,6 +137,7 @@ def verified_subscriptions(
 def load_candidates(
     session: Session,
     *,
+    user_id: int,
     media_type: MediaType | None = None,
     pool: int = 500,
     now: datetime | None = None,
@@ -123,16 +149,17 @@ def load_candidates(
     ``exclude_watchlist`` also drops titles with an active watchlist item (any source).
     """
     now = now or datetime.now(UTC)
-    if not enabled_keys(session):
+    if not enabled_keys(session, user_id=user_id):
         return []  # no subscription switched on: nothing may be recommended
-    excluded = excluded_title_ids(session)
+    excluded = excluded_title_ids(session, user_id=user_id)
     if exclude_watchlist:
-        excluded |= active_watchlist_ids(session)
+        excluded |= active_watchlist_ids(session, user_id=user_id)
     verified = verified_subscriptions(
         session,
         session.scalars(
             select(Availability.title_id).where(Availability.source == VERIFIED_SOURCE).distinct()
         ),
+        user_id=user_id,
         now=now,
         max_age_days=max_age_days,
     )
@@ -167,6 +194,7 @@ def verify_candidates(
     candidates: Sequence[Candidate],
     tmdb: WatchProviderSource | None,
     *,
+    user_id: int,
     now: datetime | None = None,
     max_age_days: int = 14,
 ) -> list[Candidate]:
@@ -190,6 +218,7 @@ def verify_candidates(
     fresh = verified_subscriptions(
         session,
         (c.title.id for c in to_check),
+        user_id=user_id,
         now=now or datetime.now(UTC),
         max_age_days=max_age_days,
     )

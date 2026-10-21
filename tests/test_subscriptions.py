@@ -21,11 +21,12 @@ from whattowatch.services import updates
 from whattowatch.services.catalog_sync import run_sync
 from whattowatch.services.chat.agent import system_prompt
 from whattowatch.services.recommend.candidates import load_candidates, verified_subscriptions
+from whattowatch.services.users import default_user_id
 
 
 def test_default_all_enabled_and_seed_keeps_choice(migrated_session: Session) -> None:
     s = migrated_session
-    assert subs.enabled_keys(s) == [
+    assert subs.enabled_keys(s, user_id=default_user_id(s)) == [
         "netflix",
         "disney_plus",
         "hbo_max",
@@ -33,36 +34,42 @@ def test_default_all_enabled_and_seed_keeps_choice(migrated_session: Session) ->
         "apple_tv_plus",
         "skyshowtime",
     ]
-    subs.set_enabled(s, ["hbo_max", "netflix"])
+    subs.set_enabled(s, ["hbo_max", "netflix"], user_id=default_user_id(s))
     s.commit()
     seed_providers(s)  # `wtw db upgrade` re-seeds: must not re-enable
-    assert subs.enabled_keys(s) == ["netflix", "hbo_max"]
-    assert subs.enabled_tmdb_ids(s) == [8, 1899]
-    assert subs.enabled_sa_catalogs(s) == ("netflix", "hbo")
+    assert subs.enabled_keys(s, user_id=default_user_id(s)) == ["netflix", "hbo_max"]
+    assert subs.enabled_tmdb_ids(s, user_id=default_user_id(s)) == [8, 1899]
+    assert subs.enabled_sa_catalogs(s, user_id=default_user_id(s)) == ("netflix", "hbo")
     with pytest.raises(ValueError):
-        subs.set_enabled(s, ["mubi"])
+        subs.set_enabled(s, ["mubi"], user_id=default_user_id(s))
 
 
 def test_disabled_provider_leaves_candidates(recommend_db: tuple[Session, dict[int, int]]) -> None:
     s, ids = recommend_db
     title_ids = [ids[101], ids[102]]  # netflix, hbo
-    assert verified_subscriptions(s, title_ids, now=NOW) == {
+    assert verified_subscriptions(s, title_ids, user_id=default_user_id(s), now=NOW) == {
         ids[101]: ("netflix",),
         ids[102]: ("hbo_max",),
     }
-    subs.set_enabled(s, ["netflix"])
+    subs.set_enabled(s, ["netflix"], user_id=default_user_id(s))
     s.commit()
-    assert verified_subscriptions(s, title_ids, now=NOW) == {ids[101]: ("netflix",)}
-    verified = {c.title.id for c in load_candidates(s, now=NOW) if not c.estimated_only}
+    assert verified_subscriptions(s, title_ids, user_id=default_user_id(s), now=NOW) == {
+        ids[101]: ("netflix",)
+    }
+    verified = {
+        c.title.id
+        for c in load_candidates(s, user_id=default_user_id(s), now=NOW)
+        if not c.estimated_only
+    }
     assert ids[101] in verified and ids[102] not in verified
-    subs.set_enabled(s, [])
+    subs.set_enabled(s, [], user_id=default_user_id(s))
     s.commit()
-    assert load_candidates(s, now=NOW) == []
+    assert load_candidates(s, user_id=default_user_id(s), now=NOW) == []
 
 
 def test_discover_uses_enabled_ids_only(migrated_session: Session) -> None:
     s = migrated_session
-    subs.set_enabled(s, ["netflix", "skyshowtime"])
+    subs.set_enabled(s, ["netflix", "skyshowtime"], user_id=default_user_id(s))
     s.commit()
     seen: list[str] = []
 
@@ -77,7 +84,7 @@ def test_discover_uses_enabled_ids_only(migrated_session: Session) -> None:
         respx.get(url__regex=rf"{BASE_URL}/discover/.*").mock(side_effect=discover)
         run_sync(pages=1, verify_top=0, session=s, tmdb=TmdbClient("k", sleep=lambda _s: None))
         assert seen == ["8|1773", "8|1773"]
-        subs.set_enabled(s, [])
+        subs.set_enabled(s, [], user_id=default_user_id(s))
         s.commit()
         seen.clear()
         run_sync(pages=1, verify_top=0, session=s, tmdb=TmdbClient("k", sleep=lambda _s: None))
@@ -95,7 +102,7 @@ class _CatalogSA:
 
 def test_sa_sync_only_enabled_catalogs(migrated_session: Session) -> None:
     s = migrated_session
-    subs.set_enabled(s, ["disney_plus", "prime_video"])
+    subs.set_enabled(s, ["disney_plus", "prime_video"], user_id=default_user_id(s))
     s.commit()
     sa = _CatalogSA()
     updates.sync_sa_changes(s, sa, None, types=("new",), now=NOW)  # type: ignore[arg-type]
@@ -119,18 +126,26 @@ def test_updates_hide_disabled_providers(recommend_db: tuple[Session, dict[int, 
             )
         )
     s.commit()
-    listed = {e.title_id for e in updates.list_events(s, section="new", now=NOW)}
+    listed = {
+        e.title_id
+        for e in updates.list_events(s, user_id=default_user_id(s), section="new", now=NOW)
+    }
     assert listed == {ids[101], ids[102]}
-    subs.set_enabled(s, ["hbo_max"])
+    subs.set_enabled(s, ["hbo_max"], user_id=default_user_id(s))
     s.commit()
-    assert [e.title_id for e in updates.list_events(s, section="new", now=NOW)] == [ids[102]]
+    assert [
+        e.title_id
+        for e in updates.list_events(s, user_id=default_user_id(s), section="new", now=NOW)
+    ] == [ids[102]]
 
 
 def test_chat_prompt_lists_enabled_providers_and_language(migrated_session: Session) -> None:
     s = migrated_session
-    subs.set_enabled(s, ["netflix"])
+    subs.set_enabled(s, ["netflix"], user_id=default_user_id(s))
     s.commit()
-    prompt = system_prompt(NOW, providers=subs.enabled_subscriptions(s), language="en")
+    prompt = system_prompt(
+        NOW, providers=subs.enabled_subscriptions(s, user_id=default_user_id(s)), language="en"
+    )
     assert "netflix (Netflix)" in prompt and "hbo_max" not in prompt
     assert "in English" in prompt
     assert "magyarul" in system_prompt(NOW)

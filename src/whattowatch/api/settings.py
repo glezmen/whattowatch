@@ -17,7 +17,9 @@ from sqlalchemy.orm import Session
 
 from whattowatch.adapters.tmdb import TmdbClient, TmdbError
 from whattowatch.api.deps import (
+    AdminDep,
     CodedHTTPException,
+    CurrentUserDep,
     OptionalTmdbDep,
     RecommenderConfigDep,
     SessionDep,
@@ -87,14 +89,14 @@ def _hint(value: str | None) -> str | None:
 
 @router.get("/settings", response_model=SettingsOut)
 def get_settings_view(
-    settings: SettingsDep, cfg: RecommenderConfigDep, session: SessionDep
+    settings: SettingsDep, cfg: RecommenderConfigDep, session: SessionDep, user: CurrentUserDep
 ) -> SettingsOut:
     from whattowatch.llm.registry import effective_llm_config
 
-    llm = effective_llm_config(session, settings)
+    llm = effective_llm_config(session, settings, user.id)
     return SettingsOut(
         tmdb_api_key_set=bool(settings.tmdb_api_key),
-        netflix_profile_name=app_cfg.effective_netflix_profile(session, settings),
+        netflix_profile_name=app_cfg.effective_netflix_profile(session, settings, user_id=user.id),
         lm_studio_base_url=settings.lm_studio_base_url,
         llm_provider=llm.provider,
         llm_model=llm.model,
@@ -103,8 +105,8 @@ def get_settings_view(
         llm_fallback_allowed=llm.fallback_allowed,
         llm_cloud_send_feedback_text=llm.cloud_send_feedback_text,
         recommender=cfg.model_dump(),
-        ui_language=app_cfg.ui_language(session),
-        enabled_subscriptions=subscriptions.enabled_keys(session),
+        ui_language=app_cfg.ui_language(session, user_id=user.id),
+        enabled_subscriptions=subscriptions.enabled_keys(session, user_id=user.id),
         secrets_set={key: _secret_value(settings, key) is not None for key in SECRET_KEYS},
     )
 
@@ -128,7 +130,7 @@ def _secrets(settings: Settings) -> SecretsOut:
 
 
 @router.get("/settings/secrets", response_model=SecretsOut)
-def get_secrets(settings: SettingsDep) -> SecretsOut:
+def get_secrets(settings: SettingsDep, _admin: AdminDep) -> SecretsOut:
     return _secrets(settings)
 
 
@@ -151,7 +153,9 @@ def _check_tmdb_key(key: str) -> None:
 
 
 @router.put("/settings/secrets", response_model=SecretsOut)
-def put_secrets(body: SecretsIn, request: Request, settings: SettingsDep) -> SecretsOut:
+def put_secrets(
+    body: SecretsIn, request: Request, settings: SettingsDep, _admin: AdminDep
+) -> SecretsOut:
     """Writes the given keys to `.env` (null/"" deletes). A new TMDB key is checked with
     `GET /configuration` first: rejected -> 422 `invalid_tmdb_key`, nothing is written."""
     updates: dict[str, str | None] = {
@@ -190,7 +194,7 @@ def put_secrets(body: SecretsIn, request: Request, settings: SettingsDep) -> Sec
 # --- subscriptions ------------------------------------------------------------------------
 
 
-def _subscriptions(session: Session, settings: Settings) -> SubscriptionsOut:
+def _subscriptions(session: Session, settings: Settings, user_id: int) -> SubscriptionsOut:
     return SubscriptionsOut(
         items=[
             SubscriptionItem(
@@ -210,14 +214,16 @@ def _subscriptions(session: Session, settings: Settings) -> SubscriptionsOut:
                 selected_profile=row.selected_profile,
                 profile_support="export" if row.profile_support == "export" else "none",
             )
-            for row in subscriptions.subscription_rows(session, settings)
+            for row in subscriptions.subscription_rows(session, settings, user_id=user_id)
         ]
     )
 
 
-def _maybe_refresh_logos(request: Request, session: Session, tmdb: TmdbClient | None) -> None:
+def _maybe_refresh_logos(
+    request: Request, session: Session, tmdb: TmdbClient | None, user_id: int
+) -> None:
     """Fill missing logos from TMDB; throttled, errors only logged (the logo is optional)."""
-    if tmdb is None or not subscriptions.missing_logos(session):
+    if tmdb is None or not subscriptions.missing_logos(session, user_id=user_id):
         return
     state = request.app.state
     last: float = getattr(state, "logo_refresh_at", 0.0)
@@ -234,15 +240,19 @@ def _maybe_refresh_logos(request: Request, session: Session, tmdb: TmdbClient | 
 
 @router.get("/settings/subscriptions", response_model=SubscriptionsOut)
 def get_subscriptions(
-    request: Request, session: SessionDep, settings: SettingsDep, tmdb: OptionalTmdbDep
+    request: Request,
+    session: SessionDep,
+    user: CurrentUserDep,
+    settings: SettingsDep,
+    tmdb: OptionalTmdbDep,
 ) -> SubscriptionsOut:
-    _maybe_refresh_logos(request, session, tmdb)
-    return _subscriptions(session, settings)
+    _maybe_refresh_logos(request, session, tmdb, user.id)
+    return _subscriptions(session, settings, user.id)
 
 
 @router.put("/settings/subscriptions", response_model=SubscriptionsOut)
 def put_subscriptions(
-    body: SubscriptionsIn, session: SessionDep, settings: SettingsDep
+    body: SubscriptionsIn, session: SessionDep, user: CurrentUserDep, settings: SettingsDep
 ) -> SubscriptionsOut:
     """`{items: [...]}`: partial update per key; `{enabled: [...]}`: enable exactly those
     (empty list allowed). Unknown key -> 422, nothing changes."""
@@ -250,7 +260,7 @@ def put_subscriptions(
         raise HTTPException(status_code=422, detail="`items` vagy `enabled` kell.")
     try:
         if body.enabled is not None:
-            subscriptions.set_enabled(session, body.enabled)
+            subscriptions.set_enabled(session, body.enabled, user_id=user.id)
         if body.items is not None:
             subscriptions.apply_updates(
                 session,
@@ -264,6 +274,7 @@ def put_subscriptions(
                     )
                     for item in body.items
                 ],
+                user_id=user.id,
             )
     except ValueError as exc:
         session.rollback()
@@ -271,31 +282,33 @@ def put_subscriptions(
             status_code=422, detail=f"Érvénytelen előfizetés-beállítás: {exc}"
         ) from exc
     session.commit()
-    return _subscriptions(session, settings)
+    return _subscriptions(session, settings, user.id)
 
 
-def _app_settings(session: Session, settings: Settings) -> AppSettingsOut:
+def _app_settings(session: Session, settings: Settings, user_id: int) -> AppSettingsOut:
     return AppSettingsOut(
-        ui_language=app_cfg.ui_language(session),
-        netflix_profile_name=app_cfg.effective_netflix_profile(session, settings),
-        netflix_profiles=app_cfg.netflix_profiles(session),
-        onboarding_done=app_cfg.onboarding_done(session),
+        ui_language=app_cfg.ui_language(session, user_id=user_id),
+        netflix_profile_name=app_cfg.effective_netflix_profile(session, settings, user_id=user_id),
+        netflix_profiles=app_cfg.netflix_profiles(session, user_id=user_id),
+        onboarding_done=app_cfg.onboarding_done(session, user_id=user_id),
     )
 
 
 @router.get("/settings/app", response_model=AppSettingsOut)
-def get_app_settings(session: SessionDep, settings: SettingsDep) -> AppSettingsOut:
+def get_app_settings(
+    session: SessionDep, user: CurrentUserDep, settings: SettingsDep
+) -> AppSettingsOut:
     """`netflix_profile_name`: the app setting, else `NETFLIX_PROFILE_NAME` from `.env`."""
-    return _app_settings(session, settings)
+    return _app_settings(session, settings, user.id)
 
 
 @router.put("/settings/app", response_model=AppSettingsOut)
 def put_app_settings(
-    body: AppSettingsIn, session: SessionDep, settings: SettingsDep
+    body: AppSettingsIn, session: SessionDep, user: CurrentUserDep, settings: SettingsDep
 ) -> AppSettingsOut:
     given = body.model_fields_set
     if "ui_language" in given and body.ui_language is not None:
-        app_cfg.set_ui_language(session, body.ui_language)
+        app_cfg.set_ui_language(session, body.ui_language, user_id=user.id)
     if "netflix_profile_name" in given:
         subscriptions.apply_updates(
             session,
@@ -304,11 +317,12 @@ def put_app_settings(
                     key="netflix", selected_profile=body.netflix_profile_name
                 )
             ],
+            user_id=user.id,
         )
     if "onboarding_done" in given and body.onboarding_done is not None:
-        app_cfg.set_onboarding_done(session, body.onboarding_done)
+        app_cfg.set_onboarding_done(session, body.onboarding_done, user_id=user.id)
     session.commit()
-    return _app_settings(session, settings)
+    return _app_settings(session, settings, user.id)
 
 
 # --- LLM ----------------------------------------------------------------------------------
@@ -351,8 +365,8 @@ def _claude_code_option() -> ClaudeCodeOption:
     )
 
 
-def _llm_settings(session: Session, settings: Settings) -> LlmSettingsOut:
-    config = llm_registry.effective_llm_config(session, settings)
+def _llm_settings(session: Session, settings: Settings, user_id: int) -> LlmSettingsOut:
+    config = llm_registry.effective_llm_config(session, settings, user_id)
     available, models = _lm_studio_models(settings.lm_studio_base_url)
     provider = config.provider if config.provider in llm_registry.PROVIDER_NAMES else "lmstudio"
     return LlmSettingsOut(
@@ -374,32 +388,44 @@ def _llm_settings(session: Session, settings: Settings) -> LlmSettingsOut:
 
 
 @router.get("/settings/llm", response_model=LlmSettingsOut)
-def get_llm_settings(session: SessionDep, settings: SettingsDep) -> LlmSettingsOut:
-    return _llm_settings(session, settings)
+def get_llm_settings(
+    session: SessionDep, user: CurrentUserDep, settings: SettingsDep
+) -> LlmSettingsOut:
+    return _llm_settings(session, settings, user.id)
 
 
 @router.put("/settings/llm", response_model=LlmSettingsOut)
 def put_llm_settings(
-    body: LlmSettingsIn, session: SessionDep, settings: SettingsDep
+    body: LlmSettingsIn, session: SessionDep, user: CurrentUserDep, settings: SettingsDep
 ) -> LlmSettingsOut:
-    """Stored in `app_settings`; wins over `.env` (`effective_llm_config`)."""
+    """Stored in the profile's `app_settings`; wins over `.env` (`effective_llm_config`)."""
     given = body.model_fields_set
+    uid = user.id
     if "provider" in given and body.provider is not None:
-        app_cfg.set_setting(session, llm_registry.LLM_PROVIDER, body.provider)
+        app_cfg.set_setting(session, llm_registry.LLM_PROVIDER, body.provider, user_id=uid)
     if "model" in given:
-        app_cfg.set_setting(session, llm_registry.LLM_MODEL, (body.model or "").strip() or None)
+        app_cfg.set_setting(
+            session, llm_registry.LLM_MODEL, (body.model or "").strip() or None, user_id=uid
+        )
     if "cloud_send_feedback_text" in given and body.cloud_send_feedback_text is not None:
         app_cfg.set_setting(
-            session, llm_registry.LLM_CLOUD_SEND_FEEDBACK_TEXT, body.cloud_send_feedback_text
+            session,
+            llm_registry.LLM_CLOUD_SEND_FEEDBACK_TEXT,
+            body.cloud_send_feedback_text,
+            user_id=uid,
         )
     if "fallback_allowed" in given and body.fallback_allowed is not None:
-        app_cfg.set_setting(session, llm_registry.LLM_FALLBACK_ALLOWED, body.fallback_allowed)
+        app_cfg.set_setting(
+            session, llm_registry.LLM_FALLBACK_ALLOWED, body.fallback_allowed, user_id=uid
+        )
     session.commit()
-    return _llm_settings(session, settings)
+    return _llm_settings(session, settings, uid)
 
 
 @router.post("/settings/llm/test", response_model=LlmTestOut)
-def post_llm_test(body: LlmTestIn, session: SessionDep, settings: SettingsDep) -> LlmTestOut:
+def post_llm_test(
+    body: LlmTestIn, session: SessionDep, user: CurrentUserDep, settings: SettingsDep
+) -> LlmTestOut:
     """One short prompt with the chosen (or given) provider; only on the user's click.
 
     Never 500: configuration and provider errors come back as `ok: false, error`."""
@@ -407,7 +433,7 @@ def post_llm_test(body: LlmTestIn, session: SessionDep, settings: SettingsDep) -
 
     from whattowatch.llm.base import LLMError, Message
 
-    config = llm_registry.effective_llm_config(session, settings)
+    config = llm_registry.effective_llm_config(session, settings, user.id)
     if body.provider is not None and body.provider != config.provider:
         config = replace(config, provider=body.provider, model=None)
     if "model" in body.model_fields_set:
@@ -450,6 +476,12 @@ def _tmdb_account_out(st: tmdb_account.AccountStatus) -> TmdbAccountOut:
     )
 
 
+def _linked_by_other() -> CodedHTTPException:
+    return CodedHTTPException(
+        409, "A TMDB-fiókot egy másik profil kapcsolta össze.", "tmdb_linked_by_other_profile"
+    )
+
+
 def _set_running_session(request: Request, session_id: str | None) -> None:
     """Mirror the `.env` change into the running app's settings override, if any (without
     one, `update_env` already cleared the `get_settings` cache)."""
@@ -459,35 +491,44 @@ def _set_running_session(request: Request, session_id: str | None) -> None:
 
 
 @router.get("/settings/tmdb-account", response_model=TmdbAccountOut)
-def get_tmdb_account(session: SessionDep, settings: SettingsDep) -> TmdbAccountOut:
-    """Link status only; the session id is never returned."""
-    return _tmdb_account_out(tmdb_account.status(session, settings))
+def get_tmdb_account(
+    session: SessionDep, user: CurrentUserDep, settings: SettingsDep
+) -> TmdbAccountOut:
+    """Link status of the current profile only; the session id is never returned."""
+    return _tmdb_account_out(tmdb_account.status(session, settings, user_id=user.id))
 
 
 @router.put("/settings/tmdb-account", response_model=TmdbAccountOut)
 def put_tmdb_account(
-    body: TmdbAccountIn, session: SessionDep, settings: SettingsDep
+    body: TmdbAccountIn, session: SessionDep, user: CurrentUserDep, settings: SettingsDep
 ) -> TmdbAccountOut:
-    tmdb_account.set_rating_sync_enabled(session, body.rating_sync_enabled)
+    tmdb_account.set_rating_sync_enabled(session, body.rating_sync_enabled, user_id=user.id)
     session.commit()
-    return _tmdb_account_out(tmdb_account.status(session, settings))
+    return _tmdb_account_out(tmdb_account.status(session, settings, user_id=user.id))
 
 
 @router.post("/settings/tmdb-account/link/start", response_model=TmdbLinkStartOut)
 def post_tmdb_link_start(
     session: SessionDep,
+    user: CurrentUserDep,
     settings: SettingsDep,
     tmdb: OptionalTmdbDep,
     body: TmdbLinkStartIn | None = None,
 ) -> TmdbLinkStartOut:
-    """New request token (kept as pending); the user approves it at `approval_url`."""
+    """New request token (kept as pending); the user approves it at `approval_url`.
+
+    409 `tmdb_linked_by_other_profile` while another profile owns the link."""
     if tmdb is None:
         raise no_tmdb_key()
+    if tmdb_account.linked_by_other(session, settings, user_id=user.id):
+        raise _linked_by_other()
     redirect_to = (body.redirect_to or "").strip() or None if body else None
     if redirect_to is not None and not redirect_to.startswith(("http://", "https://")):
         raise HTTPException(status_code=422, detail="A redirect_to http(s):// kezdetű legyen.")
     try:
-        started = tmdb_account.start_link(session, settings, tmdb, redirect_to=redirect_to)
+        started = tmdb_account.start_link(
+            session, settings, tmdb, user_id=user.id, redirect_to=redirect_to
+        )
     except (TmdbError, httpx.HTTPError) as exc:
         session.rollback()
         raise CodedHTTPException(
@@ -499,13 +540,19 @@ def post_tmdb_link_start(
 
 @router.post("/settings/tmdb-account/link/finish", response_model=TmdbAccountOut)
 def post_tmdb_link_finish(
-    request: Request, session: SessionDep, settings: SettingsDep, tmdb: OptionalTmdbDep
+    request: Request,
+    session: SessionDep,
+    user: CurrentUserDep,
+    settings: SettingsDep,
+    tmdb: OptionalTmdbDep,
 ) -> TmdbAccountOut:
     """Approved pending token -> session id in `.env`; not approved/expired -> 422."""
     if tmdb is None:
         raise no_tmdb_key()
+    if tmdb_account.linked_by_other(session, settings, user_id=user.id):
+        raise _linked_by_other()
     try:
-        result = tmdb_account.finish_link(session, settings, tmdb)
+        result = tmdb_account.finish_link(session, settings, tmdb, user_id=user.id)
     except tmdb_account.TmdbLinkError as exc:
         session.commit()  # an expired pending token is cleared
         raise CodedHTTPException(422, exc.message, "tmdb_link_failed") from exc
@@ -521,31 +568,38 @@ def post_tmdb_link_finish(
 
 @router.post("/settings/tmdb-account/unlink", response_model=TmdbAccountOut)
 def post_tmdb_unlink(
-    request: Request, session: SessionDep, settings: SettingsDep, tmdb: OptionalTmdbDep
+    request: Request,
+    session: SessionDep,
+    user: CurrentUserDep,
+    settings: SettingsDep,
+    tmdb: OptionalTmdbDep,
 ) -> TmdbAccountOut:
-    """Revokes the TMDB session (best effort) and removes it from `.env`."""
+    """Revokes the TMDB session (best effort) and removes it from `.env`; only the
+    owning profile's unlink touches the session (others only drop their pending token)."""
+    owner = tmdb_account.link_owner(session, settings) == user.id
     try:
-        st = tmdb_account.unlink(session, settings, tmdb)
+        st = tmdb_account.unlink(session, settings, tmdb, user_id=user.id)
     except (OSError, ValueError) as exc:
         session.rollback()
         raise HTTPException(
             status_code=500, detail=f"A .env nem írható ({type(exc).__name__})."
         ) from exc
     session.commit()
-    _set_running_session(request, None)
+    if owner:
+        _set_running_session(request, None)
     return _tmdb_account_out(st)
 
 
 @router.post("/settings/tmdb-account/resync", response_model=TmdbResyncOut)
 def post_tmdb_resync(
-    session: SessionDep, settings: SettingsDep, tmdb: OptionalTmdbDep
+    session: SessionDep, user: CurrentUserDep, settings: SettingsDep, tmdb: OptionalTmdbDep
 ) -> TmdbResyncOut:
-    """Pushes every local app rating to the linked account (synchronous)."""
+    """Pushes every local app rating of the profile to its linked account (synchronous)."""
     if tmdb is None:
         raise no_tmdb_key()
-    if not settings.tmdb_session_id:
+    if tmdb_account.link_owner(session, settings) != user.id:
         raise CodedHTTPException(409, "Nincs összekapcsolt TMDB-fiók.", "tmdb_not_linked")
-    result = tmdb_account.resync_ratings(session, settings, tmdb)
+    result = tmdb_account.resync_ratings(session, settings, tmdb, user_id=user.id)
     session.commit()
     return TmdbResyncOut(
         total=result.total, ok=result.ok, error=result.error, skipped=result.skipped

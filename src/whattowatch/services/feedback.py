@@ -1,6 +1,7 @@
 """User feedback actions on a title (used by the API): text feedback, stars, flags.
 
-Every function flushes; committing is the caller's responsibility.
+Every function acts for one profile (`user_id`) and flushes; committing is the caller's
+responsibility.
 """
 
 from __future__ import annotations
@@ -24,7 +25,6 @@ from whattowatch.db.models import (
 from whattowatch.preferences.extract import extract_for_feedback
 from whattowatch.services import tmdb_account
 from whattowatch.services.tmdb_account import TmdbAccountClient
-from whattowatch.services.users import default_user_id
 
 APP_SOURCE = "app"
 MANUAL_WATCH_SOURCE = "manual"
@@ -55,10 +55,20 @@ def _clean(text: str | None) -> str | None:
     return stripped or None
 
 
+def get_feedback(session: Session, title_id: int, *, user_id: int) -> TitleFeedback | None:
+    """The user's text feedback row of a title (replaces the former `Title.feedback`)."""
+    return session.scalar(
+        select(TitleFeedback).where(
+            TitleFeedback.user_id == user_id, TitleFeedback.title_id == title_id
+        )
+    )
+
+
 def set_feedback(
     session: Session,
     title_id: int,
     *,
+    user_id: int,
     liked_text: str | None | _Unchanged = UNCHANGED,
     disliked_text: str | None | _Unchanged = UNCHANGED,
 ) -> TitleFeedback | None:
@@ -67,14 +77,14 @@ def set_feedback(
     Re-runs rule extraction for the row so stale signals disappear.
     """
     _require_title(session, title_id)
-    feedback = session.scalar(select(TitleFeedback).where(TitleFeedback.title_id == title_id))
+    feedback = get_feedback(session, title_id, user_id=user_id)
     if feedback is None:
         new_liked = None if liked_text is UNCHANGED else _clean(liked_text)
         new_disliked = None if disliked_text is UNCHANGED else _clean(disliked_text)
         if new_liked is None and new_disliked is None:
             return None
         feedback = TitleFeedback(
-            user_id=default_user_id(session),  # A1 interim, TODO(A2): current user
+            user_id=user_id,
             title_id=title_id,
             liked_text=new_liked,
             disliked_text=new_disliked,
@@ -95,6 +105,7 @@ def set_star_rating(
     title_id: int,
     stars: float | None,
     *,
+    user_id: int,
     settings: Settings | None = None,
     tmdb: TmdbAccountClient | None = None,
     sync: bool = True,
@@ -104,23 +115,19 @@ def set_star_rating(
     With `sync` the result is then pushed to a linked TMDB account (`push_star_rating`);
     a TMDB failure is only recorded, the local rating is always saved."""
     title = _require_title(session, title_id)
-    rating = session.scalar(
-        select(TitleRating).where(
-            TitleRating.title_id == title_id, TitleRating.source == APP_SOURCE
-        )
-    )
+    rating = _app_rating(session, title_id, user_id)
     if stars is None:
         if rating is not None:
             session.delete(rating)
             session.flush()
         if sync:
-            _push(session, title, None, settings, tmdb)
+            _push(session, title, None, user_id, settings, tmdb)
         return None
     if not 0.5 <= stars <= 5 or round(stars * 2) / 2 != stars:
         raise ValueError("stars must be a multiple of 0.5 between 0.5 and 5")
     if rating is None:
         rating = TitleRating(
-            user_id=default_user_id(session),  # A1 interim, TODO(A2): current user
+            user_id=user_id,
             title_id=title_id,
             source=APP_SOURCE,
         )
@@ -132,7 +139,7 @@ def set_star_rating(
     rating.rated_at = _now()
     session.flush()
     if sync:
-        _push(session, title, stars, settings, tmdb)
+        _push(session, title, stars, user_id, settings, tmdb)
     return rating
 
 
@@ -140,6 +147,7 @@ def push_star_rating(
     session: Session,
     title_id: int,
     *,
+    user_id: int,
     settings: Settings | None = None,
     tmdb: TmdbAccountClient | None = None,
 ) -> dict[str, Any]:
@@ -147,36 +155,49 @@ def push_star_rating(
 
     Lets a caller commit the local save first and do the network call afterwards."""
     title = _require_title(session, title_id)
-    rating = session.scalar(
-        select(TitleRating).where(
-            TitleRating.title_id == title_id, TitleRating.source == APP_SOURCE
-        )
-    )
+    rating = _app_rating(session, title_id, user_id)
     stars: float | None = None
     if rating is not None:
         try:
             stars = float(rating.raw_value)
         except ValueError:
             stars = None
-    return _push(session, title, stars, settings, tmdb)
+    return _push(session, title, stars, user_id, settings, tmdb)
+
+
+def _app_rating(session: Session, title_id: int, user_id: int) -> TitleRating | None:
+    return session.scalar(
+        select(TitleRating).where(
+            TitleRating.user_id == user_id,
+            TitleRating.title_id == title_id,
+            TitleRating.source == APP_SOURCE,
+        )
+    )
 
 
 def _push(
     session: Session,
     title: Title,
     stars: float | None,
+    user_id: int,
     settings: Settings | None,
     tmdb: TmdbAccountClient | None,
 ) -> dict[str, Any]:
-    return tmdb_account.sync_rating(session, settings or get_settings(), tmdb, title, stars)
+    return tmdb_account.sync_rating(
+        session, settings or get_settings(), tmdb, title, stars, user_id=user_id
+    )
 
 
-def _user_state(session: Session, title_id: int) -> TitleUserState:
+def _user_state(session: Session, title_id: int, user_id: int) -> TitleUserState:
     _require_title(session, title_id)
-    state = session.scalar(select(TitleUserState).where(TitleUserState.title_id == title_id))
+    state = session.scalar(
+        select(TitleUserState).where(
+            TitleUserState.user_id == user_id, TitleUserState.title_id == title_id
+        )
+    )
     if state is None:
         state = TitleUserState(
-            user_id=default_user_id(session),  # A1 interim, TODO(A2): current user
+            user_id=user_id,
             title_id=title_id,
             not_interested=False,
         )
@@ -184,27 +205,31 @@ def _user_state(session: Session, title_id: int) -> TitleUserState:
     return state
 
 
-def set_not_interested(session: Session, title_id: int, flag: bool) -> TitleUserState:
-    state = _user_state(session, title_id)
+def set_not_interested(
+    session: Session, title_id: int, flag: bool, *, user_id: int
+) -> TitleUserState:
+    state = _user_state(session, title_id, user_id)
     state.not_interested = flag
     state.not_interested_at = _now() if flag else None
     session.flush()
     return state
 
 
-def set_seen(session: Session, title_id: int, flag: bool) -> TitleUserState:
+def set_seen(session: Session, title_id: int, flag: bool, *, user_id: int) -> TitleUserState:
     """Mark seen/unseen. Seen upserts a manual watch event; unseen removes only that one."""
-    state = _user_state(session, title_id)
+    state = _user_state(session, title_id, user_id)
     state.seen_override = flag
     event = session.scalar(
         select(WatchEvent).where(
-            WatchEvent.title_id == title_id, WatchEvent.source == MANUAL_WATCH_SOURCE
+            WatchEvent.user_id == user_id,
+            WatchEvent.title_id == title_id,
+            WatchEvent.source == MANUAL_WATCH_SOURCE,
         )
     )
     if flag:
         if event is None:
             event = WatchEvent(
-                user_id=default_user_id(session),  # A1 interim, TODO(A2): current user
+                user_id=user_id,
                 title_id=title_id,
                 source=MANUAL_WATCH_SOURCE,
             )
@@ -217,16 +242,22 @@ def set_seen(session: Session, title_id: int, flag: bool) -> TitleUserState:
     return state
 
 
-def add_to_watchlist(session: Session, title_id: int) -> WatchlistItem:
-    _require_title(session, title_id)
-    item = session.scalar(
+def _app_watchlist_item(session: Session, title_id: int, user_id: int) -> WatchlistItem | None:
+    return session.scalar(
         select(WatchlistItem).where(
-            WatchlistItem.title_id == title_id, WatchlistItem.source == APP_SOURCE
+            WatchlistItem.user_id == user_id,
+            WatchlistItem.title_id == title_id,
+            WatchlistItem.source == APP_SOURCE,
         )
     )
+
+
+def add_to_watchlist(session: Session, title_id: int, *, user_id: int) -> WatchlistItem:
+    _require_title(session, title_id)
+    item = _app_watchlist_item(session, title_id, user_id)
     if item is None:
         item = WatchlistItem(
-            user_id=default_user_id(session),  # A1 interim, TODO(A2): current user
+            user_id=user_id,
             title_id=title_id,
             source=APP_SOURCE,
             added_at=_now(),
@@ -239,14 +270,10 @@ def add_to_watchlist(session: Session, title_id: int) -> WatchlistItem:
     return item
 
 
-def remove_from_watchlist(session: Session, title_id: int) -> WatchlistItem | None:
+def remove_from_watchlist(session: Session, title_id: int, *, user_id: int) -> WatchlistItem | None:
     """Mark the app watchlist entry removed (history is kept); imported lists untouched."""
     _require_title(session, title_id)
-    item = session.scalar(
-        select(WatchlistItem).where(
-            WatchlistItem.title_id == title_id, WatchlistItem.source == APP_SOURCE
-        )
-    )
+    item = _app_watchlist_item(session, title_id, user_id)
     if item is not None:
         item.status = "removed"
         session.flush()

@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from whattowatch.api.deps import (
     CodedHTTPException,
+    CurrentUserDep,
     NowDep,
     OptionalTmdbDep,
     RecommenderConfigDep,
@@ -31,14 +32,16 @@ class ChatRequest(BaseModel):
     provider: str | None = Field(default=None, max_length=40)
 
 
-def provider_factory_dep(settings: SettingsDep, session: SessionDep) -> ProviderFactory:
+def provider_factory_dep(
+    settings: SettingsDep, session: SessionDep, user: CurrentUserDep
+) -> ProviderFactory:
     """Resolves the configured (or requested) LLM provider; tests override this.
 
     Uses the UI choice (`effective_llm_config`); falls back to another provider only when
     `llm_fallback_allowed` is set."""
     from whattowatch.llm.registry import effective_llm_config, get_provider_with_fallback
 
-    config = effective_llm_config(session, settings)
+    config = effective_llm_config(session, settings, user.id)
     return lambda override: get_provider_with_fallback(settings, override, config=config)
 
 
@@ -46,6 +49,7 @@ def provider_factory_dep(settings: SettingsDep, session: SessionDep) -> Provider
 def chat(
     body: ChatRequest,
     session: SessionDep,
+    user: CurrentUserDep,
     tmdb: OptionalTmdbDep,
     settings: SettingsDep,
     cfg: RecommenderConfigDep,
@@ -70,10 +74,11 @@ def chat(
             session=session,
             tmdb=tmdb,
             provider=provider,
+            user_id=user.id,
             config=cfg,
             now=now,
             allow_cloud_feedback_text=effective_llm_config(
-                session, settings
+                session, settings, user.id
             ).cloud_send_feedback_text,
         )
     except LLMError as exc:

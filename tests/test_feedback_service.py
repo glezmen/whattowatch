@@ -28,6 +28,7 @@ from whattowatch.services.feedback import (
     set_seen,
     set_star_rating,
 )
+from whattowatch.services.users import default_user_id
 
 
 @pytest.fixture
@@ -62,17 +63,19 @@ def labels(session: Session) -> set[tuple[str, str]]:
 
 def test_feedback_fields_independent(session: Session) -> None:
     t = make_title(session, 1)
-    fb = set_feedback(session, t.id, liked_text="száraz humor")
+    fb = set_feedback(session, t.id, liked_text="száraz humor", user_id=default_user_id(session))
     assert fb is not None and fb.disliked_text is None
-    set_feedback(session, t.id, disliked_text="kiszámítható befejezés")
+    set_feedback(
+        session, t.id, disliked_text="kiszámítható befejezés", user_id=default_user_id(session)
+    )
     assert fb.liked_text == "száraz humor"
     assert fb.disliked_text == "kiszámítható befejezés"
     assert labels(session) == {("+", "szaraz"), ("-", "kiszamithato")}
 
-    set_feedback(session, t.id, liked_text="")
+    set_feedback(session, t.id, liked_text="", user_id=default_user_id(session))
     assert fb.liked_text is None and fb.disliked_text == "kiszámítható befejezés"
     assert labels(session) == {("-", "kiszamithato")}
-    set_feedback(session, t.id, disliked_text=None)
+    set_feedback(session, t.id, disliked_text=None, user_id=default_user_id(session))
     assert fb.disliked_text is None
     assert labels(session) == set()
     assert session.scalars(select(TitleFeedback)).one().id == fb.id
@@ -80,55 +83,55 @@ def test_feedback_fields_independent(session: Session) -> None:
 
 def test_feedback_nothing_to_store(session: Session) -> None:
     t = make_title(session, 1)
-    assert set_feedback(session, t.id, liked_text="  ") is None
+    assert set_feedback(session, t.id, liked_text="  ", user_id=default_user_id(session)) is None
     assert session.scalars(select(TitleFeedback)).all() == []
     with pytest.raises(LookupError):
-        set_feedback(session, 999, liked_text="x")
+        set_feedback(session, 999, liked_text="x", user_id=default_user_id(session))
 
 
 def test_star_rating_upsert_and_delete(session: Session) -> None:
     t = make_title(session, 1)
-    set_star_rating(session, t.id, 4)
-    set_star_rating(session, t.id, 2)
+    set_star_rating(session, t.id, 4, user_id=default_user_id(session))
+    set_star_rating(session, t.id, 2, user_id=default_user_id(session))
     rating = session.scalars(select(TitleRating)).one()
     assert (rating.source, rating.scale, rating.raw_value) == ("app", "1-5", "2")
     assert rating.is_personal and rating.normalized == pytest.approx(1.5 / 4.5)
     with pytest.raises(ValueError):
-        set_star_rating(session, t.id, 6)
+        set_star_rating(session, t.id, 6, user_id=default_user_id(session))
     with pytest.raises(ValueError):
-        set_star_rating(session, t.id, 3.25)
-    set_star_rating(session, t.id, 3.5)
+        set_star_rating(session, t.id, 3.25, user_id=default_user_id(session))
+    set_star_rating(session, t.id, 3.5, user_id=default_user_id(session))
     assert session.scalars(select(TitleRating)).one().raw_value == "3.5"
-    set_star_rating(session, t.id, 0.5)
+    set_star_rating(session, t.id, 0.5, user_id=default_user_id(session))
     assert session.scalars(select(TitleRating)).one().normalized == pytest.approx(0.0)
-    set_star_rating(session, t.id, 5)
+    set_star_rating(session, t.id, 5, user_id=default_user_id(session))
     assert session.scalars(select(TitleRating)).one().normalized == pytest.approx(1.0)
-    set_star_rating(session, t.id, None)
+    set_star_rating(session, t.id, None, user_id=default_user_id(session))
     assert session.scalars(select(TitleRating)).all() == []
 
 
 def test_seen_creates_manual_watch_event(session: Session) -> None:
     t = make_title(session, 1)
-    set_seen(session, t.id, True)
-    set_seen(session, t.id, True)
+    set_seen(session, t.id, True, user_id=default_user_id(session))
+    set_seen(session, t.id, True, user_id=default_user_id(session))
     event = session.scalars(select(WatchEvent)).one()
     assert (event.source, event.status) == ("manual", "watched")
     assert session.scalars(select(TitleUserState)).one().seen_override is True
-    set_seen(session, t.id, False)
+    set_seen(session, t.id, False, user_id=default_user_id(session))
     assert session.scalars(select(WatchEvent)).all() == []
     assert session.scalars(select(TitleUserState)).one().seen_override is False
 
 
 def test_not_interested_and_watchlist(session: Session) -> None:
     t = make_title(session, 1)
-    state = set_not_interested(session, t.id, True)
+    state = set_not_interested(session, t.id, True, user_id=default_user_id(session))
     assert state.not_interested and state.not_interested_at is not None
-    set_not_interested(session, t.id, False)
+    set_not_interested(session, t.id, False, user_id=default_user_id(session))
     assert not state.not_interested and state.not_interested_at is None
 
-    item = add_to_watchlist(session, t.id)
+    item = add_to_watchlist(session, t.id, user_id=default_user_id(session))
     assert (item.source, item.status) == ("app", "active")
-    remove_from_watchlist(session, t.id)
+    remove_from_watchlist(session, t.id, user_id=default_user_id(session))
     assert item.status == "removed"
-    add_to_watchlist(session, t.id)
+    add_to_watchlist(session, t.id, user_id=default_user_id(session))
     assert session.scalars(select(WatchlistItem)).one().status == "active"

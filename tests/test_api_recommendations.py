@@ -91,6 +91,7 @@ def test_recommendation_feedback(api: ApiEnv) -> None:
 
 def test_reason_codes_in_latest_batch(api: ApiEnv) -> None:
     run_recommendations(
+        user_id=default_user_id(api.session),
         limit=10,
         session=api.session,
         tmdb=StubTmdb(),

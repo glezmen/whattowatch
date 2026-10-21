@@ -45,7 +45,6 @@ from whattowatch.services.import_netflix import (
     _upsert,
     _usable,
 )
-from whattowatch.services.users import default_user_id
 
 if TYPE_CHECKING:
     from whattowatch.adapters.tmdb import MediaType, TmdbClient
@@ -135,8 +134,16 @@ def _demote_lone_joined(rows: list[ImportRow]) -> set[int]:
 
 
 class _Importer:
-    def __init__(self, session: Session, tmdb: TmdbClient, export: PrimeExport, profile: str):
+    def __init__(
+        self,
+        session: Session,
+        tmdb: TmdbClient,
+        export: PrimeExport,
+        profile: str,
+        user_id: int,
+    ):
         self.session = session
+        self.user_id = user_id
         self.tmdb = tmdb
         self.export = export
         self.profile = profile
@@ -161,7 +168,7 @@ class _Importer:
         self._hashes.add(h)
         self.session.add(
             ImportRow(
-                user_id=default_user_id(self.session),  # A1 interim, TODO(A2): current user
+                user_id=self.user_id,
                 source=source,
                 file_sha256=self.export.file_hashes.get(csv_name, ""),
                 row_hash=h,
@@ -176,7 +183,9 @@ class _Importer:
     def _stored_rows(self, source: ImportSource) -> list[ImportRow]:
         self.session.flush()
         stmt = select(ImportRow).where(
-            ImportRow.source == source, ImportRow.profile_name == self.profile
+            ImportRow.user_id == self.user_id,
+            ImportRow.source == source,
+            ImportRow.profile_name == self.profile,
         )
         return list(self.session.scalars(stmt.order_by(ImportRow.id)))
 
@@ -212,7 +221,11 @@ class _Importer:
             self.stats[outcome] += 1
 
     def run(self, min_movie_seconds: int, min_episode_seconds: int) -> None:
-        self._hashes = set(self.session.scalars(select(ImportRow.row_hash)))
+        self._hashes = set(
+            self.session.scalars(
+                select(ImportRow.row_hash).where(ImportRow.user_id == self.user_id)
+            )
+        )
         self.viewing(min_movie_seconds, min_episode_seconds)
         self.watchlist()
         self.feedback()
@@ -289,7 +302,7 @@ class _Importer:
                 "total_seconds": sum(i["seconds"] for i in items),
                 "episode_count": len(distinct_eps) if distinct_eps else None,
             }
-            keys = {"title_id": title_id, "source": source}
+            keys = {"user_id": self.user_id, "title_id": title_id, "source": source}
             self._count(_upsert(self.session, WatchEvent, keys, values))
 
     def watchlist(self) -> None:
@@ -320,7 +333,7 @@ class _Importer:
             dates = sorted(r.parsed["added_at"] for r in rows if r.parsed.get("added_at"))
             added_at = datetime.fromisoformat(dates[0]) if dates else None
             values = {"added_at": added_at, "status": "active", "import_row_id": rows[0].id}
-            keys = {"title_id": title_id, "source": source}
+            keys = {"user_id": self.user_id, "title_id": title_id, "source": source}
             self._count(_upsert(self.session, WatchlistItem, keys, values))
 
     def feedback(self) -> None:
@@ -363,7 +376,7 @@ class _Importer:
                 "rated_at": datetime.fromisoformat(ts) if ts else None,
                 "import_row_id": latest.id,
             }
-            keys = {"title_id": title_id, "source": RATING_SOURCE}
+            keys = {"user_id": self.user_id, "title_id": title_id, "source": RATING_SOURCE}
             self._count(_upsert(self.session, TitleRating, keys, values))
 
 
@@ -380,6 +393,7 @@ def check_profile_type(profile_type: str | None) -> str:
 def run_import(
     path: Path,
     *,
+    user_id: int,
     profile_type: str = "ADULT",
     session: Session | None = None,
     tmdb: TmdbClient | None = None,
@@ -404,8 +418,13 @@ def run_import(
 
         session = session_factory(create_engine_from_settings(settings))()
 
-    run = SyncRun(source=SYNC_SOURCE, started_at=datetime.now(UTC), file_sha256=_file_sha(path))
-    importer = _Importer(session, tmdb, export, profile)
+    run = SyncRun(
+        source=SYNC_SOURCE,
+        user_id=user_id,
+        started_at=datetime.now(UTC),
+        file_sha256=_file_sha(path),
+    )
+    importer = _Importer(session, tmdb, export, profile, user_id)
     try:
         try:
             importer.run(min_movie_seconds, min_episode_seconds)

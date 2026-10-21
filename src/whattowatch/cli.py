@@ -12,6 +12,7 @@ from whattowatch.cli_refresh import app as refresh_app
 from whattowatch.cli_resolve import resolve_app
 from whattowatch.cli_settings import app as settings_app
 from whattowatch.cli_tmdb import tmdb_app
+from whattowatch.cli_users import app as users_app
 from whattowatch.config import Settings
 from whattowatch.db.migrate import upgrade_to_head
 
@@ -27,6 +28,7 @@ app.add_typer(llm_app, name="llm")
 app.add_typer(refresh_app, name="refresh")
 app.add_typer(settings_app, name="settings")
 app.add_typer(backup_app, name="backup")
+app.add_typer(users_app, name="users")
 
 ROOT = Path(__file__).resolve().parents[2]
 

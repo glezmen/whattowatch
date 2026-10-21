@@ -36,12 +36,12 @@ class LLMConfig:
     fallback_allowed: bool
 
 
-def effective_llm_config(session: Session, settings: Settings) -> LLMConfig:
-    """App settings (set in the UI) first, then `.env`."""
+def effective_llm_config(session: Session, settings: Settings, user_id: int) -> LLMConfig:
+    """The user's app settings (set in the UI) first, then `.env`."""
     from whattowatch.services.app_settings import get_setting
 
     def pick(key: str, default: Any) -> Any:
-        return get_setting(session, key, default)
+        return get_setting(session, key, default, user_id=user_id)
 
     provider = pick(LLM_PROVIDER, None)
     if not isinstance(provider, str) or provider not in PROVIDER_NAMES:
@@ -124,9 +124,10 @@ def get_provider_with_fallback(
     raise errors[0]
 
 
-def load_llm_config(settings: Settings) -> LLMConfig:
-    """`effective_llm_config` with its own short-lived session (CLI). An unreachable or
-    unmigrated database falls back to the `.env` values."""
+def load_llm_config(settings: Settings, user_name: str | None = None) -> LLMConfig:
+    """`effective_llm_config` of the named profile (default: the admin) with its own
+    short-lived session (CLI). An unreachable or unmigrated database, or no profile at
+    all, falls back to the `.env` values; an unknown name raises LLMError."""
     from sqlalchemy.exc import SQLAlchemyError
 
     from whattowatch.db.engine import create_engine_from_settings, session_factory
@@ -134,13 +135,24 @@ def load_llm_config(settings: Settings) -> LLMConfig:
     engine = create_engine_from_settings(settings)
     try:
         with session_factory(engine)() as session:
-            return effective_llm_config(session, settings)
+            from whattowatch.services.users import default_user_id, find_user
+
+            if user_name:
+                user = find_user(session, user_name)
+                if user is None:
+                    raise LLMError(f"Nincs ilyen profil: {user_name}")
+                uid: int | None = user.id
+            else:
+                uid = default_user_id(session, create=False)
+            if uid is not None:
+                return effective_llm_config(session, settings, uid)
     except SQLAlchemyError:
-        return LLMConfig(
-            provider=settings.llm_provider,
-            model=settings.llm_model,
-            cloud_send_feedback_text=settings.llm_cloud_send_feedback_text,
-            fallback_allowed=settings.llm_fallback_allowed,
-        )
+        pass
     finally:
         engine.dispose()
+    return LLMConfig(
+        provider=settings.llm_provider,
+        model=settings.llm_model,
+        cloud_send_feedback_text=settings.llm_cloud_send_feedback_text,
+        fallback_allowed=settings.llm_fallback_allowed,
+    )

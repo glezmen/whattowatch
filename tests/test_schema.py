@@ -203,15 +203,16 @@ def test_unique_keys_are_per_user_and_user_delete_cascades(engine: Engine) -> No
 def test_app_settings_global_and_per_user_rows(engine: Engine) -> None:
     with Session(engine) as session:
         uid = default_user_id(session)
-        app_cfg.set_ui_language(session, "en")  # global row (A1: no user passed)
+        app_cfg.set_setting(session, "some_global_key", "a")  # global key: user_id NULL
+        session.add(AppSetting(key="ui_language", value="en"))  # stray global row of a user key
         app_cfg.set_ui_language(session, "hu", user_id=uid)
         session.commit()
-        assert app_cfg.ui_language(session) == "en"
+        assert app_cfg.get_setting(session, "some_global_key") == "a"
         assert app_cfg.ui_language(session, user_id=uid) == "hu"
         app_cfg.set_setting(session, "ui_language", None, user_id=uid)
-        assert app_cfg.ui_language(session, user_id=uid) == "hu"  # default
+        assert app_cfg.ui_language(session, user_id=uid) == "hu"  # default, never the global row
         assert app_cfg.get_setting(session, "ui_language", user_id=uid) is None
-        session.add(AppSetting(key="ui_language", value="hu"))  # second global row
+        session.add(AppSetting(key="some_global_key", value="b"))  # second global row
         with pytest.raises(IntegrityError):
             session.commit()
         session.rollback()

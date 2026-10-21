@@ -7,6 +7,8 @@ from typing import Annotated, Any, cast
 
 import typer
 
+from whattowatch.cli_users import UserOption, user_id_for
+
 app = typer.Typer(
     help="Daily refresh: catalog, new/leaving titles, notifications", no_args_is_help=True
 )
@@ -123,8 +125,9 @@ def refresh_sa_sync(
 @app.command("notifications")
 def refresh_notifications(
     show_all: Annotated[bool, typer.Option("--all", help="Include read notifications")] = False,
+    user: UserOption = None,
 ) -> None:
-    """List in-app notifications (default: unread)."""
+    """List a profile's in-app notifications (default: unread)."""
     from whattowatch.config import get_settings
     from whattowatch.db.engine import create_engine_from_settings, session_factory
     from whattowatch.services import updates
@@ -132,7 +135,9 @@ def refresh_notifications(
     engine = create_engine_from_settings(get_settings())
     try:
         with session_factory(engine)() as session:
-            items = updates.list_notifications(session, unread_only=not show_all)
+            items = updates.list_notifications(
+                session, user_id=user_id_for(session, user), unread_only=not show_all
+            )
             if not items:
                 typer.echo("Nincs értesítés." if show_all else "Nincs olvasatlan értesítés.")
                 return

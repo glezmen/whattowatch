@@ -159,9 +159,8 @@ class Title(TimestampMixin, Base):
     availability: Mapped[list[Availability]] = relationship(
         back_populates="title", cascade="all, delete-orphan"
     )
-    feedback: Mapped[TitleFeedback | None] = relationship(
-        back_populates="title", cascade="all, delete-orphan"
-    )
+    # Text feedback is per user (one row per user and title): no `Title.feedback`
+    # relationship, use `services.feedback.get_feedback(session, title_id, user_id=...)`.
 
 
 class Provider(TimestampMixin, Base):
@@ -300,7 +299,7 @@ class TitleFeedback(TimestampMixin, Base):
     liked_text: Mapped[str | None] = mapped_column(Text)
     disliked_text: Mapped[str | None] = mapped_column(Text)
 
-    title: Mapped[Title] = relationship(back_populates="feedback")
+    title: Mapped[Title] = relationship()
 
 
 class PreferenceSignal(TimestampMixin, Base):

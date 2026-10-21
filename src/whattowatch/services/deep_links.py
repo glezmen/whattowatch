@@ -204,16 +204,17 @@ def get_links(
     sa: StreamingAvailabilityClient | None,
     title: Title,
     *,
+    user_id: int,
     now: datetime,
     max_age_days: int = DEFAULT_MAX_AGE_DAYS,
     settings: Settings | None = None,
 ) -> LinksResult:
-    """Deep links for the enabled subscriptions plus a search URL fallback for each.
+    """Deep links for the user's enabled subscriptions plus a search URL fallback for each.
 
     Cached links younger than `max_age_days` are used as-is; otherwise SA is asked (when
     a client is given, or `settings` has a key). SA failures never raise: the cached
     links and the fallback search URLs are returned instead."""
-    enabled_subs = enabled_subscriptions(session)
+    enabled_subs = enabled_subscriptions(session, user_id=user_id)
     enabled = {p.key for p in enabled_subs}
     refreshed = False
     if not _fresh(session, title, now - timedelta(days=max_age_days)):

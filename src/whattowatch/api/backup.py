@@ -8,14 +8,21 @@ from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, File, Form, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from whattowatch.api.deps import CodedHTTPException, SettingsDep, app_engine, reset_engine
+from whattowatch.api.deps import (
+    CodedHTTPException,
+    SettingsDep,
+    admin_dep,
+    app_engine,
+    reset_engine,
+)
 from whattowatch.services import backup as svc
 
-router = APIRouter(prefix="/backup", tags=["backup"])
+# Backups hold every profile's data: admin only (403 `admin_required`).
+router = APIRouter(prefix="/backup", tags=["backup"], dependencies=[Depends(admin_dep)])
 
 CONFIRM_WORD = "RESTORE"
 

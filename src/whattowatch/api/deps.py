@@ -1,4 +1,4 @@
-"""Request-scoped dependencies: settings, DB session, optional TMDB client."""
+"""Request-scoped dependencies: settings, DB session, current user, optional TMDB client."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from whattowatch.adapters.streaming_availability import StreamingAvailabilityCli
 from whattowatch.adapters.tmdb import TmdbClient
 from whattowatch.config import Settings, get_settings
 from whattowatch.db.engine import create_engine_from_settings, session_factory
-from whattowatch.db.models import Title
+from whattowatch.db.models import Title, User
 from whattowatch.services.recommend.config import RecommenderConfig, load_config
 
 NO_TMDB_KEY = "Ehhez a művelethez TMDB API-kulcs kell (TMDB_API_KEY a .env-ben)."
@@ -117,6 +117,35 @@ def recommender_config_dep(settings: SettingsDep) -> RecommenderConfig:
 
 
 RecommenderConfigDep = Annotated[RecommenderConfig, Depends(recommender_config_dep)]
+
+
+def current_user_dep(session: SessionDep) -> User:
+    """The profile every personal endpoint acts for (the only place that decides it).
+
+    A2 interim: replaced by the session cookie in part 2 (docs/api.md "Profilok és
+    munkamenet"); until then it is the admin (else the first) profile, created on an
+    empty database like the A1 default."""
+    from whattowatch.services.users import default_user_id
+
+    uid = default_user_id(session, create=False)
+    if uid is None:
+        uid = default_user_id(session)
+        session.commit()
+    user = session.get(User, uid)
+    assert user is not None
+    return user
+
+
+CurrentUserDep = Annotated[User, Depends(current_user_dep)]
+
+
+def admin_dep(user: CurrentUserDep) -> User:
+    if not user.is_admin:
+        raise CodedHTTPException(403, "Ehhez adminisztrátori profil kell.", "admin_required")
+    return user
+
+
+AdminDep = Annotated[User, Depends(admin_dep)]
 
 
 def get_title_or_404(session: Session, title_id: int) -> Title:

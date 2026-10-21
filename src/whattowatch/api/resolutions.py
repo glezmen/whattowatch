@@ -1,4 +1,8 @@
-"""Open title resolutions from imports and their manual fixing."""
+"""Open title resolutions from imports and their manual fixing.
+
+Resolutions are a shared cache keyed by `(source, lookup_key)`; a profile sees (and may
+fix) only those its own import rows point at, and only its own rows as context.
+"""
 
 from __future__ import annotations
 
@@ -8,12 +12,12 @@ from typing import Annotated, Any, Literal
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.orm import Session
 
 from whattowatch.adapters.prime_export import clean
 from whattowatch.adapters.tmdb import TmdbError
-from whattowatch.api.deps import SessionDep, TmdbDep
+from whattowatch.api.deps import CurrentUserDep, SessionDep, TmdbDep
 from whattowatch.api.schemas import (
     CandidateDetails,
     Page,
@@ -127,7 +131,7 @@ def _context(rows: list[_RowData]) -> ResolutionContext:
     )
 
 
-def _items(session: Session, rows: list[TitleResolution]) -> list[ResolutionItem]:
+def _items(session: Session, rows: list[TitleResolution], user_id: int) -> list[ResolutionItem]:
     ids = [r.id for r in rows]
     texts: dict[int, str] = {}
     linked: dict[int, list[_RowData]] = defaultdict(list)
@@ -141,7 +145,7 @@ def _items(session: Session, rows: list[TitleResolution]) -> list[ResolutionItem
                 ImportRow.raw,
                 ImportRow.profile_name,
             )
-            .where(ImportRow.resolution_id.in_(ids))
+            .where(ImportRow.user_id == user_id, ImportRow.resolution_id.in_(ids))
             .order_by(ImportRow.id)
         )
         for rid, text, source, parsed, raw, profile in session.execute(query):
@@ -169,9 +173,28 @@ def _items(session: Session, rows: list[TitleResolution]) -> list[ResolutionItem
     ]
 
 
+def _mine(user_id: int) -> ColumnElement[bool]:
+    """Resolutions referenced by at least one import row of `user_id`."""
+    return TitleResolution.id.in_(
+        select(ImportRow.resolution_id).where(
+            ImportRow.user_id == user_id, ImportRow.resolution_id.is_not(None)
+        )
+    )
+
+
+def _get_mine(session: Session, resolution_id: int, user_id: int) -> TitleResolution:
+    row = session.scalar(
+        select(TitleResolution).where(TitleResolution.id == resolution_id, _mine(user_id))
+    )
+    if row is None:
+        raise _not_found(resolution_id)
+    return row
+
+
 @router.get("", response_model=Page[ResolutionItem])
 def list_resolutions(
     session: SessionDep,
+    user: CurrentUserDep,
     status: OpenStatus | None = None,
     source: ImportSource | None = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 50,
@@ -179,13 +202,13 @@ def list_resolutions(
 ) -> Page[ResolutionItem]:
     """Ambiguous/unresolved resolutions (both unless `status` is given), oldest first."""
     statuses = [status] if status else ["ambiguous", "unresolved"]
-    query = select(TitleResolution).where(TitleResolution.status.in_(statuses))
+    query = select(TitleResolution).where(TitleResolution.status.in_(statuses), _mine(user.id))
     if source:
         query = query.where(TitleResolution.source == source)
     total = session.scalar(select(func.count()).select_from(query.subquery())) or 0
     rows = list(session.scalars(query.order_by(TitleResolution.id).limit(limit).offset(offset)))
     return Page[ResolutionItem](
-        items=_items(session, rows), total=total, limit=limit, offset=offset
+        items=_items(session, rows, user.id), total=total, limit=limit, offset=offset
     )
 
 
@@ -194,11 +217,8 @@ def _not_found(resolution_id: int) -> HTTPException:
 
 
 @router.get("/{resolution_id}", response_model=ResolutionItem)
-def get_resolution(resolution_id: int, session: SessionDep) -> ResolutionItem:
-    row = session.get(TitleResolution, resolution_id)
-    if row is None:
-        raise _not_found(resolution_id)
-    return _items(session, [row])[0]
+def get_resolution(resolution_id: int, session: SessionDep, user: CurrentUserDep) -> ResolutionItem:
+    return _items(session, [_get_mine(session, resolution_id, user.id)], user.id)[0]
 
 
 MAX_DETAIL_CANDIDATES = 5
@@ -206,12 +226,10 @@ MAX_DETAIL_CANDIDATES = 5
 
 @router.get("/{resolution_id}/candidates/details", response_model=list[CandidateDetails])
 def candidate_details(
-    resolution_id: int, session: SessionDep, tmdb: TmdbDep
+    resolution_id: int, session: SessionDep, user: CurrentUserDep, tmdb: TmdbDep
 ) -> list[CandidateDetails]:
     """TMDB details (runtime/seasons/...) of the first 5 candidates; nothing is persisted."""
-    row = session.get(TitleResolution, resolution_id)
-    if row is None:
-        raise _not_found(resolution_id)
+    row = _get_mine(session, resolution_id, user.id)
     out: list[CandidateDetails] = []
     for c in (row.candidates or [])[:MAX_DETAIL_CANDIDATES]:
         media_type, tmdb_id = c["media_type"], int(c["tmdb_id"])
@@ -238,20 +256,26 @@ def candidate_details(
 
 @router.post("/{resolution_id}/set", response_model=ResolutionActionResponse)
 def set_resolution(
-    resolution_id: int, body: TitleRef, session: SessionDep, tmdb: TmdbDep
+    resolution_id: int, body: TitleRef, session: SessionDep, user: CurrentUserDep, tmdb: TmdbDep
 ) -> ResolutionActionResponse:
-    """Link to a TMDB title by hand; imported rows are rebuilt only by re-running the import."""
-    if session.get(TitleResolution, resolution_id) is None:
-        raise _not_found(resolution_id)
+    """Link to a TMDB title by hand; imported rows are rebuilt only by re-running the import.
+
+    The resolution is shared by lookup key: the fix applies to every profile's rows."""
+    _get_mine(session, resolution_id, user.id)
     row = set_manual_resolution(session, tmdb, resolution_id, body.media_type, body.tmdb_id)
     session.commit()
-    return ResolutionActionResponse(resolution=_items(session, [row])[0], reimport_needed=True)
+    return ResolutionActionResponse(
+        resolution=_items(session, [row], user.id)[0], reimport_needed=True
+    )
 
 
 @router.post("/{resolution_id}/reject", response_model=ResolutionActionResponse)
-def reject(resolution_id: int, session: SessionDep) -> ResolutionActionResponse:
-    if session.get(TitleResolution, resolution_id) is None:
-        raise _not_found(resolution_id)
+def reject(
+    resolution_id: int, session: SessionDep, user: CurrentUserDep
+) -> ResolutionActionResponse:
+    _get_mine(session, resolution_id, user.id)
     row = reject_resolution(session, resolution_id)
     session.commit()
-    return ResolutionActionResponse(resolution=_items(session, [row])[0], reimport_needed=False)
+    return ResolutionActionResponse(
+        resolution=_items(session, [row], user.id)[0], reimport_needed=False
+    )
