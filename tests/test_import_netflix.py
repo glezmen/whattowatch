@@ -243,6 +243,11 @@ def test_mylist_and_ratings(export_dir: Path, session: Session) -> None:
     assert rating.rated_at is not None and rating.rated_at.month == 2
     langs = {c["source"]: c["language"] for c in session.info["calls"]}
     assert langs == {"netflix_viewing": "hu", "netflix_mylist": "en", "netflix_ratings": "en"}
+    years = {(c["source"], c["title_text"]): c["max_year"] for c in session.info["calls"]}
+    assert years[("netflix_viewing", "Dark")] == 2024
+    assert years[("netflix_mylist", "Dark")] == 2023
+    assert years[("netflix_ratings", "Inception")] == 2024
+    assert {c["expected_provider_key"] for c in session.info["calls"]} == {"netflix"}
 
 
 def test_import_is_idempotent(export_dir: Path, session: Session) -> None:

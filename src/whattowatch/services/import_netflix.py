@@ -62,11 +62,18 @@ def _resolve(
     title_text: str,
     media_type_hint: MediaType | None,
     language: Literal["hu", "en"],
+    max_year: int | None,
+    expected_provider_key: str | None,
 ) -> TitleResolution:
     from whattowatch.services.title_resolution import ResolveRequest, resolve_title
 
     req = ResolveRequest(
-        source=source, title_text=title_text, media_type_hint=media_type_hint, language=language
+        source=source,
+        title_text=title_text,
+        media_type_hint=media_type_hint,
+        language=language,
+        max_year=max_year,
+        expected_provider_key=expected_provider_key,
     )
     return resolve_title(session, tmdb, req)
 
@@ -99,6 +106,13 @@ def _upsert(session: Session, model: Any, keys: dict[str, Any], values: dict[str
             setattr(obj, name, value)
             changed = True
     return "updated" if changed else "unchanged"
+
+
+def _min_year(rows: list[ImportRow], field: str) -> int | None:
+    """Year of the earliest event in `parsed[field]` (ISO datetime/date) across rows."""
+    values = [r.parsed.get(field) for r in rows]
+    years = [datetime.fromisoformat(v).year for v in values if v]
+    return min(years) if years else None
 
 
 def _usable(res: TitleResolution) -> bool:
@@ -153,6 +167,7 @@ class _Importer:
         hint: MediaType | None,
         language: Literal["hu", "en"],
         rows: list[ImportRow],
+        date_field: str,
     ) -> int | None:
         res = _resolve(
             self.session,
@@ -161,6 +176,8 @@ class _Importer:
             title_text=title,
             media_type_hint=hint,
             language=language,
+            max_year=_min_year(rows, date_field),
+            expected_provider_key="netflix",
         )
         self.session.flush()
         for r in rows:
@@ -212,7 +229,7 @@ class _Importer:
         by_title: dict[int, list[dict[str, Any]]] = defaultdict(list)
         for (display, kind), rows in sorted(groups.items()):
             hint: MediaType | None = "tv" if kind == "episode" else None
-            title_id = self._resolve_group(source, display, hint, "hu", rows)
+            title_id = self._resolve_group(source, display, hint, "hu", rows, "start_time")
             if title_id is None:
                 continue
             for r in rows:
@@ -258,7 +275,7 @@ class _Importer:
         for r in self._stored_rows(source):
             groups[r.title_text].append(r)
         for title, rows in sorted(groups.items()):
-            title_id = self._resolve_group(source, title, None, "en", rows)
+            title_id = self._resolve_group(source, title, None, "en", rows, "added_on")
             if title_id is None:
                 continue
             dates = sorted(r.parsed["added_on"] for r in rows if r.parsed.get("added_on"))
@@ -289,7 +306,7 @@ class _Importer:
         for title, rows in sorted(groups.items()):
             latest = max(rows, key=lambda r: (r.parsed.get("event_ts") or "", r.id))
             value = latest.parsed.get("thumbs_value")
-            title_id = self._resolve_group(source, title, None, "en", rows)
+            title_id = self._resolve_group(source, title, None, "en", rows, "event_ts")
             if title_id is None:
                 continue
             if value not in THUMBS_NORMALIZED:

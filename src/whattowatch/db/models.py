@@ -24,7 +24,14 @@ ImportSource = Literal[
     "netflix_viewing", "netflix_mylist", "netflix_ratings", "imdb_ratings", "imdb_watchlist"
 ]
 ResolutionStatus = Literal["resolved", "ambiguous", "unresolved", "manual", "rejected"]
-ResolutionMethod = Literal["imdb_id", "tmdb_search_exact", "tmdb_search_fuzzy", "manual"]
+ResolutionMethod = Literal[
+    "imdb_id",
+    "tmdb_search_exact",
+    "tmdb_search_fuzzy",
+    "tmdb_search_provider",
+    "tmdb_search_popularity",
+    "manual",
+]
 WatchStatus = Literal["watched", "in_progress", "abandoned"]
 RatingScale = Literal["1-10", "thumbs0-3", "1-5", "0-10"]
 OfferType = Literal["flatrate", "rent", "buy", "ads", "free"]
