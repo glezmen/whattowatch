@@ -220,3 +220,24 @@ def test_links_endpoint_without_sa_and_errors(api: ApiEnv) -> None:
     r = api.client.get(f"/api/titles/{api.ids[101]}/links")
     assert r.status_code == 200 and r.json()["refreshed"] is False
     assert api.client.get("/api/titles/999999/links").status_code == 404
+
+
+APP = "https://app.primevideo.com/detail?gti=amzn1.dv.gti.414eb1af"
+WEB = "https://www.primevideo.com/detail/0J0SQMKFG51K9S3UTU9SDEMT7D?ref_=atv_dp"
+
+
+def test_get_links_prefers_web_link_over_app_link(db: tuple[Session, Title]) -> None:
+    session, title = db
+    sa = FakeSA([opt("prime", "subscription", APP), opt("prime", "buy", WEB)])
+    res = get_links(session, sa, title, now=NOW)  # type: ignore[arg-type]
+    urls = {(i.provider_key, i.offer_type): i.url for i in res.items}
+    assert urls == {("prime_video", "flatrate"): WEB, ("prime_video", "buy"): WEB}
+    stored = sa_rows(session, title)[(119, "flatrate")]
+    assert stored.deep_link == APP  # stored data stays raw
+
+
+def test_get_links_keeps_app_link_when_only_option(db: tuple[Session, Title]) -> None:
+    session, title = db
+    sa = FakeSA([opt("prime", "subscription", APP)])
+    res = get_links(session, sa, title, now=NOW)  # type: ignore[arg-type]
+    assert [(i.offer_type, i.url) for i in res.items] == [("flatrate", APP)]

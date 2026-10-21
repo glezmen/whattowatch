@@ -11,8 +11,10 @@ best-effort (unverified) provider search URL instead.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from urllib.parse import urlsplit
 
 import httpx
 from sqlalchemy import select
@@ -58,6 +60,30 @@ class LinksResult:
 
 def _aware(dt: datetime) -> datetime:
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
+
+
+def _is_app_link(url: str) -> bool:
+    return (urlsplit(url).hostname or "").startswith("app.")
+
+
+def pick_provider_link(rows: Iterable[Availability], offer_type: str | None = None) -> str | None:
+    """Best link for one provider + title among its availability rows (read-time choice).
+
+    App deep links (host `app.*`, e.g. Prime's `app.primevideo.com`) do not open the title
+    page in a desktop browser, so a web link from any offer type is preferred; the app link
+    is the fallback. Within each class the newest-fetched row wins. With `offer_type`, a
+    link is returned only if a row of that type has one (no rent link for a flatrate
+    badge when the flatrate option itself is unlinked)."""
+    linked = [r for r in rows if r.deep_link]
+    if offer_type is not None and not any(r.offer_type == offer_type for r in linked):
+        return None
+
+    def newest(r: Availability) -> tuple[datetime, int]:
+        return _aware(r.deep_link_fetched_at or r.last_seen_at), r.id or 0
+
+    web = [r for r in linked if not _is_app_link(r.deep_link or "")]
+    pool = web or [r for r in linked if offer_type is None or r.offer_type == offer_type]
+    return max(pool, key=newest).deep_link if pool else None
 
 
 def refresh_deep_links(
@@ -151,7 +177,9 @@ def _cached_items(session: Session, title: Title, enabled: set[str]) -> list[Lin
         )
     ).all()
     best: dict[tuple[str, str], Availability] = {}
+    by_provider: dict[str, list[Availability]] = {}
     for row, key in rows:
+        by_provider.setdefault(key, []).append(row)
         k = (key, row.offer_type)
         cur = best.get(k)
         stamp = _aware(row.deep_link_fetched_at or row.last_seen_at)
@@ -161,7 +189,7 @@ def _cached_items(session: Session, title: Title, enabled: set[str]) -> list[Lin
         LinkItem(
             provider_key=key,
             offer_type=offer_type,
-            url=row.deep_link or "",
+            url=pick_provider_link(by_provider[key], offer_type) or row.deep_link or "",
             source=row.source,
             fetched_at=_aware(row.deep_link_fetched_at) if row.deep_link_fetched_at else None,
         )

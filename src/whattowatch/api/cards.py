@@ -27,6 +27,7 @@ from whattowatch.db.models import (
     WatchlistItem,
 )
 from whattowatch.providers import BY_KEY, SUBSCRIPTIONS
+from whattowatch.services.deep_links import pick_provider_link
 from whattowatch.services.feedback import APP_SOURCE, MANUAL_WATCH_SOURCE
 from whattowatch.services.subscriptions import enabled_keys
 
@@ -98,12 +99,6 @@ def _availability(
             confidence = "stale"
         leaving_at, leaving_confidence = _dated(group, "leaving_at", "leaving_confidence")
         arriving_at, arriving_confidence = _dated(group, "arriving_at", "arriving_confidence")
-        linked = [r for r in group if r.deep_link and r.offer_type == row.offer_type]
-        link_row = max(
-            linked,
-            key=lambda r: (_aware(r.deep_link_fetched_at or r.last_seen_at), r.id),
-            default=None,
-        )
         out.setdefault(title_id, []).append(
             AvailabilityEntry(
                 provider_key=key,
@@ -117,7 +112,7 @@ def _availability(
                 arriving_at=arriving_at,
                 arriving_confidence=arriving_confidence,
                 enabled=key in enabled,
-                deep_link=link_row.deep_link if link_row is not None else None,
+                deep_link=pick_provider_link(group, row.offer_type),
             )
         )
     return out
