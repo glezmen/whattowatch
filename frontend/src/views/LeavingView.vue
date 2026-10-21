@@ -3,9 +3,11 @@ import { ref } from 'vue'
 import type { UpdatesResponse } from '../api/client'
 import UpdateSectionList from '../components/UpdateSectionList.vue'
 import DaysSelector from '../components/DaysSelector.vue'
+import WatchlistToggle from '../components/WatchlistToggle.vue'
 
 const days = ref(31)
 const saMissing = ref(false)
+const filteredWatchlist = ref(0)
 
 function onStatus(s: UpdatesResponse['source_status']) {
   saMissing.value = s.streaming_availability === false
@@ -19,6 +21,7 @@ function onStatus(s: UpdatesResponse['source_status']) {
   </div>
   <div class="toolbar">
     <DaysSelector v-model="days" />
+    <WatchlistToggle :hidden="filteredWatchlist" />
     <span class="small muted">{{ $t('leaving.hint') }}</span>
   </div>
   <UpdateSectionList
@@ -27,5 +30,6 @@ function onStatus(s: UpdatesResponse['source_status']) {
     sort-by-date
     :empty-text="$t('leaving.empty')"
     @status="onStatus"
+    @filtered="(n: number) => (filteredWatchlist = n)"
   />
 </template>

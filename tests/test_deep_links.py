@@ -131,6 +131,39 @@ def test_get_links_uses_fresh_cache(db: tuple[Session, Title]) -> None:
     assert stale.refreshed and len(sa.calls) == 2
 
 
+class NotFoundSA(FakeSA):
+    def show_by_tmdb(
+        self, media_type: str, tmdb_id: int, *, country: str = "hu"
+    ) -> SAShowDetail | None:
+        self.calls.append((media_type, tmdb_id))
+        return None
+
+
+@pytest.mark.parametrize("sa", [FakeSA([]), FakeSA([opt("mubi", "subscription")]), NotFoundSA()])
+def test_get_links_checked_title_without_options_is_not_refetched(
+    db: tuple[Session, Title], sa: FakeSA
+) -> None:
+    session, title = db
+    first = get_links(session, sa, title, now=NOW)  # type: ignore[arg-type]
+    assert first.refreshed and first.items == [] and len(sa.calls) == 1
+    assert sa_rows(session, title) == {}
+    assert title.deep_links_checked_at is not None
+    assert title.deep_links_checked_at.replace(tzinfo=UTC) == NOW
+    again = get_links(session, sa, title, now=NOW + timedelta(days=6))  # type: ignore[arg-type]
+    assert not again.refreshed and len(sa.calls) == 1
+    stale = get_links(session, sa, title, now=NOW + timedelta(days=8))  # type: ignore[arg-type]
+    assert stale.refreshed and len(sa.calls) == 2
+
+
+def test_failed_sa_call_does_not_mark_checked(db: tuple[Session, Title]) -> None:
+    session, title = db
+    failing = FakeSA(error=True)
+    get_links(session, failing, title, now=NOW)  # type: ignore[arg-type]
+    assert title.deep_links_checked_at is None
+    get_links(session, failing, title, now=NOW)  # type: ignore[arg-type]
+    assert len(failing.calls) == 2
+
+
 def test_get_links_without_sa_is_fallback_only(db: tuple[Session, Title]) -> None:
     session, title = db
     result = get_links(session, None, title, now=NOW)

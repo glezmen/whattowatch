@@ -227,16 +227,33 @@ def test_not_interested_and_watchlist_round_trip(api: ApiEnv) -> None:
 
 
 def test_titles_default_only_fresh_verified(api: ApiEnv) -> None:
-    page = api.client.get("/api/titles").json()
+    page = api.client.get("/api/titles", params={"include_watchlist": True}).json()
     assert page["total"] == len(POPULAR_VERIFIED)
     assert (page["limit"], page["offset"]) == (50, 0)
     assert _tmdb(api, page["items"]) == POPULAR_VERIFIED
-    page = api.client.get("/api/titles", params={"include_unverified": True}).json()
+    page = api.client.get(
+        "/api/titles", params={"include_unverified": True, "include_watchlist": True}
+    ).json()
     assert page["total"] == 20
+
+
+def test_titles_exclude_active_watchlist_by_default(api: ApiEnv) -> None:
+    # 107 and 108 are on an active watchlist; only 107 is fresh verified.
+    r = api.client.get("/api/titles")
+    assert r.headers["X-Filtered-Watchlist"] == "1"
+    assert r.json()["total"] == len(POPULAR_VERIFIED) - 1
+    assert _tmdb(api, r.json()["items"]) == [t for t in POPULAR_VERIFIED if t != 107]
+    r = api.client.get("/api/titles", params={"include_unverified": True})
+    assert r.headers["X-Filtered-Watchlist"] == "2" and r.json()["total"] == 18
+    r = api.client.get("/api/titles", params={"provider": "netflix"})  # same filters
+    assert r.headers["X-Filtered-Watchlist"] == "0"
+    r = api.client.get("/api/titles", params={"include_watchlist": True})
+    assert r.headers["X-Filtered-Watchlist"] == "0" and 107 in _tmdb(api, r.json()["items"])
 
 
 def test_titles_filters(api: ApiEnv) -> None:
     def ids(**params: object) -> list[int]:
+        params.setdefault("include_watchlist", True)
         r = api.client.get("/api/titles", params=params)  # type: ignore[arg-type]
         assert r.status_code == 200, r.text
         return _tmdb(api, r.json()["items"])
@@ -293,6 +310,19 @@ def test_history(api: ApiEnv) -> None:
     api.client.put(f"/api/titles/{api.ids[112]}/rating", json={"stars": 3})
     page = api.client.get("/api/history", params={"exclude_rated": True}).json()
     assert {inv[i["title"]["id"]] for i in page["items"]} == {101, 104, 113}
+
+
+def test_history_watchlist_filter(api: ApiEnv) -> None:
+    inv = {v: k for k, v in api.ids.items()}
+    api.client.put(f"/api/titles/{api.ids[108]}/rating", json={"stars": 4})  # stays on list
+    r = api.client.get("/api/history")
+    assert r.headers["X-Filtered-Watchlist"] == "1" and r.json()["total"] == 9
+    assert 108 not in {inv[i["title"]["id"]] for i in r.json()["items"]}
+    r = api.client.get("/api/history", params={"include_watchlist": True})
+    assert r.headers["X-Filtered-Watchlist"] == "0" and r.json()["total"] == 10
+    assert 108 in {inv[i["title"]["id"]] for i in r.json()["items"]}
+    r = api.client.get("/api/history", params={"status": "abandoned"})
+    assert r.headers["X-Filtered-Watchlist"] == "0"
 
 
 def test_watchlist(api: ApiEnv) -> None:

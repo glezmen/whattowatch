@@ -565,10 +565,22 @@ export interface RecommendationsResult {
   filteredWatchlist: number
 }
 
+function filteredWatchlistOf(headers: Headers): number {
+  const n = Number.parseInt(headers.get('X-Filtered-Watchlist') ?? '', 10)
+  return Number.isFinite(n) && n > 0 ? n : 0
+}
+
 async function fetchRecommendations(p: Query): Promise<RecommendationsResult> {
   const { data, headers } = await requestWithHeaders<RecommendationItem[]>('GET', `/recommendations${qs(p)}`)
-  const n = Number.parseInt(headers.get('X-Filtered-Watchlist') ?? '', 10)
-  return { items: data ?? [], filteredWatchlist: Number.isFinite(n) && n > 0 ? n : 0 }
+  return { items: data ?? [], filteredWatchlist: filteredWatchlistOf(headers) }
+}
+
+/** A response body plus the X-Filtered-Watchlist count (titles hidden because they are on the watchlist). */
+export type WithFilteredWatchlist<T> = T & { filteredWatchlist: number }
+
+async function getWithFilteredWatchlist<T extends object>(path: string): Promise<WithFilteredWatchlist<T>> {
+  const { data, headers } = await requestWithHeaders<T>('GET', path)
+  return { ...data, filteredWatchlist: filteredWatchlistOf(headers) }
 }
 
 const enc = encodeURIComponent
@@ -589,9 +601,10 @@ export const api = {
     provider?: string
     genre?: string
     seen?: boolean | null
+    include_watchlist?: boolean
     limit?: number
     offset?: number
-  }) => request<Page<TitleCard>>('GET', `/titles${qs(p)}`),
+  }) => getWithFilteredWatchlist<Page<TitleCard>>(`/titles${qs(p)}`),
 
   putFeedback: (id: number, body: { liked_text?: string | null; disliked_text?: string | null }) =>
     request<FeedbackResponse>('PUT', `/titles/${id}/feedback`, body),
@@ -607,8 +620,15 @@ export const api = {
 
   getWatchlist: (p: { source?: string; available?: boolean; limit?: number; offset?: number }) =>
     request<Page<WatchlistEntry>>('GET', `/watchlist${qs(p)}`),
-  getHistory: (p: { q?: string; status?: string; source?: string; exclude_rated?: boolean; limit?: number; offset?: number }) =>
-    request<Page<HistoryItem>>('GET', `/history${qs(p)}`),
+  getHistory: (p: {
+    q?: string
+    status?: string
+    source?: string
+    exclude_rated?: boolean
+    include_watchlist?: boolean
+    limit?: number
+    offset?: number
+  }) => getWithFilteredWatchlist<Page<HistoryItem>>(`/history${qs(p)}`),
 
   searchTmdb: (q: string, media_type?: MediaType | '') =>
     request<SearchHit[]>('GET', `/search/tmdb${qs({ q, media_type })}`),
@@ -627,8 +647,10 @@ export const api = {
   postChat: (messages: ChatMessage[], provider?: LlmProviderName | string) =>
     request<ChatResult>('POST', '/chat', { messages, provider: provider || undefined }),
 
-  getUpdates: (section: UpdateSection, days = 31, limit = 50) =>
-    request<UpdatesResponse>('GET', `/updates${qs({ section, days, limit })}`),
+  getUpdates: (section: UpdateSection, days = 31, limit = 50, includeWatchlist = false) =>
+    getWithFilteredWatchlist<UpdatesResponse>(
+      `/updates${qs({ section, days, limit, include_watchlist: includeWatchlist })}`,
+    ),
   getNotifications: (unread = true, limit = 50) =>
     request<NotificationItem[]>('GET', `/notifications${qs({ unread, limit })}`),
   markNotificationRead: (id: number) => request<NotificationItem>('POST', `/notifications/${id}/read`),

@@ -52,6 +52,7 @@ from whattowatch.providers import BY_KEY
 from whattowatch.services import deep_links
 from whattowatch.services import feedback as fb
 from whattowatch.services.catalog import ensure_title
+from whattowatch.services.recommend.candidates import active_watchlist_ids
 
 router = APIRouter(tags=["titles"])
 
@@ -93,6 +94,7 @@ def page_titles(
 
 @router.get("/titles", response_model=Page[TitleCard])
 def list_titles(
+    response: Response,
     session: SessionDep,
     cfg: RecommenderConfigDep,
     now: NowDep,
@@ -102,10 +104,15 @@ def list_titles(
     genre: str | None = None,
     seen: bool | None = None,
     include_unverified: bool = False,
+    include_watchlist: bool = False,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> Page[TitleCard]:
-    """Local catalog; by default only titles with a fresh verified flatrate on the six."""
+    """Local catalog; by default only titles with a fresh verified flatrate on the six.
+
+    Titles on an active watchlist are left out unless `include_watchlist`;
+    `X-Filtered-Watchlist` carries how many matched the other filters but were hidden.
+    """
     if provider is not None and provider not in BY_KEY:
         raise HTTPException(status_code=422, detail=f"Ismeretlen szolgáltató: {provider}")
     query = select(Title)
@@ -139,6 +146,13 @@ def list_titles(
     if seen is not None:
         seen_ids = seen_title_ids(session)
         query = query.where(Title.id.in_(seen_ids) if seen else Title.id.not_in(seen_ids))
+    response.headers["X-Filtered-Watchlist"] = "0"
+    if not include_watchlist:
+        on_list = active_watchlist_ids(session)
+        if on_list:
+            hidden = select(func.count()).select_from(query.where(Title.id.in_(on_list)).subquery())
+            response.headers["X-Filtered-Watchlist"] = str(session.scalar(hidden) or 0)
+            query = query.where(Title.id.not_in(on_list))
     query = query.order_by(Title.popularity.desc().nulls_last(), Title.id)
     items, total = page_titles(query, session, limit, offset)
     return Page[TitleCard](

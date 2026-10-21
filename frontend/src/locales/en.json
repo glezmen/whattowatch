@@ -201,10 +201,12 @@
     "refreshing": "Building new recommendations; checking TMDB availability can take a while…",
     "generated": "Generated: {date}",
     "empty": "No recommendations yet. Click “Refresh”.",
-    "noSubscriptions": "No subscriptions are switched on, so there's nothing to recommend. Turn on your services in Settings.",
-    "includeWatchlist": "Show titles on my watchlist",
-    "watchlistHidden": "{n} title on your watchlist hidden. | {n} titles on your watchlist hidden.",
-    "showWatchlist": "Show them"
+    "noSubscriptions": "No subscriptions are switched on, so there's nothing to recommend. Turn on your services in Settings."
+  },
+  "watchlistToggle": {
+    "label": "Show titles on my watchlist",
+    "hidden": "{n} title on your watchlist hidden. | {n} titles on your watchlist hidden.",
+    "show": "Show them"
   },
   "onboarding": {
     "title": "Let's get started",

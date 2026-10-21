@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { api, type UpdateItem, type UpdatesResponse, type UpdateSection } from '../api/client'
+import { includeWatchlist } from '../appSettings'
 import UpdateItemCard from './UpdateItemCard.vue'
 
 const props = defineProps<{
@@ -11,7 +12,11 @@ const props = defineProps<{
   /** Sort by event date ascending, undated items last. */
   sortByDate?: boolean
 }>()
-const emit = defineEmits<{ status: [status: UpdatesResponse['source_status']] }>()
+const emit = defineEmits<{
+  status: [status: UpdatesResponse['source_status']]
+  /** Titles left out because they are on the watchlist (X-Filtered-Watchlist). */
+  filtered: [count: number]
+}>()
 
 const items = ref<UpdateItem[]>([])
 const loading = ref(false)
@@ -39,9 +44,10 @@ async function load() {
   loading.value = true
   failed.value = false
   try {
-    const res = await api.getUpdates(props.section, props.days)
+    const res = await api.getUpdates(props.section, props.days, 50, includeWatchlist.value)
     items.value = res.items
     emit('status', res.source_status)
+    emit('filtered', res.filteredWatchlist)
   } catch {
     failed.value = true
     items.value = []
@@ -50,7 +56,7 @@ async function load() {
   }
 }
 
-watch(() => props.days, load)
+watch([() => props.days, includeWatchlist], load)
 onMounted(load)
 </script>
 

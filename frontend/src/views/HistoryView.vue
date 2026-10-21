@@ -2,10 +2,12 @@
 import { onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api, type HistoryItem, type UserState } from '../api/client'
+import { includeWatchlist } from '../appSettings'
 import DescriptionToggle from '../components/DescriptionToggle.vue'
 import FeedbackPanel from '../components/FeedbackPanel.vue'
 import Pagination from '../components/Pagination.vue'
 import PosterWithOverview from '../components/PosterWithOverview.vue'
+import WatchlistToggle from '../components/WatchlistToggle.vue'
 import { fmtDateTime, mediaTypeLabel, sourceLabel } from '../format'
 import { displayTitle, secondaryTitle } from '../titles'
 
@@ -16,6 +18,7 @@ const items = ref<HistoryItem[]>([])
 const total = ref(0)
 const offset = ref(0)
 const loading = ref(false)
+const filteredWatchlist = ref(0)
 const expanded = ref<number | null>(null)
 const HIDE_KEY = 'history_hide_rated'
 function readHide(): boolean {
@@ -37,9 +40,17 @@ function statusLabel(s: string): string {
 async function load() {
   loading.value = true
   try {
-    const page = await api.getHistory({ q: q.value.trim(), status: status.value, exclude_rated: hideRated.value, limit: LIMIT, offset: offset.value })
+    const page = await api.getHistory({
+      q: q.value.trim(),
+      status: status.value,
+      exclude_rated: hideRated.value,
+      include_watchlist: includeWatchlist.value,
+      limit: LIMIT,
+      offset: offset.value,
+    })
     items.value = page.items
     total.value = page.total
+    filteredWatchlist.value = page.filteredWatchlist
   } catch {
     // toast already shown
   } finally {
@@ -58,6 +69,11 @@ watch(hideRated, (v) => {
   } catch {
     // storage unavailable
   }
+  clearTimeout(timer)
+  offset.value = 0
+  load()
+})
+watch(includeWatchlist, () => {
   clearTimeout(timer)
   offset.value = 0
   load()
@@ -95,6 +111,7 @@ function statusOf(it: HistoryItem): string {
       <option v-for="s in STATUSES" :key="s" :value="s">{{ statusLabel(s) }}</option>
     </select>
     <label class="hide-rated"><input v-model="hideRated" type="checkbox" /> {{ t('history.hideRated') }}</label>
+    <WatchlistToggle :hidden="filteredWatchlist" />
   </div>
   <p v-if="loading && !items.length" class="empty"><span class="spinner"></span> {{ t('common.loading') }}</p>
   <p v-else-if="!items.length" class="empty">{{ t('history.empty') }}</p>

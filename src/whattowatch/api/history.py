@@ -5,13 +5,14 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Response
 from sqlalchemy import or_, select
 
 from whattowatch.api.cards import title_cards
 from whattowatch.api.deps import NowDep, RecommenderConfigDep, SessionDep
 from whattowatch.api.schemas import HistoryEntry, Page, WatchEventOut
 from whattowatch.db.models import Title, TitleRating, WatchEvent, WatchStatus
+from whattowatch.services.recommend.candidates import active_watchlist_ids
 
 router = APIRouter(prefix="/history", tags=["history"])
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
@@ -25,6 +26,7 @@ def _aware(dt: datetime | None) -> datetime | None:
 
 @router.get("", response_model=Page[HistoryEntry])
 def get_history(
+    response: Response,
     session: SessionDep,
     cfg: RecommenderConfigDep,
     now: NowDep,
@@ -32,6 +34,7 @@ def get_history(
     status: WatchStatus | None = None,
     source: str | None = None,
     exclude_rated: bool = False,
+    include_watchlist: bool = False,
     limit: Annotated[int, Query(ge=1, le=500)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> Page[HistoryEntry]:
@@ -40,6 +43,8 @@ def get_history(
     `status` keeps titles with an event of that status; `source` keeps titles with an
     event or personal rating from that source. Each row lists all of the title's events.
     `exclude_rated` drops titles with any personal rating. Titles without any date sort last.
+    Titles on an active watchlist are left out unless `include_watchlist`
+    (`X-Filtered-Watchlist` = how many were hidden).
     """
     events: dict[int, list[WatchEvent]] = {}
     for ev in session.scalars(select(WatchEvent).order_by(WatchEvent.source)):
@@ -79,6 +84,12 @@ def get_history(
                 )
             )
         )
+
+    response.headers["X-Filtered-Watchlist"] = "0"
+    if not include_watchlist and ids:
+        on_list = ids & active_watchlist_ids(session)
+        response.headers["X-Filtered-Watchlist"] = str(len(on_list))
+        ids -= on_list
 
     def last_watched(tid: int) -> datetime | None:
         dates = [d for d in (_aware(e.last_watched_at) for e in events.get(tid, [])) if d]

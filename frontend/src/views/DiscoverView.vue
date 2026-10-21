@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { api, type MediaType, type TitleCard as Card } from '../api/client'
+import { includeWatchlist } from '../appSettings'
 import Pagination from '../components/Pagination.vue'
 import TitleCard from '../components/TitleCard.vue'
+import WatchlistToggle from '../components/WatchlistToggle.vue'
 import { intlLocale } from '../i18n'
 import { PROVIDERS } from '../providers'
 
@@ -12,6 +14,7 @@ const offset = ref(0)
 const items = ref<Card[]>([])
 const total = ref(0)
 const loading = ref(false)
+const filteredWatchlist = ref(0)
 const knownGenres = ref(new Set<string>())
 const genreList = computed(() => [...knownGenres.value].sort((a, b) => a.localeCompare(b, intlLocale())))
 
@@ -24,11 +27,13 @@ async function load() {
       provider: f.provider,
       genre: f.genre.trim(),
       seen: f.seen === '' ? null : f.seen === 'true',
+      include_watchlist: includeWatchlist.value,
       limit: LIMIT,
       offset: offset.value,
     })
     items.value = page.items
     total.value = page.total
+    filteredWatchlist.value = page.filteredWatchlist
     for (const t of page.items) for (const g of t.genres) knownGenres.value.add(g)
   } catch {
     // toast already shown
@@ -48,6 +53,11 @@ watch(
     }, 300)
   },
 )
+watch(includeWatchlist, () => {
+  clearTimeout(timer)
+  offset.value = 0
+  load()
+})
 onMounted(load)
 
 function goto(o: number) {
@@ -76,6 +86,7 @@ function goto(o: number) {
       <option value="false">{{ $t('discover.seenFalse') }}</option>
       <option value="true">{{ $t('discover.seenTrue') }}</option>
     </select>
+    <WatchlistToggle :hidden="filteredWatchlist" />
   </div>
   <div class="toolbar" role="group" :aria-label="$t('discover.provider')">
     <button type="button" class="toggle" :class="{ active: f.provider === '' }" @click="f.provider = ''">{{ $t('common.all') }}</button>

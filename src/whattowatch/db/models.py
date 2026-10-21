@@ -108,6 +108,11 @@ class Title(TimestampMixin, Base):
     vote_count: Mapped[int | None]
     poster_path: Mapped[str | None] = mapped_column(String)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # Last Streaming Availability per-show lookup (any outcome, incl. 404 / no options);
+    # guards the SA quota so titles without HU options are not re-asked on every view.
+    deep_links_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
 
     ratings: Mapped[list[TitleRating]] = relationship(
         back_populates="title", cascade="all, delete-orphan"

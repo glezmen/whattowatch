@@ -135,6 +135,22 @@ def test_other_sections(api: ApiEnv, seeded: dict[str, int]) -> None:
     assert len(api.client.get("/api/updates?section=leaving&limit=1").json()["items"]) == 1
 
 
+def test_updates_watchlist_filter(api: ApiEnv, seeded: dict[str, int]) -> None:
+    _event(api.session, api.ids[108], "netflix", "new", TODAY - timedelta(days=2))
+    _event(api.session, api.ids[108], "hbo_max", "new", TODAY - timedelta(days=1))
+    api.session.commit()
+    r = api.client.get("/api/updates", params={"section": "new"})
+    assert r.headers["X-Filtered-Watchlist"] == "1"
+    assert [i["title"]["id"] for i in r.json()["items"]] == [api.ids[106]]
+    r = api.client.get("/api/updates", params={"section": "new", "include_watchlist": True})
+    assert r.headers["X-Filtered-Watchlist"] == "0"
+    assert api.ids[108] in [i["title"]["id"] for i in r.json()["items"]]
+    # The watchlist_available section is about watchlisted titles: never filtered.
+    r = api.client.get("/api/updates", params={"section": "watchlist_available"})
+    assert r.headers["X-Filtered-Watchlist"] == "0"
+    assert [i["title"]["id"] for i in r.json()["items"]] == [api.ids[107]]
+
+
 def test_source_status_with_sa_key(api: ApiEnv, seeded: dict[str, int]) -> None:
     client = make_api_client(api.session, tmdb_api_key="k", streaming_availability_api_key="s")
     status = client.get("/api/updates?section=leaving").json()["source_status"]

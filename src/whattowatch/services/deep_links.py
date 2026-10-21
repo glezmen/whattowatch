@@ -2,8 +2,10 @@
 
 Deep links come from the Streaming Availability API's per-show endpoint and are cached
 on `availability` rows of source `streaming_availability` (`deep_link`,
-`deep_link_fetched_at`). The SA data is third-party, so rows stay `estimated`. When no
-deep link is known, the UI gets a best-effort (unverified) provider search URL instead.
+`deep_link_fetched_at`); `titles.deep_links_checked_at` records every SA lookup so a
+title with no HU options is not re-asked within the cache window (quota guard). The SA
+data is third-party, so rows stay `estimated`. When no deep link is known, the UI gets a
+best-effort (unverified) provider search URL instead.
 """
 
 from __future__ import annotations
@@ -65,6 +67,7 @@ def refresh_deep_links(
 
     Returns the rows touched with a link. SA errors propagate (`SAError`). Flushes."""
     detail = sa.show_by_tmdb(title.media_type, title.tmdb_id, country=REGION.lower())
+    title.deep_links_checked_at = now  # any answer (incl. 404 / no options) counts
     existing = {
         (a.tmdb_provider_id, a.offer_type): a
         for a in session.scalars(
@@ -124,6 +127,9 @@ def refresh_deep_links(
 
 
 def _fresh(session: Session, title: Title, cutoff: datetime) -> bool:
+    checked = title.deep_links_checked_at
+    if checked is not None and _aware(checked) >= cutoff:
+        return True
     fetched = session.scalars(
         select(Availability.deep_link_fetched_at).where(
             Availability.title_id == title.id,

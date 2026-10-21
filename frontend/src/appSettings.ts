@@ -1,5 +1,5 @@
 // Shared, module-level state for the DB-backed app settings and subscriptions (docs/api.md, M7).
-import { computed, reactive } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { api, type AppSettings, type AppSettingsPatch, type SubscriptionItem } from './api/client'
 import { applyLang, currentLang, isUiLang, t, type UiLang } from './i18n'
 import { PROVIDERS } from './providers'
@@ -18,6 +18,34 @@ export const DATA_RESTORED_EVENT = 'wtw:data-restored'
 
 /** Page-session UI flags (not persisted). */
 export const ui = reactive({ onboardingDismissed: false })
+
+const INCLUDE_WATCHLIST_KEY = 'include_watchlist'
+const LEGACY_INCLUDE_WATCHLIST_KEY = 'home_include_watchlist'
+
+function readIncludeWatchlist(): boolean {
+  try {
+    let v = localStorage.getItem(INCLUDE_WATCHLIST_KEY)
+    if (v === null) {
+      // migrate the Home-only toggle of earlier versions
+      v = localStorage.getItem(LEGACY_INCLUDE_WATCHLIST_KEY)
+      if (v !== null) localStorage.setItem(INCLUDE_WATCHLIST_KEY, v)
+    }
+    localStorage.removeItem(LEGACY_INCLUDE_WATCHLIST_KEY)
+    return v === '1'
+  } catch {
+    return false
+  }
+}
+
+/** Global "show titles on my watchlist" toggle (Home, Discover, Updates, Leaving, History); per browser. */
+export const includeWatchlist = ref(readIncludeWatchlist())
+watch(includeWatchlist, (v) => {
+  try {
+    localStorage.setItem(INCLUDE_WATCHLIST_KEY, v ? '1' : '0')
+  } catch {
+    // storage unavailable: the toggle still works for this page session
+  }
+})
 
 export const enabledCount = computed(() => subscriptions.items.filter((s) => s.enabled).length)
 

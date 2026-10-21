@@ -201,10 +201,12 @@
     "refreshing": "Új ajánlások készülnek; a TMDB-elérhetőség ellenőrzése eltarthat egy ideig…",
     "generated": "Generálva: {date}",
     "empty": "Még nincs ajánlás. Kattints a „Frissítés” gombra.",
-    "noSubscriptions": "Nincs bekapcsolt előfizetés, ezért az ajánló nem tud mit ajánlani. Kapcsold be az előfizetéseidet a Beállításokban.",
-    "includeWatchlist": "Watchlisten lévők mutatása",
-    "watchlistHidden": "{n} watchlisten lévő cím elrejtve.",
-    "showWatchlist": "Mutasd őket"
+    "noSubscriptions": "Nincs bekapcsolt előfizetés, ezért az ajánló nem tud mit ajánlani. Kapcsold be az előfizetéseidet a Beállításokban."
+  },
+  "watchlistToggle": {
+    "label": "Watchlisten lévők mutatása",
+    "hidden": "{n} watchlisten lévő cím elrejtve.",
+    "show": "Mutasd őket"
   },
   "onboarding": {
     "title": "Kezdjük!",

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -23,6 +23,7 @@ from whattowatch.config import Settings
 from whattowatch.db.models import CatalogEvent, Notification, Provider, SyncRun
 from whattowatch.providers import BY_KEY
 from whattowatch.services import updates as updates_service
+from whattowatch.services.recommend.candidates import active_watchlist_ids
 from whattowatch.services.updates import Section
 
 router = APIRouter(tags=["updates"])
@@ -65,14 +66,26 @@ def _event_out(event: CatalogEvent, keys: dict[int, str]) -> UpdateEvent:
 
 @router.get("/updates", response_model=UpdatesOut)
 def get_updates(
+    response: Response,
     session: SessionDep,
     settings: SettingsDep,
     now: NowDep,
     section: Section,
     days: Annotated[int, Query(ge=1, le=365)] = updates_service.WINDOW_DAYS,
     limit: Annotated[int, Query(ge=1, le=500)] = 50,
+    include_watchlist: bool = False,
 ) -> UpdatesOut:
-    events = updates_service.list_events(session, section=section, days=days, now=now)[:limit]
+    """Titles on an active watchlist are left out unless `include_watchlist`, except in the
+    `watchlist_available` section (which is about them); `X-Filtered-Watchlist` = number of
+    distinct titles hidden."""
+    events = updates_service.list_events(session, section=section, days=days, now=now)
+    response.headers["X-Filtered-Watchlist"] = "0"
+    if not include_watchlist and section != "watchlist_available":
+        on_list = active_watchlist_ids(session)
+        hidden = {e.title_id for e in events if e.title_id in on_list}
+        response.headers["X-Filtered-Watchlist"] = str(len(hidden))
+        events = [e for e in events if e.title_id not in hidden]
+    events = events[:limit]
     cards = title_cards(session, [e.title for e in events], now=now)
     keys = _provider_keys(session)
     return UpdatesOut(
