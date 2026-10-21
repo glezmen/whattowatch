@@ -247,7 +247,8 @@
     "seenAll": "Látott és nem látott",
     "seenFalse": "Csak nem látott",
     "seenTrue": "Csak látott",
-    "provider": "Szolgáltató"
+    "provider": "Szolgáltató",
+    "showSeen": "Már látottak mutatása"
   },
   "history": {
     "title": "Előzmények és értékelések",

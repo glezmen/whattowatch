@@ -247,7 +247,8 @@
     "seenAll": "Seen and unseen",
     "seenFalse": "Unseen only",
     "seenTrue": "Seen only",
-    "provider": "Service"
+    "provider": "Service",
+    "showSeen": "Show titles I have seen"
   },
   "history": {
     "title": "History and ratings",

@@ -5,11 +5,20 @@ import { includeWatchlist } from '../appSettings'
 import Pagination from '../components/Pagination.vue'
 import TitleCard from '../components/TitleCard.vue'
 import WatchlistToggle from '../components/WatchlistToggle.vue'
+import ToggleSwitch from '../components/ToggleSwitch.vue'
 import { intlLocale } from '../i18n'
 import { PROVIDERS } from '../providers'
 
 const LIMIT = 24
-const f = reactive({ q: '', media_type: '' as MediaType | '', provider: '', genre: '', seen: '' as '' | 'true' | 'false' })
+const SHOW_SEEN_KEY = 'discover_show_seen'
+function loadShowSeen(): boolean {
+  try {
+    return localStorage.getItem(SHOW_SEEN_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+const f = reactive({ q: '', media_type: '' as MediaType | '', provider: '', genre: '', showSeen: loadShowSeen() })
 const offset = ref(0)
 const items = ref<Card[]>([])
 const total = ref(0)
@@ -17,6 +26,17 @@ const loading = ref(false)
 const filteredWatchlist = ref(0)
 const knownGenres = ref(new Set<string>())
 const genreList = computed(() => [...knownGenres.value].sort((a, b) => a.localeCompare(b, intlLocale())))
+
+watch(
+  () => f.showSeen,
+  (v) => {
+    try {
+      localStorage.setItem(SHOW_SEEN_KEY, v ? '1' : '0')
+    } catch {
+      /* ignore */
+    }
+  },
+)
 
 async function load() {
   loading.value = true
@@ -26,7 +46,7 @@ async function load() {
       media_type: f.media_type,
       provider: f.provider,
       genre: f.genre.trim(),
-      seen: f.seen === '' ? null : f.seen === 'true',
+      seen: f.showSeen ? null : false,
       include_watchlist: includeWatchlist.value,
       limit: LIMIT,
       offset: offset.value,
@@ -81,11 +101,9 @@ function goto(o: number) {
     <datalist id="genre-list">
       <option v-for="g in genreList" :key="g" :value="g" />
     </datalist>
-    <select v-model="f.seen" :aria-label="$t('discover.seen')">
-      <option value="">{{ $t('discover.seenAll') }}</option>
-      <option value="false">{{ $t('discover.seenFalse') }}</option>
-      <option value="true">{{ $t('discover.seenTrue') }}</option>
-    </select>
+  </div>
+  <div class="toggle-stack">
+    <ToggleSwitch v-model="f.showSeen" class="small" :label="$t('discover.showSeen')" />
     <WatchlistToggle :hidden="filteredWatchlist" />
   </div>
   <div class="toolbar" role="group" :aria-label="$t('discover.provider')">
