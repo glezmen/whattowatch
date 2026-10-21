@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api, type ReasonCode, type TitleCard, type UserState } from '../api/client'
-import { confidenceLabel, fmtDateTime, fmtInt, mediaTypeLabel, sourceLabel } from '../format'
+import { fmtDateTime, fmtInt, mediaTypeLabel, sourceLabel } from '../format'
 import { reasonTexts } from '../reasons'
 import DescriptionToggle from './DescriptionToggle.vue'
 import FeedbackPanel from './FeedbackPanel.vue'
@@ -71,9 +71,12 @@ const c = computed(() => t.value.community)
         :class="{ off: a.enabled === false }"
         :title="a.enabled === false ? tr('card.notSubscribed') : undefined"
       >
-        <ProviderLink :title-id="t.id" :provider-key="a.provider_key" :fallback-name="a.provider_name" :deep-link="a.deep_link" />
-        <span class="small muted" :title="tr('card.sourceTitle', { source: a.source })">{{ tr('card.checked', { date: fmtDateTime(a.last_seen_at) }) }}</span>
-        <span class="tag" :class="`conf-${a.confidence}`">{{ confidenceLabel(a.confidence) }}</span>
+        <ProviderLink
+          :title-id="t.id" :provider-key="a.provider_key" :fallback-name="a.provider_name" :deep-link="a.deep_link"
+          :checked-at="a.last_seen_at"
+          :confidence="a.confidence"
+          :source="a.source"
+        />
         <span v-if="a.leaving_at" class="small warn">
           {{ tr('card.leaving', { date: fmtDateTime(a.leaving_at) }) }}{{ a.leaving_confidence === 'estimated' ? tr('card.estimatedSuffix') : '' }}
         </span>

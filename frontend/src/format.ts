@@ -66,3 +66,9 @@ export function eventTypeLabel(et: string): string {
 export function eventRoute(et: string): string {
   return et === 'expiring' || et === 'leaving' || et === 'removed' ? '/tavozik' : '/ujdonsagok'
 }
+
+/** Readable label of an availability source (TMDB watch-provider data is JustWatch-sourced). */
+export function availabilitySourceLabel(s: string): string {
+  if (s === 'tmdb' || s === 'tmdb_discover') return 'TMDB/JustWatch'
+  return sourceLabel(s)
+}

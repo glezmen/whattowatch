@@ -19,6 +19,9 @@
     "language": "Nyelv"
   },
   "providerLink": {
+    "checked": "Ellenőrizve: {date}",
+    "state": "Állapot: {state}",
+    "source": "Forrás: {source}",
     "open": "Megnyitás: {name}",
     "search": "Keresés a szolgáltatónál",
     "none": "Nincs elérhető link"

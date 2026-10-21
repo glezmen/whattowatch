@@ -10,6 +10,7 @@ const linkCache = reactive(new Map<number, TitleLinks>())
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '../api/client'
+import { availabilitySourceLabel, confidenceLabel, fmtDateTime } from '../format'
 import { PROVIDER_BY_KEY } from '../providers'
 import { pushToast } from '../toast'
 import ProviderBadge from './ProviderBadge.vue'
@@ -19,6 +20,9 @@ const props = defineProps<{
   providerKey: string
   fallbackName?: string
   deepLink?: string | null
+  checkedAt?: string | null
+  confidence?: string
+  source?: string
 }>()
 
 const { t } = useI18n()
@@ -40,6 +44,17 @@ const cached = computed(() => {
 const href = computed(() => props.deepLink || cached.value?.url || null)
 const isDirect = computed(() => !!props.deepLink || cached.value?.direct === true)
 const tip = computed(() => (isDirect.value ? t('providerLink.open', { name: name.value }) : t('providerLink.search')))
+
+const uncertain = computed(() => !!props.confidence && props.confidence !== 'verified')
+const infoLines = computed(() => {
+  const lines: string[] = []
+  if (props.checkedAt) lines.push(t('providerLink.checked', { date: fmtDateTime(props.checkedAt) }))
+  if (props.confidence) lines.push(t('providerLink.state', { state: confidenceLabel(props.confidence) }))
+  if (props.source) lines.push(t('providerLink.source', { source: availabilitySourceLabel(props.source) }))
+  return lines
+})
+const tipLines = computed(() => [...infoLines.value, tip.value])
+const fullText = computed(() => `${name.value}. ${tipLines.value.join('. ')}`)
 
 async function onClick() {
   if (loading.value) return
@@ -66,23 +81,30 @@ async function onClick() {
 </script>
 
 <template>
-  <a v-if="href" class="plink" :href="href" target="_blank" rel="noopener noreferrer" :title="tip">
-    <ProviderBadge :provider-key="providerKey" :fallback-name="fallbackName" />
+  <a v-if="href" class="plink" :href="href" target="_blank" rel="noopener noreferrer" :title="tipLines.join('\n')" :aria-label="fullText">
+    <ProviderBadge :provider-key="providerKey" :fallback-name="fallbackName" :uncertain="uncertain" />
     <svg class="ext" viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
       <path d="M9 2h5v5M14 2 7 9M12 9v4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
     </svg>
+    <span class="ptip" role="tooltip" aria-hidden="true">
+      <span v-for="l in tipLines" :key="l">{{ l }}</span>
+    </span>
   </a>
-  <button v-else type="button" class="plink" :title="tip" :disabled="loading" @click="onClick">
-    <ProviderBadge :provider-key="providerKey" :fallback-name="fallbackName" />
+  <button v-else type="button" class="plink" :title="tipLines.join('\n')" :aria-label="fullText" :disabled="loading" @click="onClick">
+    <ProviderBadge :provider-key="providerKey" :fallback-name="fallbackName" :uncertain="uncertain" />
     <span v-if="loading" class="spin" aria-hidden="true"></span>
     <svg v-else class="ext" viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
       <path d="M9 2h5v5M14 2 7 9M12 9v4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
     </svg>
+    <span class="ptip" role="tooltip" aria-hidden="true">
+      <span v-for="l in tipLines" :key="l">{{ l }}</span>
+    </span>
   </button>
 </template>
 
 <style scoped>
 .plink {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 3px;
@@ -107,6 +129,33 @@ async function onClick() {
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: plink-spin 0.7s linear infinite;
+}
+.ptip {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  z-index: 20;
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  max-width: 260px;
+  width: max-content;
+  background: var(--surface-2, #222);
+  color: var(--text, #fff);
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 6px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.3;
+  text-align: left;
+  white-space: normal;
+  pointer-events: none;
+}
+.plink:hover .ptip,
+.plink:focus-visible .ptip {
+  display: flex;
 }
 @keyframes plink-spin {
   to {
