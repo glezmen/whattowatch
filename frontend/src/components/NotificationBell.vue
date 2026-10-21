@@ -2,6 +2,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { api, type NotificationItem } from '../api/client'
+import { DATA_RESTORED_EVENT } from '../appSettings'
 import { eventRoute, eventTypeLabel, fmtDate } from '../format'
 import { displayTitle } from '../titles'
 
@@ -56,6 +57,10 @@ function titleOf(n: NotificationItem): string {
 function onDocClick(e: MouseEvent) {
   if (open.value && root.value && !root.value.contains(e.target as Node)) open.value = false
 }
+function onRestored() {
+  refreshCount()
+  if (open.value) loadList()
+}
 function onKey(e: KeyboardEvent) {
   if (e.key === 'Escape') open.value = false
 }
@@ -73,11 +78,13 @@ onMounted(() => {
   timer = setInterval(refreshCount, POLL_MS)
   document.addEventListener('click', onDocClick)
   document.addEventListener('keydown', onKey)
+  window.addEventListener(DATA_RESTORED_EVENT, onRestored)
 })
 onBeforeUnmount(() => {
   clearInterval(timer)
   document.removeEventListener('click', onDocClick)
   document.removeEventListener('keydown', onKey)
+  window.removeEventListener(DATA_RESTORED_EVENT, onRestored)
 })
 </script>
 

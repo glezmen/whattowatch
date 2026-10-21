@@ -437,6 +437,35 @@ export class ApiError extends Error {
   }
 }
 
+export interface BackupItem {
+  name: string
+  size_bytes: number
+  created_at: string
+}
+
+export interface BackupList {
+  backups_dir: string
+  items: BackupItem[]
+  note?: string | null
+}
+
+export interface BackupInfo {
+  alembic_revision?: string | null
+  tables?: number | null
+  titles?: number | null
+  watch_events?: number | null
+  size_bytes?: number | null
+  note?: string | null
+}
+
+export interface RestoreResult {
+  previous_backup?: string | null
+  revision_before?: string | null
+  revision_after?: string | null
+  restored: BackupInfo
+  note?: string | null
+}
+
 type Query = Record<string, string | number | boolean | null | undefined>
 
 function qs(params: Query): string {
@@ -473,6 +502,15 @@ function errorMessage(status: number, body: unknown): string {
 }
 
 async function request<T>(method: string, path: string, body?: unknown, quiet = false): Promise<T> {
+  return (await requestWithHeaders<T>(method, path, body, quiet)).data
+}
+
+async function requestWithHeaders<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  quiet = false,
+): Promise<{ data: T; headers: Headers }> {
   let res: Response
   try {
     const isForm = body instanceof FormData
@@ -503,14 +541,29 @@ async function request<T>(method: string, path: string, body?: unknown, quiet = 
       data && typeof data === 'object' && 'detail_code' in data ? (data as { detail_code: unknown }).detail_code : null
     throw new ApiError(res.status, msg, typeof code === 'string' ? code : null)
   }
-  return data as T
+  return { data: data as T, headers: res.headers }
+}
+
+/** GET /recommendations: items plus the X-Filtered-Watchlist count (0 if absent). */
+export interface RecommendationsResult {
+  items: RecommendationItem[]
+  filteredWatchlist: number
+}
+
+async function fetchRecommendations(p: Query): Promise<RecommendationsResult> {
+  const { data, headers } = await requestWithHeaders<RecommendationItem[]>('GET', `/recommendations${qs(p)}`)
+  const n = Number.parseInt(headers.get('X-Filtered-Watchlist') ?? '', 10)
+  return { items: data ?? [], filteredWatchlist: Number.isFinite(n) && n > 0 ? n : 0 }
 }
 
 const enc = encodeURIComponent
 
 export const api = {
-  getRecommendations: (p: { limit?: number; media_type?: MediaType | ''; refresh?: boolean }) =>
-    request<RecommendationItem[]>('GET', `/recommendations${qs(p)}`),
+  getRecommendations: (p: { limit?: number; media_type?: MediaType | ''; include_watchlist?: boolean }) =>
+    fetchRecommendations({ ...p, refresh: undefined }),
+  /** refresh=true: generates a new batch (slow). */
+  refreshRecommendations: (p: { limit?: number; media_type?: MediaType | ''; include_watchlist?: boolean }) =>
+    fetchRecommendations({ ...p, refresh: true }),
   recommendationFeedback: (batchId: string, titleId: number, feedback: 'clicked' | 'dismissed' | 'watched') =>
     request<unknown>('POST', `/recommendations/${enc(batchId)}/${titleId}/feedback`, { feedback }),
 
@@ -598,6 +651,23 @@ export const api = {
     const fd = new FormData()
     fd.set('file', file)
     return request<{ profiles: NetflixProfile[] }>('POST', '/import/netflix/profiles', fd)
+  },
+
+  /** Navigate an <a download> here; this helper is only the URL. */
+  backupExportUrl: '/api/backup/export',
+  listBackups: () => request<BackupList>('GET', '/backup/list'),
+  /** Quiet: errors (invalid_backup) are shown inline. */
+  inspectBackup: (file: File) => {
+    const fd = new FormData()
+    fd.set('file', file)
+    return request<BackupInfo>('POST', '/backup/inspect', fd, true)
+  },
+  /** Quiet: errors (confirm_required, invalid_backup) are shown inline. */
+  restoreBackup: (file: File, confirm: string) => {
+    const fd = new FormData()
+    fd.set('file', file)
+    fd.set('confirm', confirm)
+    return request<RestoreResult>('POST', '/backup/restore', fd, true)
   },
 
   health: () => request<unknown>('GET', '/health', undefined, true),

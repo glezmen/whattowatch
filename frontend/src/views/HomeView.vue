@@ -14,13 +14,34 @@ const loading = ref(false)
 const refreshing = ref(false)
 const loaded = ref(false)
 const mediaType = ref<MediaType | ''>('')
+const filteredWatchlist = ref(0)
+
+const WATCHLIST_KEY = 'home_include_watchlist'
+function readIncludeWatchlist(): boolean {
+  try {
+    return localStorage.getItem(WATCHLIST_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+const includeWatchlist = ref(readIncludeWatchlist())
+watch(includeWatchlist, (v) => {
+  try {
+    localStorage.setItem(WATCHLIST_KEY, v ? '1' : '0')
+  } catch {
+    // storage unavailable: the toggle still works for this page view
+  }
+  void load()
+})
 
 async function load(refresh = false) {
   if (refresh) refreshing.value = true
   else loading.value = true
   try {
-    const data = await api.getRecommendations({ limit: 20, media_type: mediaType.value, refresh: refresh || undefined })
-    items.value = data
+    const p = { limit: 20, media_type: mediaType.value, include_watchlist: includeWatchlist.value }
+    const res = refresh ? await api.refreshRecommendations(p) : await api.getRecommendations(p)
+    items.value = res.items
+    filteredWatchlist.value = res.filteredWatchlist
     loaded.value = true
   } catch {
     // toast already shown
@@ -62,6 +83,7 @@ const types = computed<{ value: MediaType | ''; label: string }[]>(() => [
         {{ ty.label }}
       </button>
     </div>
+    <label class="small"><input v-model="includeWatchlist" type="checkbox" /> {{ t('home.includeWatchlist') }}</label>
     <button type="button" class="primary" :disabled="refreshing" @click="load(true)">
       <span v-if="refreshing" class="spinner" aria-hidden="true"></span>
       {{ t('home.refresh') }}
@@ -69,6 +91,11 @@ const types = computed<{ value: MediaType | ''; label: string }[]>(() => [
     <span v-if="refreshing" class="small muted">{{ t('home.refreshing') }}</span>
     <span v-else-if="items.length" class="small muted">{{ t('home.generated', { date: fmtDateTime(items[0]!.generated_at) }) }}</span>
   </div>
+
+  <p v-if="!includeWatchlist && filteredWatchlist > 0" class="small muted hidden-note">
+    {{ t('home.watchlistHidden', { n: filteredWatchlist }, filteredWatchlist) }}
+    <a href="#" @click.prevent="includeWatchlist = true">{{ t('home.showWatchlist') }}</a>
+  </p>
 
   <p v-if="loading" class="empty"><span class="spinner"></span> {{ t('common.loading') }}</p>
   <p v-else-if="loaded && !items.length" class="empty">{{ t('home.empty') }}</p>
@@ -83,3 +110,9 @@ const types = computed<{ value: MediaType | ''; label: string }[]>(() => [
     />
   </div>
 </template>
+
+<style scoped>
+.hidden-note {
+  margin: 0 0 8px;
+}
+</style>

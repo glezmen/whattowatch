@@ -2,6 +2,8 @@
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api, type RefreshSummary, type Settings } from '../api/client'
+import { DATA_RESTORED_EVENT, loadAppSettings, loadSubscriptions } from '../appSettings'
+import BackupSection from '../components/BackupSection.vue'
 import LanguageSwitch from '../components/LanguageSwitch.vue'
 import LlmSection from '../components/LlmSection.vue'
 import SecretsSection from '../components/SecretsSection.vue'
@@ -44,6 +46,13 @@ async function onSecretsSaved() {
   }
 }
 
+/** After a DB restore: re-read everything that came from the old database. */
+async function onRestored() {
+  summary.value = null
+  window.dispatchEvent(new Event(DATA_RESTORED_EVENT))
+  await Promise.all([onSecretsSaved(), loadAppSettings(), loadSubscriptions(true)])
+}
+
 function show(v: unknown): string {
   if (v === null || v === undefined || v === '') return '–'
   if (typeof v === 'boolean') return v ? t('common.yes') : t('common.no')
@@ -72,6 +81,11 @@ function show(v: unknown): string {
   <section class="card">
     <h2>{{ t('settings.llm.title') }}</h2>
     <LlmSection :reload-token="llmReload" />
+  </section>
+
+  <section class="card">
+    <h2>{{ t('settings.backup.title') }}</h2>
+    <BackupSection @restored="onRestored" />
   </section>
 
   <section class="card">

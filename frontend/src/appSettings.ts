@@ -13,6 +13,9 @@ export const subscriptions = reactive<{ loaded: boolean; items: SubscriptionItem
   saving: false,
 })
 
+/** Window event fired after a database restore; listeners re-read their server state. */
+export const DATA_RESTORED_EVENT = 'wtw:data-restored'
+
 /** Page-session UI flags (not persisted). */
 export const ui = reactive({ onboardingDismissed: false })
 
