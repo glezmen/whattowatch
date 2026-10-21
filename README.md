@@ -30,12 +30,40 @@ uv run wtw resolve set <id> movie|tv <tmdb_id>
 uv run wtw resolve reject <id>
 
 uv run wtw recommend run --limit 20 --media-type movie   # ajánlási batch
+uv run wtw recommend extract-preferences --extractor rules|llm [--provider lmstudio]
+
+uv run wtw llm test [--provider anthropic]   # egysoros magyar próba: modell, válasz, tokenek
+uv run wtw llm models                        # az LM Studio által kínált modellek
 ```
 
 Az importok idempotensek: ugyanaz a fájl kétszer betöltve nem duplikál. A
 személyes exportokat a gitignored `data/` alá tedd. Az adatforrások
 részleteit a `docs/adatforrasok.md` írja le. Az ajánló súlyai a `RECOMMENDER_CONFIG_PATH`
 változóval megadott YAML-fájlból felülírhatók (`docs/recommender.md`).
+
+## LLM-providerek
+
+A beszélgetős ajánló és a szöveges vélemények LLM-es elemzése közös provider-rétegen
+fut (`src/whattowatch/llm/`, terv: `docs/llm.md`). Választás: `LLM_PROVIDER`
+(`lmstudio` – alapértelmezett, helyi; `anthropic`; `openai`), modell: `LLM_MODEL`
+(üresen: LM Studio esetén az első betöltött modell, Anthropic esetén `claude-opus-5-5`,
+OpenAI esetén a `gpt-4o-mini` helyőrző, amelynek elérhetőségét a fiókodon nem
+ellenőrizzük). Embedding: `LLM_EMBEDDING_MODEL` (csak OpenAI-kompatibilis szervernél).
+
+- A **ChatGPT- vagy Claude-előfizetés nem API-hozzáférés.** Az OpenAI és az Anthropic API
+  külön regisztrációt, külön kulcsot (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`) és külön,
+  használatalapú számlázást igényel. A kulcsokat csak környezeti változóból olvassuk, a
+  `/api/settings` csak azt jelzi, hogy be vannak-e állítva.
+- **Nincs automatikus provider-váltás:** a kiválasztott provider hibája hibaként jelenik
+  meg. Más providerre csak `LLM_FALLBACK_ALLOWED=true` mellett lehet átállni.
+- **Adatvédelem:** a nyers „Mi tetszett / Mi nem tetszett” szöveg felhős providerhez csak
+  `LLM_CLOUD_SEND_FEEDBACK_TEXT=true` esetén kerül; enélkül a felhős kinyerés kihagyja
+  a visszajelzéseket (helyi LM Studio esetén nincs korlát).
+- `ANTHROPIC_SERVER_FALLBACK` (alapból `true`): az Anthropic API saját, híváson belüli
+  modell-fallbackja (`server-side-fallback` béta): ha a kért modell irányelvi okból
+  elutasít, a szerver ugyanabban a hívásban egy helyettesítő Claude-modellel próbálkozik.
+  Ez Anthropicon belüli mechanizmus, nem azonos a providerek közötti
+  `LLM_FALLBACK_ALLOWED`-dal.
 
 ## Tesztek és minőségellenőrzés
 

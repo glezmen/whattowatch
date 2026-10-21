@@ -190,6 +190,31 @@ export interface TitleDetails extends TitleCard {
   resolutions?: { id: number; source: string; lookup_key: string; status: string }[]
 }
 
+export type LlmProviderName = 'lmstudio' | 'anthropic' | 'openai'
+
+export interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface ToolTraceEntry {
+  name: string
+  arguments: Record<string, unknown>
+  result_summary: string
+  error?: string | null
+  /** Local title ids returned by get_recommendations / search_titles. */
+  title_ids: number[]
+}
+
+export interface ChatResult {
+  reply: string
+  tool_trace: ToolTraceEntry[]
+  provider: string
+  model: string
+  usage: Record<string, number>
+  rounds_exhausted?: boolean
+}
+
 export class ApiError extends Error {
   status: number
   constructor(status: number, message: string) {
@@ -308,6 +333,8 @@ export const api = {
 
   getSyncRuns: (limit = 50) => request<SyncRun[] | Page<SyncRun>>('GET', `/sync/runs${qs({ limit })}`),
   getSettings: () => request<Settings>('GET', '/settings'),
+  postChat: (messages: ChatMessage[], provider?: LlmProviderName | string) =>
+    request<ChatResult>('POST', '/chat', { messages, provider: provider || undefined }),
   health: () => request<unknown>('GET', '/health', undefined, true),
 }
 

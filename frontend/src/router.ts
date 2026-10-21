@@ -6,6 +6,7 @@ export const router = createRouter({
   routes: [
     { path: '/', component: HomeView, meta: { title: 'Neked ajánljuk' } },
     { path: '/felfedezes', component: () => import('./views/DiscoverView.vue'), meta: { title: 'Felfedezés' } },
+    { path: '/beszelgetes', component: () => import('./views/ChatView.vue'), meta: { title: 'Beszélgetős ajánló' } },
     { path: '/watchlist', component: () => import('./views/WatchlistView.vue'), meta: { title: 'Watchlist' } },
     { path: '/elozmenyek', component: () => import('./views/HistoryView.vue'), meta: { title: 'Előzmények' } },
     { path: '/feloldas', component: () => import('./views/ResolutionView.vue'), meta: { title: 'Címfeloldás' } },

@@ -16,9 +16,12 @@ class LLMProvider(Protocol):
 ```
 
 Adapterek (`src/whattowatch/llm/`): `openai_compat.py` (közös OpenAI-kompatibilis
-kliens httpx-szel), `lmstudio.py` (= openai_compat, kulcs nélkül, `/v1`),
-`openai.py` (= openai_compat kulccsal), `anthropic.py` (Messages API, httpx).
-`registry.py`: `get_provider(settings, override: str | None) -> LLMProvider`.
+kliens httpx-szel; `LMStudioProvider` kulcs nélkül, `OpenAIProvider` kulccsal),
+`anthropic_provider.py` (Messages API a hivatalos `anthropic` SDK-val; eltérés a
+korábbi tervtől: SDK a nyers httpx helyett, a típusos hibák és újrapróbálás miatt).
+`registry.py`: `get_provider(settings, override: str | None) -> LLMProvider`, és
+`get_provider_with_fallback(settings, preferred)`, amely csak
+`LLM_FALLBACK_ALLOWED=true` mellett próbál másik providert.
 
 Konfig (`.env.example`-ben is): `LLM_PROVIDER` (alap `lmstudio`), `LLM_MODEL`,
 `LLM_EMBEDDING_MODEL`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,

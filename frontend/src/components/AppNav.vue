@@ -5,6 +5,7 @@ const open = ref(false)
 const links = [
   { to: '/', label: 'Neked ajánljuk' },
   { to: '/felfedezes', label: 'Felfedezés' },
+  { to: '/beszelgetes', label: 'Beszélgetős ajánló' },
   { to: '/watchlist', label: 'Watchlist' },
   { to: '/elozmenyek', label: 'Előzmények' },
   { to: '/ujdonsagok', label: 'Újdonságok' },

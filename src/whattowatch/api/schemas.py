@@ -205,6 +205,12 @@ class SettingsOut(BaseModel):
     tmdb_api_key_set: bool
     netflix_profile_name: str | None = None
     lm_studio_base_url: str
+    llm_provider: str = "lmstudio"
+    llm_model: str | None = None
+    anthropic_api_key_set: bool = False
+    openai_api_key_set: bool = False
+    llm_fallback_allowed: bool = False
+    llm_cloud_send_feedback_text: bool = False
     recommender: dict[str, Any]
 
 

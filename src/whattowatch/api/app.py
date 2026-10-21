@@ -13,6 +13,7 @@ from sqlalchemy import Engine
 
 from whattowatch.adapters.tmdb import TmdbError
 from whattowatch.api import (
+    chat,
     history,
     recommendations,
     resolutions,
@@ -32,7 +33,7 @@ def _health() -> dict[str, str]:
 def _api_router() -> APIRouter:
     api = APIRouter(prefix="/api")
     api.add_api_route("/health", _health, methods=["GET"], tags=["health"])
-    for module in (recommendations, titles, watchlist, history, resolutions, sync, settings):
+    for module in (recommendations, chat, titles, watchlist, history, resolutions, sync, settings):
         api.include_router(module.router)
     api.include_router(search.router)
     return api

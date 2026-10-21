@@ -7,6 +7,7 @@ from alembic.config import Config
 
 from whattowatch.cli_catalog import app as catalog_app
 from whattowatch.cli_import import app as import_app
+from whattowatch.cli_llm import app as llm_app
 from whattowatch.cli_recommend import app as recommend_app
 from whattowatch.cli_resolve import resolve_app
 from whattowatch.cli_tmdb import tmdb_app
@@ -22,6 +23,7 @@ app.add_typer(import_app, name="import")
 app.add_typer(catalog_app, name="catalog")
 app.add_typer(recommend_app, name="recommend")
 app.add_typer(resolve_app, name="resolve")
+app.add_typer(llm_app, name="llm")
 
 ROOT = Path(__file__).resolve().parents[2]
 

@@ -62,10 +62,11 @@ Settings { tmdb_api_key_set: bool, netflix_profile_name?, lm_studio_base_url, re
 | `GET /resolutions?status=ambiguous|unresolved&source=&limit=50&offset=0` | `Page<ResolutionItem>`; status nélkül mindkettő |
 | `POST /resolutions/{id}/set` `{media_type, tmdb_id}` / `POST /resolutions/{id}/reject` | kézi feloldás; válasz `{resolution: ResolutionItem, reimport_needed}`; `set` után a kapcsolódó import újraépítése nem automatikus (`reimport_needed: true`), `reject`-nél `false` |
 | `GET /sync/runs?limit=50` | `SyncRun[]`, legújabb elöl |
+| `POST /chat` `{messages: [{role: "user"\|"assistant", content}], provider?: "lmstudio"\|"anthropic"\|"openai"}` | beszélgetős ajánló (docs/llm.md 2.2); válasz `ChatResult {reply, tool_trace: [{name, arguments, result_summary, error, title_ids}], provider, model, usage, rounds_exhausted}`; az utolsó üzenet `user`; a modell csak a hét típusos eszközt hívhatja (max. 6 kör, utána eszköz nélküli zárás); a `title_ids` a `get_recommendations`/`search_titles` helyi találatai a kártyákhoz. `409` ha a provider nincs beállítva, `502` ha a provider hívása hibázik. A `get_recommendations` eszköz új ajánlás-batch-et ment (ez lesz a legutóbbi); szűrőkkel nagyobb (max. 50) batch-et kér és utószűr, a `mood_labels` csak előre sorol (a cím műfajaiból képzett szótárcímkék egyezése szerint), nem szűr |
 | `GET /settings` | `Settings` (nem titkos): van-e TMDB-kulcs (bool), profilnév, LLM alap-URL, teljes recommender-konfiguráció |
 | `GET /health` | `{status: "ok"}` (a gyökéren `/health` is) |
 
-Hibák: `404 {detail}` ismeretlen id; `409` ha nincs TMDB-kulcs és kellene;
+Hibák: `404 {detail}` ismeretlen id; `409` ha nincs TMDB-kulcs (vagy LLM-provider) és kellene;
 `422` validáció (ismeretlen `provider` is); `502` TMDB-hiba; TMDB-n nem létező cím `404`.
 A statikus frontend a `FRONTEND_DIST` (alap `frontend/dist`) könyvtárból szolgálódik ki a
 gyökéren, ha létezik (ismeretlen nem-`/api` út → `index.html`); `/api` alatt nincs fallback.

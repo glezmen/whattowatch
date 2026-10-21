@@ -21,8 +21,27 @@ def recommend_run(
 
 
 @app.command("extract-preferences")
-def extract_preferences() -> None:
+def extract_preferences(
+    extractor: Annotated[str, typer.Option(help="rules | llm")] = "rules",
+    provider: Annotated[
+        str | None, typer.Option(help="LLM provider (lmstudio | anthropic | openai)")
+    ] = None,
+) -> None:
     """Re-run preference signal extraction over all text feedback."""
+    from whattowatch.config import get_settings
+    from whattowatch.llm.base import LLMError
     from whattowatch.preferences.extract import run_extraction
 
-    run_extraction()
+    if extractor not in ("rules", "llm"):
+        raise typer.BadParameter("rules | llm", param_hint="--extractor")
+    settings = get_settings()
+    llm = None
+    if extractor == "llm":
+        from whattowatch.llm.registry import get_provider
+
+        try:
+            llm = get_provider(settings, provider)
+        except LLMError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(1) from exc
+    run_extraction(extractor=extractor, provider=llm, settings=settings)
