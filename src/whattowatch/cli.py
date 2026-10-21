@@ -6,6 +6,9 @@ from alembic import command
 from alembic.config import Config
 
 from whattowatch.cli_tmdb import tmdb_app
+from whattowatch.config import Settings
+from whattowatch.db.engine import create_engine_from_settings, session_factory
+from whattowatch.db.seed import seed_providers
 
 app = typer.Typer(help="whattowatch CLI", no_args_is_help=True)
 db_app = typer.Typer(help="Database commands", no_args_is_help=True)
@@ -21,6 +24,10 @@ def db_upgrade() -> None:
     cfg = Config(str(ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(ROOT / "src/whattowatch/db/migrations"))
     command.upgrade(cfg, "head")
+    engine = create_engine_from_settings(Settings())
+    with session_factory(engine)() as session:
+        seed_providers(session)
+    engine.dispose()
 
 
 @app.command()
