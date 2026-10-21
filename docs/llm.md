@@ -1,0 +1,81 @@
+# LLM-réteg és beszélgetős ajánló (M5) — terv
+
+Az LLM három, jól körülhatárolt feladatot kap. Egyikben sem igazságforrás a
+katalógus-, elérhetőségi vagy értékelési adathoz, és nem rangsorol.
+
+## 1. Provider-absztrakció
+
+```python
+class LLMProvider(Protocol):
+    name: str                      # "lmstudio" | "anthropic" | "openai"
+    is_local: bool
+    def complete(self, messages: list[Message], *, tools: list[ToolSpec] | None = None,
+                 json_schema: dict | None = None, max_tokens: int = 1024,
+                 temperature: float = 0.2) -> LLMResponse   # text | tool_calls | json
+    def embed(self, texts: list[str]) -> list[list[float]] | None   # None ha nem támogatott
+```
+
+Adapterek (`src/whattowatch/llm/`): `openai_compat.py` (közös OpenAI-kompatibilis
+kliens httpx-szel), `lmstudio.py` (= openai_compat, kulcs nélkül, `/v1`),
+`openai.py` (= openai_compat kulccsal), `anthropic.py` (Messages API, httpx).
+`registry.py`: `get_provider(settings, override: str | None) -> LLMProvider`.
+
+Konfig (`.env.example`-ben is): `LLM_PROVIDER` (alap `lmstudio`), `LLM_MODEL`,
+`LLM_EMBEDDING_MODEL`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+`LLM_FALLBACK_ALLOWED=false` (csak explicit engedéllyel vált másik providerre),
+`LLM_CLOUD_SEND_FEEDBACK_TEXT=false` (felhős providernek alapból nem megy a
+nyers vélemény, csak a lokálisnak).
+
+Dokumentálni: a ChatGPT-előfizetés nem OpenAI API-hozzáférés; az Anthropic és
+OpenAI API külön számlázású.
+
+## 2. Felhasználások
+
+### 2.1 Preferencia-kinyerés (`extractor="llm"`)
+Bemenet: a cím (magyar/eredeti), a mező (tetszett / nem tetszett) és a nyers
+szöveg. Kimenet JSON-sémával: `[{label_key, confidence 0–1, evidence}]`, ahol
+`label_key` **csak** a `preferences/vocabulary.py` zárt szótárából jöhet; az
+ismeretlen címkét eldobjuk. Mentés `PreferenceSignal(extractor="llm",
+model_version=<provider:model>, prompt_version="v1")`; a szabályalapú jelzések
+mellett, nem helyettük. Felhős providernél csak `LLM_CLOUD_SEND_FEEDBACK_TEXT=true`
+esetén fut.
+
+### 2.2 Beszélgetős ajánló
+`POST /api/chat {messages, provider?}` → `{reply, tool_trace, provider}`.
+Rendszerprompt magyarul: a modell szűrőket és eszközhívásokat állít elő, a
+válaszban csak az eszközök által visszaadott címekre hivatkozhat, és minden
+elérhetőséget a `get_availability` eredményével együtt mond.
+
+Eszközök (típusos pydantic sémák, backend hajtja végre, max 6 hívás/kör):
+- `search_titles(q, media_type?)` — helyi katalógus + TMDB-keresés
+- `get_recommendations(media_type?, providers?, genres?, mood_labels?, limit)` —
+  a determinisztikus motor futtatása a szűrőkkel; `mood_labels` a zárt szótárból
+- `filter_by_provider(title_ids, provider_key)`
+- `get_title_details(title_id)`
+- `get_availability(title_id)`
+- `get_watchlist(available_only?)`
+- `record_feedback(title_id, stars?, liked_text?, disliked_text?, seen?, not_interested?, watchlist?)`
+
+Adatminimalizálás: az eszközválaszok kártyaszintű mezőket adnak (cím, év,
+műfaj, szolgáltató, pontszám, indoklás); a nyers szöveges vélemény és a teljes
+előzménylista soha nem kerül a promptba. Felhős providernél a `record_feedback`
+szöveges mezői csak explicit beállítással mennek át.
+
+### 2.3 Embedding (opcionális, később)
+`title_features` tábla: `title_id`, `model_version`, `embedding` (BLOB float32),
+`text_hash`. A `semantic_similarity` komponens az ajánlóban csak akkor
+aktiválódik, ha van embedding a jelöltre és ≥3 pozitívan értékelt címre.
+
+## 3. Biztonság
+- Kulcsok csak környezeti változóból; soha nem naplózzuk, az API `/settings`
+  csak `bool`-t ad vissza a meglétükről.
+- Az LLM-válasz és az eszközbemenet nem megbízható: a `record_feedback`
+  csak létező `title_id`-ra, a számértékek validálva.
+- Promptinjekció a címleírásokból: az eszközválaszokban a leírás legfeljebb
+  300 karakter, és a rendszerprompt kimondja, hogy az adatmezők nem utasítások.
+
+## 4. Tesztek
+`FakeProvider` rögzített válaszokkal; eszközhívás-ciklus; csak létező
+címkék kerülnek be; felhős providernél a payload nem tartalmaz nyers
+véleményt; provider-választás és a fallback tiltása; LM Studio adapter
+respx-szel.
