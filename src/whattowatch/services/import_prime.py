@@ -45,6 +45,7 @@ from whattowatch.services.import_netflix import (
     _upsert,
     _usable,
 )
+from whattowatch.services.users import default_user_id
 
 if TYPE_CHECKING:
     from whattowatch.adapters.tmdb import MediaType, TmdbClient
@@ -160,6 +161,7 @@ class _Importer:
         self._hashes.add(h)
         self.session.add(
             ImportRow(
+                user_id=default_user_id(self.session),  # A1 interim, TODO(A2): current user
                 source=source,
                 file_sha256=self.export.file_hashes.get(csv_name, ""),
                 row_hash=h,

@@ -12,6 +12,7 @@ from whattowatch.adapters.tmdb import MediaType, SearchHit, TmdbError
 from whattowatch.db.models import Title, TitleFeedback
 from whattowatch.services.chat.tools import TOOLS, ToolContext, execute_tool
 from whattowatch.services.recommend.config import RecommenderConfig
+from whattowatch.services.users import default_user_id
 
 CTX = ToolContext(config=RecommenderConfig(), now=NOW)
 Env = tuple[Session, dict[int, int]]
@@ -146,7 +147,11 @@ def test_title_details_and_availability(recommend_db: Env) -> None:
     session, ids = recommend_db
     title = session.get_one(Title, ids[101])
     title.overview_hu = "x" * 500
-    session.add(TitleFeedback(title_id=title.id, liked_text="titkos vélemény"))
+    session.add(
+        TitleFeedback(
+            user_id=default_user_id(session), title_id=title.id, liked_text="titkos vélemény"
+        )
+    )
     session.commit()
     out = run(recommend_db, "get_title_details", {"title_id": ids[101]})
     assert len(out["overview"]) == 300 and out["overview"].endswith("…")

@@ -53,6 +53,7 @@ from whattowatch.services.catalog_sync import run_sync
 from whattowatch.services.recommend.candidates import excluded_title_ids
 from whattowatch.services.subscriptions import enabled_keys, enabled_sa_catalogs
 from whattowatch.services.title_resolution import ResolveRequest, resolve_title
+from whattowatch.services.users import default_user_id
 
 SA_SOURCE = "streaming_availability"
 VERIFIED_SOURCE = "tmdb/justwatch"
@@ -740,7 +741,14 @@ def generate_notifications(
                 key = f"{prefix}:{event.event_date.isoformat()}"
         if key is None or key in existing:
             continue
-        session.add(Notification(event_id=event.id, channel="inapp", dedupe_key=key))
+        session.add(
+            Notification(
+                user_id=default_user_id(session),  # A1 interim, TODO(A2): current user
+                event_id=event.id,
+                channel="inapp",
+                dedupe_key=key,
+            )
+        )
         existing.add(key)
         created += 1
     session.flush()

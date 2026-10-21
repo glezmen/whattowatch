@@ -13,6 +13,7 @@ from whattowatch.config import Settings
 from whattowatch.db.engine import create_engine_from_settings
 from whattowatch.db.models import PreferenceSignal, Title, TitleFeedback, TitleRating
 from whattowatch.preferences.profile import build_preference_profile
+from whattowatch.services.users import default_user_id
 
 
 @pytest.fixture
@@ -46,12 +47,12 @@ def add_signal(
 ) -> None:
     fb = session.scalar(select(TitleFeedback).where(TitleFeedback.title_id == title.id))
     if fb is None:
-        fb = TitleFeedback(title_id=title.id)
+        fb = TitleFeedback(user_id=default_user_id(session), title_id=title.id)
         session.add(fb)
         session.flush()
     category, key = label.split("/")
     session.add(
-        PreferenceSignal(
+        PreferenceSignal(user_id=default_user_id(session), 
             feedback_id=fb.id, title_id=title.id, polarity=polarity, category=category,
             label=key, weight=1.0, confidence=confidence, extractor="rules", model_version="",
         )
@@ -61,7 +62,7 @@ def add_signal(
 
 def rate(session: Session, title: Title, source: str, scale: str, raw: str, norm: float) -> None:
     session.add(
-        TitleRating(
+        TitleRating(user_id=default_user_id(session), 
             title_id=title.id, source=source, is_personal=True, scale=scale, raw_value=raw,
             normalized=norm,
         )

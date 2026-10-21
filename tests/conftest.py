@@ -28,6 +28,7 @@ from whattowatch.db.models import (
     WatchlistItem,
 )
 from whattowatch.db.seed import seed_providers
+from whattowatch.services.users import default_user_id
 
 NOW = datetime(2026, 10, 21, 12, 0, tzinfo=UTC)
 
@@ -172,6 +173,7 @@ def build_recommend_db(session: Session) -> dict[int, int]:
         ids[tmdb_id] = t.id
         session.add(
             TitleRating(
+                user_id=default_user_id(session),
                 title_id=t.id,
                 source="imdb_user",
                 is_personal=True,
@@ -183,13 +185,45 @@ def build_recommend_db(session: Session) -> dict[int, int]:
     _availability(session, session.get_one(Title, ids[201]), "netflix")  # rated => excluded
     session.add_all(
         [
-            WatchlistItem(title_id=ids[107], source="app", status="active"),
-            WatchlistItem(title_id=ids[108], source="netflix_mylist", status="active"),
-            WatchlistItem(title_id=ids[112], source="imdb_watchlist", status="watched"),
-            WatchEvent(title_id=ids[112], source="netflix_viewing", status="watched"),
-            WatchEvent(title_id=ids[104], source="netflix_viewing", status="abandoned"),
-            WatchEvent(title_id=ids[113], source="netflix_viewing", status="abandoned"),
-            TitleUserState(title_id=ids[114], not_interested=True, not_interested_at=NOW),
+            WatchlistItem(
+                user_id=default_user_id(session), title_id=ids[107], source="app", status="active"
+            ),
+            WatchlistItem(
+                user_id=default_user_id(session),
+                title_id=ids[108],
+                source="netflix_mylist",
+                status="active",
+            ),
+            WatchlistItem(
+                user_id=default_user_id(session),
+                title_id=ids[112],
+                source="imdb_watchlist",
+                status="watched",
+            ),
+            WatchEvent(
+                user_id=default_user_id(session),
+                title_id=ids[112],
+                source="netflix_viewing",
+                status="watched",
+            ),
+            WatchEvent(
+                user_id=default_user_id(session),
+                title_id=ids[104],
+                source="netflix_viewing",
+                status="abandoned",
+            ),
+            WatchEvent(
+                user_id=default_user_id(session),
+                title_id=ids[113],
+                source="netflix_viewing",
+                status="abandoned",
+            ),
+            TitleUserState(
+                user_id=default_user_id(session),
+                title_id=ids[114],
+                not_interested=True,
+                not_interested_at=NOW,
+            ),
         ]
     )
     session.commit()

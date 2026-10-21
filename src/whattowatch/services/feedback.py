@@ -24,6 +24,7 @@ from whattowatch.db.models import (
 from whattowatch.preferences.extract import extract_for_feedback
 from whattowatch.services import tmdb_account
 from whattowatch.services.tmdb_account import TmdbAccountClient
+from whattowatch.services.users import default_user_id
 
 APP_SOURCE = "app"
 MANUAL_WATCH_SOURCE = "manual"
@@ -73,7 +74,10 @@ def set_feedback(
         if new_liked is None and new_disliked is None:
             return None
         feedback = TitleFeedback(
-            title_id=title_id, liked_text=new_liked, disliked_text=new_disliked
+            user_id=default_user_id(session),  # A1 interim, TODO(A2): current user
+            title_id=title_id,
+            liked_text=new_liked,
+            disliked_text=new_disliked,
         )
         session.add(feedback)
     else:
@@ -115,7 +119,11 @@ def set_star_rating(
     if not 0.5 <= stars <= 5 or round(stars * 2) / 2 != stars:
         raise ValueError("stars must be a multiple of 0.5 between 0.5 and 5")
     if rating is None:
-        rating = TitleRating(title_id=title_id, source=APP_SOURCE)
+        rating = TitleRating(
+            user_id=default_user_id(session),  # A1 interim, TODO(A2): current user
+            title_id=title_id,
+            source=APP_SOURCE,
+        )
         session.add(rating)
     rating.is_personal = True
     rating.scale = "1-5"
@@ -167,7 +175,11 @@ def _user_state(session: Session, title_id: int) -> TitleUserState:
     _require_title(session, title_id)
     state = session.scalar(select(TitleUserState).where(TitleUserState.title_id == title_id))
     if state is None:
-        state = TitleUserState(title_id=title_id, not_interested=False)
+        state = TitleUserState(
+            user_id=default_user_id(session),  # A1 interim, TODO(A2): current user
+            title_id=title_id,
+            not_interested=False,
+        )
         session.add(state)
     return state
 
@@ -191,7 +203,11 @@ def set_seen(session: Session, title_id: int, flag: bool) -> TitleUserState:
     )
     if flag:
         if event is None:
-            event = WatchEvent(title_id=title_id, source=MANUAL_WATCH_SOURCE)
+            event = WatchEvent(
+                user_id=default_user_id(session),  # A1 interim, TODO(A2): current user
+                title_id=title_id,
+                source=MANUAL_WATCH_SOURCE,
+            )
             session.add(event)
         event.status = "watched"
         event.last_watched_at = event.last_watched_at or _now()
@@ -209,7 +225,12 @@ def add_to_watchlist(session: Session, title_id: int) -> WatchlistItem:
         )
     )
     if item is None:
-        item = WatchlistItem(title_id=title_id, source=APP_SOURCE, added_at=_now())
+        item = WatchlistItem(
+            user_id=default_user_id(session),  # A1 interim, TODO(A2): current user
+            title_id=title_id,
+            source=APP_SOURCE,
+            added_at=_now(),
+        )
         session.add(item)
     elif item.status != "active":
         item.added_at = _now()

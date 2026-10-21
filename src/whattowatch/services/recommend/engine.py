@@ -31,6 +31,7 @@ from whattowatch.services.recommend.scoring import (
     reasons,
     score_candidate,
 )
+from whattowatch.services.users import default_user_id
 
 LabelFn = Callable[[Iterable[str]], frozenset[str]]
 
@@ -208,10 +209,12 @@ def run_recommendations(
         # Wall-clock (not `now`) so re-runs always get a fresh batch id.
         batch_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
         rows: list[Recommendation] = []
+        owner = default_user_id(s)  # A1 interim, TODO(A2): current user
         subs_by_title: dict[int, tuple[str, ...]] = {}
         for rank, x in enumerate(picked, start=1):
             why = reasons(x.breakdown, x.cand, ctx)
             row = Recommendation(
+                user_id=owner,
                 batch_id=batch_id,
                 title_id=x.cand.title.id,
                 rank=rank,

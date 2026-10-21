@@ -41,8 +41,9 @@ hálózaton**. Az A szakasz úgy épül, hogy a B ne igényeljen újabb sémamó
   `netflix_profile_name` app-beállítás, ha van, különben „Profil 1”; **név
   nincs beégetve** —, minden meglévő személyes sort hozzá köt, az
   app-beállításokat is. Az első felhasználó admin. SQLite batch mód FK-védelemmel, mint 0005/0006.
-- `providers.enabled`, `selected_profile`: profilonkénti beállításba költözik
-  (`user_settings` kulcsok), a `providers` tábla csak a globális registry marad.
+- `providers.enabled`, `selected_profile`, `profiles`: a `user_subscriptions`
+  táblába költözik (unique `(user_id, provider_key)`), a `providers` tábla csak a
+  globális registry marad (`logo_path`). Részletek: docs/schema.md „Profilok”.
 
 ### A2. Backend: aktuális felhasználó
 

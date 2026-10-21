@@ -32,6 +32,7 @@ from whattowatch.db.models import (
     WatchlistItem,
 )
 from whattowatch.services.title_resolution import ResolveRequest, resolve_title
+from whattowatch.services.users import default_user_id
 
 Change = Literal["created", "updated", "unchanged"]
 SOURCES: dict[str, ImportSource] = {"ratings": "imdb_ratings", "watchlist": "imdb_watchlist"}
@@ -92,7 +93,13 @@ def _upsert_rating(
     }
     if rating is None:
         session.add(
-            TitleRating(title_id=title_id, source=source, import_row_id=import_row_id, **values)
+            TitleRating(
+                user_id=default_user_id(session),  # A1 interim, TODO(A2): current user
+                title_id=title_id,
+                source=source,
+                import_row_id=import_row_id,
+                **values,
+            )
         )
         return "created"
     if all(_same(getattr(rating, k), v) for k, v in values.items()):
@@ -121,6 +128,7 @@ def _upsert_watchlist(
     if item is None:
         session.add(
             WatchlistItem(
+                user_id=default_user_id(session),  # A1 interim, TODO(A2): current user
                 title_id=title_id,
                 source="imdb_watchlist",
                 added_at=added_at,
@@ -191,6 +199,7 @@ def _process_row(
     is_episode = row.title_kind == "episode"
     if import_row is None:
         import_row = ImportRow(
+            user_id=default_user_id(session),  # A1 interim, TODO(A2): current user
             source=source,
             file_sha256=file_sha,
             row_hash=digest,

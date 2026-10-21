@@ -13,6 +13,7 @@ from sqlalchemy import select
 
 from whattowatch.adapters.tmdb import BASE_URL
 from whattowatch.db.models import ImportRow, Title, TitleResolution
+from whattowatch.services.users import default_user_id
 
 FIXTURES = Path(__file__).parent / "fixtures" / "tmdb"
 
@@ -58,6 +59,7 @@ def _resolutions(api: ApiEnv) -> dict[str, int]:
     for i in range(2):
         api.session.add(
             ImportRow(
+                user_id=default_user_id(api.session),
                 source="netflix_viewing",
                 file_sha256="f",
                 row_hash=f"h{i}",
@@ -161,8 +163,9 @@ def test_search_and_ensure(api_tmdb: ApiEnv) -> None:
     assert gone.status_code == 404
 
 
-def _viewing_row(rid: int, i: int, parsed: dict[str, Any], device: str) -> ImportRow:
+def _viewing_row(uid: int, rid: int, i: int, parsed: dict[str, Any], device: str) -> ImportRow:
     return ImportRow(
+        user_id=uid,
         source="netflix_viewing",
         file_sha256="f",
         row_hash=f"ctx{i}",
@@ -214,7 +217,9 @@ def test_resolution_context(api: ApiEnv) -> None:
         },
     ]
     for i, p in enumerate(rows):
-        api.session.add(_viewing_row(res.id, i, p, "TV" if i % 2 else "iPhone"))
+        api.session.add(
+            _viewing_row(default_user_id(api.session), res.id, i, p, "TV" if i % 2 else "iPhone")
+        )
     api.session.commit()
 
     item = api.client.get(f"/api/resolutions/{res.id}").json()
@@ -241,6 +246,7 @@ def test_resolution_context_mylist(api: ApiEnv) -> None:
     api.session.flush()
     api.session.add(
         ImportRow(
+            user_id=default_user_id(api.session),
             source="netflix_mylist",
             file_sha256="f",
             row_hash="ml1",

@@ -16,6 +16,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -53,6 +54,17 @@ CatalogEventType = Literal[
 ]
 EventConfidence = Literal["verified", "exact", "estimated"]
 NotificationChannel = Literal["inapp"]
+# Profile avatar palette; a new profile takes the next colour (services/users.py).
+AVATAR_COLORS: tuple[str, ...] = (
+    "#e50914",
+    "#1f80e0",
+    "#2e7d32",
+    "#f9a825",
+    "#8e24aa",
+    "#00838f",
+    "#d84315",
+    "#5d4037",
+)
 
 
 def _in(column: str, literal: Any) -> str:
@@ -82,6 +94,30 @@ class TimestampMixin:
 
 def _fk(target: str, *, nullable: bool = False, ondelete: str = "CASCADE") -> Any:
     return mapped_column(Integer, ForeignKey(target, ondelete=ondelete), nullable=nullable)
+
+
+def _user_fk(*, nullable: bool = False) -> Any:
+    """Owner of a personal row (docs/multiuser.md A1); deleting the user deletes the row."""
+    return mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=nullable, index=True
+    )
+
+
+class User(Base):
+    """A profile (docs/multiuser.md A). `password_hash` NULL = opens without a password."""
+
+    __tablename__ = "users"
+    __table_args__ = (CheckConstraint("length(trim(name)) > 0", name="ck_users_name_nonempty"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String, unique=True)
+    avatar_color: Mapped[str] = mapped_column(String, default=AVATAR_COLORS[0])
+    password_hash: Mapped[str | None] = mapped_column(String)
+    is_admin: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.current_timestamp(), default=_utcnow
+    )
+    last_active_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Title(TimestampMixin, Base):
@@ -137,9 +173,25 @@ class Provider(TimestampMixin, Base):
     display_name: Mapped[str] = mapped_column(String)
     kind: Mapped[ProviderKind] = mapped_column(String)
     tmdb_provider_ids: Mapped[list[int]] = mapped_column(JSON, default=list)
-    enabled: Mapped[bool] = mapped_column(default=True)
-    # M7b: TMDB logo (cached from /watch/providers), export profiles and the chosen one.
+    # M7b: TMDB logo (cached from /watch/providers). The on/off switch and the export
+    # profiles are per user since 0013 (`user_subscriptions`).
     logo_path: Mapped[str | None] = mapped_column(String)
+
+
+class UserSubscription(TimestampMixin, Base):
+    """A user's switch and export profiles for one of the six subscriptions (0013).
+
+    `provider_key` is a `providers.py` registry key; no row = enabled, no profiles."""
+
+    __tablename__ = "user_subscriptions"
+    __table_args__ = (
+        UniqueConstraint("user_id", "provider_key", name="uq_user_subscriptions_user_provider"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = _user_fk()
+    provider_key: Mapped[str] = mapped_column(String)
+    enabled: Mapped[bool] = mapped_column(default=True)
     selected_profile: Mapped[str | None] = mapped_column(String)
     profiles: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON)
 
@@ -170,14 +222,16 @@ class TitleResolution(TimestampMixin, Base):
 class ImportRow(TimestampMixin, Base):
     __tablename__ = "import_rows"
     __table_args__ = (
+        UniqueConstraint("user_id", "row_hash", name="uq_import_rows_user_row_hash"),
         CheckConstraint(_in("source", ImportSource), name="ck_import_rows_source"),
         Index("ix_import_rows_resolution_id", "resolution_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = _user_fk()
     source: Mapped[ImportSource] = mapped_column(String)
     file_sha256: Mapped[str] = mapped_column(String)
-    row_hash: Mapped[str] = mapped_column(String, unique=True)
+    row_hash: Mapped[str] = mapped_column(String)
     raw: Mapped[dict[str, Any]] = mapped_column(JSON)
     profile_name: Mapped[str | None] = mapped_column(String)
     title_text: Mapped[str] = mapped_column(String)
@@ -191,11 +245,12 @@ class ImportRow(TimestampMixin, Base):
 class WatchEvent(TimestampMixin, Base):
     __tablename__ = "watch_events"
     __table_args__ = (
-        UniqueConstraint("title_id", "source"),
+        UniqueConstraint("user_id", "title_id", "source", name="uq_watch_events_user_title_source"),
         CheckConstraint(_in("status", WatchStatus), name="ck_watch_events_status"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = _user_fk()
     title_id: Mapped[int] = _fk("titles.id")
     source: Mapped[str] = mapped_column(String)
     status: Mapped[WatchStatus] = mapped_column(String)
@@ -208,7 +263,9 @@ class WatchEvent(TimestampMixin, Base):
 class TitleRating(TimestampMixin, Base):
     __tablename__ = "title_ratings"
     __table_args__ = (
-        UniqueConstraint("title_id", "source"),
+        UniqueConstraint(
+            "user_id", "title_id", "source", name="uq_title_ratings_user_title_source"
+        ),
         CheckConstraint(_in("scale", RatingScale), name="ck_title_ratings_scale"),
         CheckConstraint(
             "normalized IS NULL OR (normalized >= 0 AND normalized <= 1)",
@@ -217,6 +274,7 @@ class TitleRating(TimestampMixin, Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = _user_fk()
     title_id: Mapped[int] = _fk("titles.id")
     source: Mapped[str] = mapped_column(String)
     is_personal: Mapped[bool]
@@ -234,11 +292,11 @@ class TitleRating(TimestampMixin, Base):
 
 class TitleFeedback(TimestampMixin, Base):
     __tablename__ = "title_feedback"
+    __table_args__ = (UniqueConstraint("user_id", "title_id", name="uq_title_feedback_user_title"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    title_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("titles.id", ondelete="CASCADE"), unique=True
-    )
+    user_id: Mapped[int] = _user_fk()
+    title_id: Mapped[int] = _fk("titles.id")
     liked_text: Mapped[str | None] = mapped_column(Text)
     disliked_text: Mapped[str | None] = mapped_column(Text)
 
@@ -249,13 +307,21 @@ class PreferenceSignal(TimestampMixin, Base):
     __tablename__ = "preference_signals"
     __table_args__ = (
         UniqueConstraint(
-            "feedback_id", "polarity", "category", "label", "extractor", "model_version"
+            "user_id",
+            "feedback_id",
+            "polarity",
+            "category",
+            "label",
+            "extractor",
+            "model_version",
+            name="uq_preference_signals_user_signal",
         ),
         CheckConstraint(_in("polarity", Polarity), name="ck_preference_signals_polarity"),
         Index("ix_preference_signals_title_id", "title_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = _user_fk()
     feedback_id: Mapped[int] = _fk("title_feedback.id")
     title_id: Mapped[int] = _fk("titles.id")
     polarity: Mapped[Polarity] = mapped_column(String)
@@ -312,11 +378,14 @@ class Availability(TimestampMixin, Base):
 class WatchlistItem(TimestampMixin, Base):
     __tablename__ = "watchlist_items"
     __table_args__ = (
-        UniqueConstraint("title_id", "source"),
+        UniqueConstraint(
+            "user_id", "title_id", "source", name="uq_watchlist_items_user_title_source"
+        ),
         CheckConstraint(_in("status", WatchlistStatus), name="ck_watchlist_items_status"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = _user_fk()
     title_id: Mapped[int] = _fk("titles.id")
     source: Mapped[str] = mapped_column(String)
     added_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -326,11 +395,13 @@ class WatchlistItem(TimestampMixin, Base):
 
 class TitleUserState(TimestampMixin, Base):
     __tablename__ = "title_user_state"
+    __table_args__ = (
+        UniqueConstraint("user_id", "title_id", name="uq_title_user_state_user_title"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    title_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("titles.id", ondelete="CASCADE"), unique=True
-    )
+    user_id: Mapped[int] = _user_fk()
+    title_id: Mapped[int] = _fk("titles.id")
     not_interested: Mapped[bool] = mapped_column(default=False)
     not_interested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     seen_override: Mapped[bool | None]
@@ -341,6 +412,8 @@ class SyncRun(TimestampMixin, Base):
     __tablename__ = "sync_runs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # NULL = global run (catalog / SA / refresh); import runs carry their user.
+    user_id: Mapped[int | None] = _user_fk(nullable=True)
     source: Mapped[str] = mapped_column(String)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -356,12 +429,15 @@ class SyncRun(TimestampMixin, Base):
 class Recommendation(TimestampMixin, Base):
     __tablename__ = "recommendations"
     __table_args__ = (
-        UniqueConstraint("batch_id", "title_id"),
+        UniqueConstraint(
+            "user_id", "batch_id", "title_id", name="uq_recommendations_user_batch_title"
+        ),
         Index("ix_recommendations_batch_id", "batch_id"),
         Index("ix_recommendations_title_id", "title_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = _user_fk()
     batch_id: Mapped[str] = mapped_column(String)
     title_id: Mapped[int] = _fk("titles.id")
     rank: Mapped[int]
@@ -407,25 +483,43 @@ class CatalogEvent(TimestampMixin, Base):
 class Notification(TimestampMixin, Base):
     __tablename__ = "notifications"
     __table_args__ = (
+        UniqueConstraint("user_id", "dedupe_key", name="uq_notifications_user_dedupe_key"),
         CheckConstraint(_in("channel", NotificationChannel), name="ck_notifications_channel"),
         Index("ix_notifications_event_id", "event_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = _user_fk()
     event_id: Mapped[int] = _fk("catalog_events.id")
     channel: Mapped[NotificationChannel] = mapped_column(String, default="inapp")
-    dedupe_key: Mapped[str] = mapped_column(String, unique=True)
+    dedupe_key: Mapped[str] = mapped_column(String)
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     event: Mapped[CatalogEvent] = relationship()
 
 
 class AppSetting(Base):
-    """App-level key/value settings edited in the UI (not secrets; those stay in `.env`)."""
+    """Key/value settings edited in the UI (not secrets; those stay in `.env`).
+
+    `user_id` NULL = global setting; otherwise the user's own value (0013). One row per
+    `(key, user_id)`, and at most one global row per key (partial unique index)."""
 
     __tablename__ = "app_settings"
+    __table_args__ = (
+        Index("uq_app_settings_key_user", "key", "user_id", unique=True),
+        Index(
+            "uq_app_settings_key_global",
+            "key",
+            unique=True,
+            sqlite_where=text("user_id IS NULL"),
+        ),
+    )
 
-    key: Mapped[str] = mapped_column(String, primary_key=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String)
+    user_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True
+    )
     value: Mapped[Any] = mapped_column(JSON)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

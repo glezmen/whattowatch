@@ -18,6 +18,7 @@ from whattowatch.db.models import (
 from whattowatch.services.recommend.candidates import load_candidates
 from whattowatch.services.recommend.config import RecommenderConfig, Weights
 from whattowatch.services.recommend.engine import run_recommendations
+from whattowatch.services.users import default_user_id
 
 DB = tuple[Session, dict[int, int]]
 
@@ -99,7 +100,9 @@ def test_candidates_flag_estimated_only(recommend_db: DB) -> None:
 
 def test_seen_override_excludes(recommend_db: DB) -> None:
     session, ids = recommend_db
-    session.add(TitleUserState(title_id=ids[101], seen_override=True))
+    session.add(
+        TitleUserState(user_id=default_user_id(session), title_id=ids[101], seen_override=True)
+    )
     session.commit()
     assert 101 not in _run(recommend_db)
 
@@ -220,6 +223,7 @@ def test_batch_persisted_and_rerun_creates_new_batch(
 
     session.add(
         Recommendation(
+            user_id=default_user_id(session),
             batch_id=first[0].batch_id,
             title_id=first[0].title_id,
             rank=99,

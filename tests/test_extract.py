@@ -13,6 +13,7 @@ from whattowatch.config import Settings
 from whattowatch.db.engine import create_engine_from_settings
 from whattowatch.db.models import PreferenceSignal, Title, TitleFeedback
 from whattowatch.preferences.extract import extract_rules, run_extraction
+from whattowatch.services.users import default_user_id
 
 
 @pytest.fixture
@@ -81,12 +82,13 @@ def signals(session: Session) -> set[tuple[str, str, str]]:
 def test_run_extraction_idempotent_and_edit(session: Session) -> None:
     title = make_title(session, 1)
     fb = TitleFeedback(
+        user_id=default_user_id(session),
         title_id=title.id,
         liked_text="lassan kibontakozó rejtély, száraz humor",
         disliked_text="a túl sok erőszak zavart",
     )
     session.add(fb)
-    llm = PreferenceSignal(
+    llm = PreferenceSignal(user_id=default_user_id(session), 
         feedback_id=0, title_id=title.id, polarity="+", category="tema", label="csalad",
         weight=1.0, confidence=0.9, extractor="llm", model_version="m1",
     )  # fmt: skip

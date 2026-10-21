@@ -12,12 +12,14 @@ from sqlalchemy import select
 from whattowatch.db.models import Recommendation
 from whattowatch.services.recommend.config import RecommenderConfig
 from whattowatch.services.recommend.engine import run_recommendations
+from whattowatch.services.users import default_user_id
 
 
 def _batch(api: ApiEnv, batch_id: str, tmdb_ids: list[int], at_offset_h: int) -> None:
     for rank, tmdb_id in enumerate(tmdb_ids, start=1):
         api.session.add(
             Recommendation(
+                user_id=default_user_id(api.session),
                 batch_id=batch_id,
                 title_id=api.ids[tmdb_id],
                 rank=rank,

@@ -8,6 +8,7 @@ from conftest import NOW, ApiEnv
 from sqlalchemy import select
 
 from whattowatch.db.models import Availability, Provider, TitleRating, WatchEvent
+from whattowatch.services.users import default_user_id
 
 POPULAR_VERIFIED = [201, 101, 106, 102, 112, 103, 104, 113, 105, 107, 114]
 
@@ -72,6 +73,7 @@ def _add_card_extras(api: ApiEnv) -> int:
                 confidence="estimated",
             ),
             TitleRating(
+                user_id=default_user_id(s),
                 title_id=tid,
                 source="imdb_community",
                 is_personal=False,

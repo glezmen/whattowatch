@@ -12,8 +12,19 @@ from sqlalchemy.orm import Session
 from whattowatch.cli import ROOT
 from whattowatch.config import Settings
 from whattowatch.db.engine import create_engine_from_settings
-from whattowatch.db.models import Availability, Base, Provider, Title
+from whattowatch.db.models import (
+    AppSetting,
+    Availability,
+    Base,
+    Provider,
+    Title,
+    User,
+    UserSubscription,
+    WatchEvent,
+)
 from whattowatch.db.seed import seed_providers
+from whattowatch.services import app_settings as app_cfg
+from whattowatch.services.users import DEFAULT_USER_NAME, default_user_id
 
 EXPECTED_TABLES = {
     "titles",
@@ -31,6 +42,30 @@ EXPECTED_TABLES = {
     "recommendations",
     "catalog_events",
     "notifications",
+    "app_settings",
+    "users",
+    "user_subscriptions",
+}
+# Personal tables: owner column (NOT NULL unless noted) and the user-scoped unique key.
+USER_SCOPED_UNIQUE: dict[str, list[str]] = {
+    "watch_events": ["user_id", "title_id", "source"],
+    "title_ratings": ["user_id", "title_id", "source"],
+    "title_feedback": ["user_id", "title_id"],
+    "preference_signals": [
+        "user_id",
+        "feedback_id",
+        "polarity",
+        "category",
+        "label",
+        "extractor",
+        "model_version",
+    ],
+    "watchlist_items": ["user_id", "title_id", "source"],
+    "title_user_state": ["user_id", "title_id"],
+    "recommendations": ["user_id", "batch_id", "title_id"],
+    "notifications": ["user_id", "dedupe_key"],
+    "import_rows": ["user_id", "row_hash"],
+    "user_subscriptions": ["user_id", "provider_key"],
 }
 
 
@@ -117,3 +152,80 @@ def test_downgrade_base_leaves_only_version_table(
     command.upgrade(_config(), "head")
     command.downgrade(_config(), "base")
     assert inspect(create_engine(f"sqlite:///{db_file}")).get_table_names() == ["alembic_version"]
+
+
+def test_personal_tables_are_user_scoped(engine: Engine) -> None:
+    insp = inspect(engine)
+    for table, unique in USER_SCOPED_UNIQUE.items():
+        cols = {c["name"]: c for c in insp.get_columns(table)}
+        assert cols["user_id"]["nullable"] is False, table
+        fks = [
+            fk for fk in insp.get_foreign_keys(table) if fk["constrained_columns"] == ["user_id"]
+        ]
+        assert len(fks) == 1 and fks[0]["referred_table"] == "users", table
+        assert fks[0]["options"].get("ondelete") == "CASCADE", table
+        uniques = [u["column_names"] for u in insp.get_unique_constraints(table)]
+        assert uniques == [unique], table
+        assert ["user_id"] in [i["column_names"] for i in insp.get_indexes(table)], table
+    sync = {c["name"]: c for c in insp.get_columns("sync_runs")}
+    assert sync["user_id"]["nullable"] is True
+    providers = {c["name"] for c in insp.get_columns("providers")}
+    assert "logo_path" in providers and "enabled" not in providers
+    indexes = {i["name"]: i for i in insp.get_indexes("app_settings")}
+    assert indexes["uq_app_settings_key_user"]["column_names"] == ["key", "user_id"]
+    assert indexes["uq_app_settings_key_global"]["unique"]
+
+
+def test_unique_keys_are_per_user_and_user_delete_cascades(engine: Engine) -> None:
+    with Session(engine) as session:
+        title = _title()
+        session.add(title)
+        session.flush()
+        first = default_user_id(session)
+        other = User(name="Béla")
+        session.add(other)
+        session.flush()
+        for uid in (first, other.id):
+            session.add(WatchEvent(user_id=uid, title_id=title.id, source="app", status="watched"))
+        session.commit()
+        session.add(WatchEvent(user_id=other.id, title_id=title.id, source="app", status="watched"))
+        with pytest.raises(IntegrityError):
+            session.commit()
+        session.rollback()
+        session.add(UserSubscription(user_id=other.id, provider_key="netflix", enabled=False))
+        session.commit()
+        session.delete(other)
+        session.commit()
+        assert session.scalars(select(WatchEvent.user_id)).all() == [first]
+        assert session.scalars(select(UserSubscription)).all() == []
+
+
+def test_app_settings_global_and_per_user_rows(engine: Engine) -> None:
+    with Session(engine) as session:
+        uid = default_user_id(session)
+        app_cfg.set_ui_language(session, "en")  # global row (A1: no user passed)
+        app_cfg.set_ui_language(session, "hu", user_id=uid)
+        session.commit()
+        assert app_cfg.ui_language(session) == "en"
+        assert app_cfg.ui_language(session, user_id=uid) == "hu"
+        app_cfg.set_setting(session, "ui_language", None, user_id=uid)
+        assert app_cfg.ui_language(session, user_id=uid) == "hu"  # default
+        assert app_cfg.get_setting(session, "ui_language", user_id=uid) is None
+        session.add(AppSetting(key="ui_language", value="hu"))  # second global row
+        with pytest.raises(IntegrityError):
+            session.commit()
+        session.rollback()
+        assert "ui_language" in app_cfg.PER_USER_KEYS and "llm_model" in app_cfg.PER_USER_KEYS
+
+
+def test_default_user_id_creates_profil_1_when_none(engine: Engine) -> None:
+    with Session(engine) as session:
+        session.execute(User.__table__.delete())
+        assert default_user_id(session, create=False) is None
+        uid = default_user_id(session)
+        user = session.get_one(User, uid)
+        assert (user.name, user.is_admin) == (DEFAULT_USER_NAME, True)
+        assert default_user_id(session) == uid
+        session.add(User(name="  "))
+        with pytest.raises(IntegrityError):
+            session.flush()

@@ -129,6 +129,7 @@ def _sync_signals(
         row = existing.get(key)
         if row is None:
             row = PreferenceSignal(
+                user_id=feedback.user_id,
                 feedback_id=feedback.id,
                 polarity=polarity,
                 category=category,

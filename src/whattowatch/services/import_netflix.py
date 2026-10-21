@@ -37,6 +37,7 @@ from whattowatch.db.models import (
     WatchEvent,
     WatchlistItem,
 )
+from whattowatch.services.users import default_user_id
 
 if TYPE_CHECKING:
     from whattowatch.adapters.tmdb import MediaType, TmdbClient
@@ -98,6 +99,8 @@ def _same(a: Any, b: Any) -> bool:
 def _upsert(session: Session, model: Any, keys: dict[str, Any], values: dict[str, Any]) -> str:
     obj = session.scalars(select(model).filter_by(**keys)).one_or_none()
     if obj is None:
+        if "user_id" not in keys:
+            keys = {**keys, "user_id": default_user_id(session)}  # A1 interim, TODO(A2)
         session.add(model(**keys, **values))
         return "created"
     changed = False
@@ -142,6 +145,7 @@ class _Importer:
         self._hashes.add(h)
         self.session.add(
             ImportRow(
+                user_id=default_user_id(self.session),  # A1 interim, TODO(A2): current user
                 source=source,
                 file_sha256=self.export.file_hashes.get(csv_name, ""),
                 row_hash=h,

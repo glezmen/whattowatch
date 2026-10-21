@@ -12,8 +12,8 @@ def _upsert(
 ) -> None:
     provider = session.scalars(select(Provider).where(Provider.key == key)).one_or_none()
     if provider is None:
-        # New rows start enabled; an existing row keeps the user's choice (M7 settings).
-        provider = Provider(key=key, enabled=True)
+        # Global registry row; the per-user switch lives in `user_subscriptions` (0013).
+        provider = Provider(key=key)
         session.add(provider)
     provider.display_name = display_name
     provider.kind = kind

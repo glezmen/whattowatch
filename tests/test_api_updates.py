@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from whattowatch.db.models import Availability, CatalogEvent, Notification, Provider, SyncRun
+from whattowatch.services.users import default_user_id
 
 TODAY = NOW.date()
 
@@ -97,10 +98,18 @@ def seeded(api: ApiEnv) -> dict[str, int]:
             ),
         ]
     )
-    n1 = Notification(event_id=dated.id, channel="inapp", dedupe_key="expiring:a:7")
-    n2 = Notification(event_id=wl.id, channel="inapp", dedupe_key="watchlist:b")
+    n1 = Notification(
+        user_id=default_user_id(s), event_id=dated.id, channel="inapp", dedupe_key="expiring:a:7"
+    )
+    n2 = Notification(
+        user_id=default_user_id(s), event_id=wl.id, channel="inapp", dedupe_key="watchlist:b"
+    )
     n3 = Notification(
-        event_id=undated.id, channel="inapp", dedupe_key="expiring:c:soon", read_at=NOW
+        user_id=default_user_id(s),
+        event_id=undated.id,
+        channel="inapp",
+        dedupe_key="expiring:c:soon",
+        read_at=NOW,
     )
     s.add_all([n1, n2, n3])
     s.commit()

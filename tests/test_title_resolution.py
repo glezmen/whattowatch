@@ -26,6 +26,7 @@ from whattowatch.services.title_resolution import (
     request_for_rows,
     resolve_title,
 )
+from whattowatch.services.users import default_user_id
 
 FIXTURES = Path(__file__).parent / "fixtures" / "tmdb"
 EMPTY_SEARCH = {"page": 1, "total_pages": 0, "total_results": 0, "results": []}
@@ -442,6 +443,7 @@ def test_refresh_resolution_fills_candidate_fields(session: Session, tmdb: TmdbC
     session.flush()
     session.add(
         ImportRow(
+            user_id=default_user_id(session),
             source="imdb_ratings",
             file_sha256="f",
             row_hash="r1",

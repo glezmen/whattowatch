@@ -57,6 +57,7 @@ from whattowatch.services.updates import (
     sync_sa_changes,
     upsert_event,
 )
+from whattowatch.services.users import default_user_id
 
 TODAY = NOW.date()
 
@@ -453,9 +454,21 @@ def test_detect_new_seasons(migrated_session: Session) -> None:
     ignored = _new_title(session, 504, "tv")  # not followed
     session.add_all(
         [
-            WatchEvent(title_id=watched, source="netflix_viewing", status="watched"),
-            WatchlistItem(title_id=listed, source="app", status="active"),
-            WatchEvent(title_id=old, source="netflix_viewing", status="in_progress"),
+            WatchEvent(
+                user_id=default_user_id(session),
+                title_id=watched,
+                source="netflix_viewing",
+                status="watched",
+            ),
+            WatchlistItem(
+                user_id=default_user_id(session), title_id=listed, source="app", status="active"
+            ),
+            WatchEvent(
+                user_id=default_user_id(session),
+                title_id=old,
+                source="netflix_viewing",
+                status="in_progress",
+            ),
         ]
     )
     session.commit()
@@ -525,7 +538,11 @@ def test_notifications_thresholds_and_dedupe(db: tuple[Session, dict[int, int]])
     session, ids = db
     extra = [_new_title(session, 600 + i) for i in range(5)]
     for tid in extra:
-        session.add(WatchlistItem(title_id=tid, source="app", status="active"))
+        session.add(
+            WatchlistItem(
+                user_id=default_user_id(session), title_id=tid, source="app", status="active"
+            )
+        )
     far, ten, five, two, soon = extra
     _expiring(session, far, 20)
     _expiring(session, ten, 10)
@@ -662,7 +679,11 @@ def test_run_refresh_baseline_then_diff(db: tuple[Session, dict[int, int]]) -> N
     tmdb = cast(TmdbClient, fake)
     # long on Netflix, but the baseline run is the first time we verify it
     seen_first = _new_title(session, 701)
-    session.add(WatchlistItem(title_id=seen_first, source="app", status="active"))
+    session.add(
+        WatchlistItem(
+            user_id=default_user_id(session), title_id=seen_first, source="app", status="active"
+        )
+    )
     session.commit()
     fake.offers[701] = netflix
 
@@ -678,7 +699,11 @@ def test_run_refresh_baseline_then_diff(db: tuple[Session, dict[int, int]]) -> N
 
     # between runs: a brand-new title arrives on Netflix and is on the watchlist
     fresh = _new_title(session, 702)
-    session.add(WatchlistItem(title_id=fresh, source="app", status="active"))
+    session.add(
+        WatchlistItem(
+            user_id=default_user_id(session), title_id=fresh, source="app", status="active"
+        )
+    )
     session.commit()
     fake.offers[702] = netflix
 
@@ -698,12 +723,24 @@ def test_watchlist_available_since(db: tuple[Session, dict[int, int]]) -> None:
     session, ids = db
     old_offer = _new_title(session, 711)  # long available, just added to the watchlist
     _avail(session, old_offer, "hbo_max", "tmdb/justwatch", NOW - timedelta(days=30))
-    session.add(WatchlistItem(title_id=old_offer, source="app", status="active", added_at=NOW))
+    session.add(
+        WatchlistItem(
+            user_id=default_user_id(session),
+            title_id=old_offer,
+            source="app",
+            status="active",
+            added_at=NOW,
+        )
+    )
     stale = _new_title(session, 712)  # long available, long on the watchlist
     _avail(session, stale, "hbo_max", "tmdb/justwatch", NOW - timedelta(days=30))
     session.add(
         WatchlistItem(
-            title_id=stale, source="app", status="active", added_at=NOW - timedelta(days=30)
+            user_id=default_user_id(session),
+            title_id=stale,
+            source="app",
+            status="active",
+            added_at=NOW - timedelta(days=30),
         )
     )
     session.commit()

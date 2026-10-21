@@ -11,6 +11,7 @@ from whattowatch.db.models import PreferenceSignal, Title, TitleFeedback
 from whattowatch.llm.base import LLMResponse, Message, ToolSpec
 from whattowatch.preferences.extract import run_extraction
 from whattowatch.preferences.extract_llm import extract_llm, signal_schema, system_prompt
+from whattowatch.services.users import default_user_id
 
 REPLY = {
     "signals": [
@@ -77,7 +78,12 @@ def _feedback(session: Session) -> TitleFeedback:
     )
     session.add(title)
     session.flush()
-    fb = TitleFeedback(title_id=title.id, liked_text="száraz humor", disliked_text=None)
+    fb = TitleFeedback(
+        user_id=default_user_id(session),
+        title_id=title.id,
+        liked_text="száraz humor",
+        disliked_text=None,
+    )
     session.add(fb)
     session.flush()
     return fb
