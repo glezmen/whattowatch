@@ -1,6 +1,6 @@
 # Implementációs terv és architektúradöntések
 
-Állapot: **M0–M3 kész, M4 folyamatban** (2026-10-21). A specifikáció: `docs/spec.md`.
+Állapot: **M0–M5 kész, M6 folyamatban** (2026-10-21). A specifikáció: `docs/spec.md`.
 
 ## Architektúradöntések
 
@@ -77,10 +77,17 @@ Kulcskonvenciók:
 - [x] preferencia-szótár (55 címke), szabályalapú kinyerés, profil, visszajelzés-szolgáltatás
 - [x] 143 teszt; első élő batch lefutott
 
-### M4 — API és Vue felület (folyamatban)
+### M4 — API és Vue felület (kész, 2026-10-21)
 - API-szerződés: `docs/api.md`
 - FastAPI routerek + statikus frontend kiszolgálás
 - Vue 3 + TS + Vite: ajánló, felfedezés, watchlist, előzmények, címfeloldás, sync-állapot
 - `has_hu_translation` nullázhatóvá tétele (discover-ből „nem ismert”)
-### M5 — LLM-réteg és beszélgetés
-### M6 — frissítés, újdonságok, kivezetések (Streaming Availability API)
+### M5 — LLM-réteg és beszélgetés (kész, 2026-10-21)
+- [x] `llm/` provider-réteg: LM Studio, OpenAI (httpx), Anthropic (hivatalos SDK), registry fallback-tiltással
+- [x] LLM-es preferencia-kinyerés zárt szótárral, `wtw recommend extract-preferences --extractor llm`
+- [x] beszélgetős ajánló 7 típusos eszközzel, `POST /api/chat`, `/beszelgetes` oldal
+- [ ] élő próba LM Studio / Anthropic kulccsal (mock-tesztek zöldek)
+### M6 — frissítés, újdonságok, kivezetések (folyamatban)
+- terv: `docs/updates.md`; SA API kulcs és végpont igazolva
+- backend: adapter, migráció 0006, események, értesítések, `run_refresh`
+- bekötés: `wtw refresh`, `/api/updates`, `/api/notifications`, `/ujdonsagok`, `/tavozik`
