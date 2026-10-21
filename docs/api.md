@@ -88,3 +88,47 @@ Hibák: `404 {detail}` ismeretlen id; `409` ha nincs TMDB-kulcs (vagy LLM-provid
 A statikus frontend a `FRONTEND_DIST` (alap `frontend/dist`) könyvtárból szolgálódik ki a
 gyökéren, ha létezik (ismeretlen nem-`/api` út → `index.html`); `/api` alatt nincs fallback.
 Ha nincs build, a `/` egy rövid JSON-tippet ad.
+
+## Beállítások, előfizetések, feltöltés, nyelv (M7)
+
+Az alkalmazásszintű beállítások adatbázisban élnek (`app_settings` kulcs–érték
+tábla, migráció 0007), nem a `.env`-ben; a `.env` csak a titkokat és az
+infrastruktúrát tartja (kulcsok, DB-útvonal, LM Studio URL). A `providers.enabled`
+oszlop az előfizetések kapcsolója.
+
+| Metódus, út | Leírás |
+|---|---|
+| `GET /settings/subscriptions` | `{items: [{key, display_name, enabled, tmdb_provider_ids}]}` a hat szolgáltatóra |
+| `PUT /settings/subscriptions` `{enabled: ["netflix","hbo_max",…]}` | beállítja; üres lista megengedett (ilyenkor az ajánló üres és a felület erre figyelmeztet) |
+| `GET /settings/app` | `{ui_language: "hu"|"en", netflix_profile_name?: string, netflix_profiles: string[] (az utolsó feltöltött exportból), onboarding_done: bool}` |
+| `PUT /settings/app` `{ui_language?, netflix_profile_name?, onboarding_done?}` | részleges frissítés |
+| `POST /import/upload` multipart: `source` (`imdb_ratings`, `imdb_watchlist`, `netflix_export`) + `file` | elmenti `data/imports/<source>/<utc>_<eredeti név>` alá, elindít egy háttérfeladatot; válasz `ImportJob` |
+| `POST /import/netflix/profiles` multipart `file` **vagy** `{job_id}` | az exportban talált profilnevek: `{profiles: [{name, primary_lang, viewing_rows}]}` (nem indít importot) |
+| `GET /import/jobs?limit=` | `ImportJob[]` legfrissebb elöl |
+| `GET /import/jobs/{id}` | egy feladat |
+| `GET /import/sources` | mely forrásokhoz van import: `[{source, label_key, accepts: ".csv"|".zip", supported: bool, note_key}]` — a nem támogatott szolgáltatói exportok (Disney+, HBO Max, Prime, Apple, SkyShowtime) `supported: false`, `note_key` a frontend i18n kulcsa a magyarázathoz |
+
+```
+ImportJob { id, source, file_name, status: "queued"|"running"|"done"|"failed",
+            started_at?, finished_at?, summary?: {processed, created, updated, skipped, unresolved?, ambiguous?},
+            error?: string, sync_run_id?: int, params: {profile_name?} }
+```
+
+A feldolgozás egy háttérszálon fut a folyamaton belül (nincs külső queue); a
+feladatlista memóriában él és a `sync_runs` táblához kötődik. Netflix-exportnál
+`profile_name` kötelező (kérdésben vagy az app-beállításból); ha hiányzik, a
+feladat `failed`, az üzenet felsorolja a profilokat.
+
+**Előfizetés-szűrés hatóköre:** a jelöltgenerálás (`discover`), az ajánló
+`verified_subscriptions`, a `/titles` és `/watchlist?available=true` szűrés, az
+`/updates` szekciók, a Streaming Availability `catalogs` és a beszélgetős eszközök
+csak az engedélyezett szolgáltatókat használják. A kártya `availability` listája
+továbbra is mind a hatot mutatja, `enabled: bool` jelzővel.
+
+**Nyelv:** `GET/PUT /settings/app.ui_language`. Az ajánlás-indoklás a
+`RecommendationItem.reason_codes: [{code, params}]` mezőben is visszajön
+(pl. `{"code":"watchlist"}`, `{"code":"genre_match","params":{"genres":["Dráma"]}}`,
+`{"code":"preference","params":{"label":"tortenet/csavaros"}}`), a frontend
+ezt fordítja; a `reasons` szöveges mező marad magyar a CLI-hez. A `/chat`
+rendszerpromptja a beállított nyelven kér választ. A hibaüzenetek `detail`
+mezője mellett `detail_code` is jöhet, ahol van értelme (pl. `no_tmdb_key`).
