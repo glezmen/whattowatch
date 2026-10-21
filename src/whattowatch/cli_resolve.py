@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import UTC, datetime
 from typing import Annotated, Literal
 
 import typer
@@ -14,8 +13,8 @@ from sqlalchemy.orm import Session
 from whattowatch.adapters.tmdb import TmdbClient
 from whattowatch.config import get_settings
 from whattowatch.db.engine import create_engine_from_settings, session_factory
-from whattowatch.db.models import ImportRow, MediaType, TitleResolution
-from whattowatch.services.catalog import ensure_title
+from whattowatch.db.models import ImportRow, MediaType, Title, TitleResolution
+from whattowatch.services.title_resolution import reject_resolution, set_manual_resolution
 
 resolve_app = typer.Typer(help="Review and fix title resolutions", no_args_is_help=True)
 
@@ -30,12 +29,9 @@ def _session() -> Iterator[Session]:
         engine.dispose()
 
 
-def _get(session: Session, resolution_id: int) -> TitleResolution:
-    row = session.get(TitleResolution, resolution_id)
-    if row is None:
-        typer.echo(f"Hiba: nincs ilyen feloldás: {resolution_id}", err=True)
-        raise typer.Exit(code=1)
-    return row
+def _missing(resolution_id: int) -> typer.Exit:
+    typer.echo(f"Hiba: nincs ilyen feloldás: {resolution_id}", err=True)
+    return typer.Exit(code=1)
 
 
 @resolve_app.command("list")
@@ -73,12 +69,12 @@ def set_cmd(resolution_id: int, media_type: MediaType, tmdb_id: int) -> None:
         typer.echo("Hiba: a TMDB_API_KEY nincs beállítva (.env).", err=True)
         raise typer.Exit(code=2)
     with _session() as session, TmdbClient(key) as tmdb:
-        row = _get(session, resolution_id)
-        title = ensure_title(session, tmdb, media_type, tmdb_id)
-        row.title_id = title.id
-        row.status, row.method, row.confidence = "manual", "manual", 1.0
-        row.resolved_at = datetime.now(UTC)
+        try:
+            row = set_manual_resolution(session, tmdb, resolution_id, media_type, tmdb_id)
+        except LookupError:
+            raise _missing(resolution_id) from None
         session.commit()
+        title = session.get_one(Title, row.title_id)
         name = title.title_hu or title.original_title
         typer.echo(f"#{row.id} → {name} ({title.year or '?'}). Futtasd újra az importot.")
 
@@ -87,8 +83,9 @@ def set_cmd(resolution_id: int, media_type: MediaType, tmdb_id: int) -> None:
 def reject_cmd(resolution_id: int) -> None:
     """Mark a resolution as rejected (no title; not retried)."""
     with _session() as session:
-        row = _get(session, resolution_id)
-        row.status, row.title_id, row.method = "rejected", None, None
-        row.resolved_at = datetime.now(UTC)
+        try:
+            row = reject_resolution(session, resolution_id)
+        except LookupError:
+            raise _missing(resolution_id) from None
         session.commit()
         typer.echo(f"#{row.id} elutasítva.")

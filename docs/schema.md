@@ -28,7 +28,7 @@ SQLAlchemy 2.0 modellek, Alembic migrációval. Minden táblán `id` integer PK,
 | original_title, original_language | str | |
 | title_hu | str? | csak valós HU fordításnál |
 | title_en | str? | |
-| has_hu_translation | bool | |
+| has_hu_translation | bool? | NULL = nem ismert (discoverből létrehozott cím; a details tölti ki) |
 | year | int? | |
 | genres | JSON list[str] | |
 | overview_hu | str? | |

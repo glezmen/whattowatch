@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     lm_studio_base_url: str = "http://localhost:1234/v1"
     netflix_profile_name: str | None = None
     recommender_config_path: str | None = None
+    frontend_dist: str = "frontend/dist"
 
 
 @lru_cache

@@ -85,7 +85,8 @@ class Title(TimestampMixin, Base):
     original_language: Mapped[str] = mapped_column(String)
     title_hu: Mapped[str | None] = mapped_column(String)
     title_en: Mapped[str | None] = mapped_column(String)
-    has_hu_translation: Mapped[bool] = mapped_column(default=False)
+    # NULL = not known (e.g. created from TMDB discover without details).
+    has_hu_translation: Mapped[bool | None] = mapped_column(default=None)
     year: Mapped[int | None]
     genres: Mapped[list[str]] = mapped_column(JSON, default=list)
     overview_hu: Mapped[str | None] = mapped_column(Text)

@@ -11,7 +11,7 @@ előfizetésein elérhető műsorokból ajánl. A részletes specifikáció: `do
 uv sync
 cp .env.example .env     # töltsd ki a szükséges kulcsokat
 uv run wtw db upgrade
-uv run wtw serve         # http://127.0.0.1:8000/health
+uv run wtw serve         # http://127.0.0.1:8000/api/health
 ```
 
 ## Parancsok
@@ -45,3 +45,17 @@ uv run ruff check .
 uv run ruff format --check .
 uv run mypy
 ```
+
+## Frontend
+
+Vue 3 + TypeScript (Vite) a `frontend/` alatt; az API-szerződés: `docs/api.md`.
+
+```
+cd frontend
+npm install
+npm run dev      # http://localhost:5173, az /api kéréseket a 127.0.0.1:8000-re proxyzza
+npm run build    # vue-tsc típusellenőrzés + build a frontend/dist-be
+npm run lint     # eslint (vue + typescript-eslint)
+```
+
+A backend a `frontend/dist` tartalmát a gyökéren szolgálja ki, ha létezik (más útvonal: `FRONTEND_DIST`).

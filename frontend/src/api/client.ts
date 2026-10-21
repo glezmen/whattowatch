@@ -1,0 +1,317 @@
+// Typed wrappers for the backend contract in docs/api.md (prefix /api).
+import { pushError } from '../toast'
+
+export type MediaType = 'movie' | 'tv'
+export type Confidence = 'verified' | 'stale' | 'estimated' | 'conflicting' | 'user_denied'
+
+export interface AvailabilityEntry {
+  provider_key: string
+  provider_name: string
+  offer_type: string
+  source: string
+  confidence: Confidence | string
+  last_seen_at: string
+  leaving_at?: string | null
+  leaving_confidence?: 'exact' | 'estimated' | null
+}
+
+export interface PersonalRating {
+  source: string
+  scale: string
+  raw_value: string
+  rated_at?: string | null
+}
+
+export interface UserState {
+  seen: boolean
+  seen_source?: 'import' | 'manual' | null
+  abandoned: boolean
+  not_interested: boolean
+  stars?: number | null
+  liked_text?: string | null
+  disliked_text?: string | null
+  on_watchlist: boolean
+  watchlist_sources: string[]
+  personal_ratings: PersonalRating[]
+}
+
+export interface CommunityScores {
+  tmdb_vote_average?: number | null
+  tmdb_vote_count?: number | null
+  imdb_rating?: number | null
+  imdb_votes?: number | null
+  fetched_at?: string | null
+}
+
+export interface TitleCard {
+  id: number
+  media_type: MediaType
+  tmdb_id: number
+  imdb_id?: string | null
+  title_hu?: string | null
+  original_title: string
+  title_en?: string | null
+  has_hu_translation?: boolean | null
+  year?: number | null
+  genres: string[]
+  overview_hu?: string | null
+  poster_path?: string | null
+  runtime?: number | null
+  number_of_seasons?: number | null
+  community: CommunityScores
+  availability: AvailabilityEntry[]
+  user: UserState
+}
+
+export interface RecommendationItem {
+  rank: number
+  score: number
+  reasons: string[]
+  components: Record<string, number>
+  title: TitleCard
+  batch_id: string
+  generated_at: string
+}
+
+export interface Page<T> {
+  items: T[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface PreferenceSignal {
+  id: number
+  title_id?: number
+  feedback_id?: number
+  polarity: '+' | '-'
+  category: string
+  label: string
+  /** Human-readable (Hungarian) label, if the vocabulary has one. */
+  label_name?: string | null
+  weight?: number
+  confidence?: number | null
+  extractor?: string
+  model_version?: string
+  prompt_version?: string | null
+}
+
+/** PUT /titles/{id}/feedback: "UserState + kinyert jelzések". */
+export interface FeedbackResponse {
+  user: UserState
+  signals: PreferenceSignal[]
+}
+
+export interface SearchHit {
+  media_type: MediaType
+  tmdb_id: number
+  title: string
+  original_title: string
+  year?: number | null
+  popularity?: number
+  vote_count?: number
+  /** Local title id if the hit is already in the catalog. */
+  title_id?: number | null
+}
+
+export interface ResolutionCandidate {
+  media_type: MediaType
+  tmdb_id: number
+  title: string
+  original_title?: string
+  year?: number | null
+  score?: number
+  on_provider?: boolean
+}
+
+export interface Resolution {
+  id: number
+  source: string
+  lookup_key: string
+  title_text?: string | null
+  import_rows?: number
+  status: string
+  method?: string | null
+  confidence?: number | null
+  candidates: ResolutionCandidate[] | null
+  title_id?: number | null
+  resolved_at?: string | null
+}
+
+export interface ResolutionActionResponse {
+  resolution: Resolution
+  reimport_needed: boolean
+}
+
+export interface WatchEvent {
+  source: string
+  status: string
+  first_watched_at?: string | null
+  last_watched_at?: string | null
+  total_seconds?: number | null
+  episode_count?: number | null
+}
+
+export interface HistoryItem {
+  title: TitleCard
+  events: WatchEvent[]
+  last_watched_at?: string | null
+}
+
+export interface WatchlistEntry {
+  title: TitleCard
+  sources: { source: string; added_at?: string | null }[]
+  added_at?: string | null
+}
+
+export interface SyncRun {
+  id: number
+  source: string
+  started_at: string
+  finished_at?: string | null
+  status: string
+  processed: number
+  created: number
+  updated: number
+  skipped: number
+  errors: unknown[]
+  file_sha256?: string | null
+}
+
+export interface Settings {
+  tmdb_api_key_set: boolean
+  netflix_profile_name?: string | null
+  lm_studio_base_url?: string | null
+  recommender?: Record<string, unknown>
+  [key: string]: unknown
+}
+
+export interface TitleDetails extends TitleCard {
+  resolutions?: { id: number; source: string; lookup_key: string; status: string }[]
+}
+
+export class ApiError extends Error {
+  status: number
+  constructor(status: number, message: string) {
+    super(message)
+    this.status = status
+  }
+}
+
+type Query = Record<string, string | number | boolean | null | undefined>
+
+function qs(params: Query): string {
+  const sp = new URLSearchParams()
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== '') sp.set(k, String(v))
+  }
+  const s = sp.toString()
+  return s ? `?${s}` : ''
+}
+
+function detailText(body: unknown): string | null {
+  if (body && typeof body === 'object' && 'detail' in body) {
+    const d = (body as { detail: unknown }).detail
+    if (typeof d === 'string') return d
+    if (Array.isArray(d)) {
+      return d
+        .map((e) => (e && typeof e === 'object' && 'msg' in e ? String((e as { msg: unknown }).msg) : String(e)))
+        .join('; ')
+    }
+  }
+  return null
+}
+
+function errorMessage(status: number, body: unknown): string {
+  const detail = detailText(body)
+  if (status === 409) return detail ?? 'Ütközés (409).'
+  if (status === 404) return `Nem található${detail ? `: ${detail}` : '.'}`
+  if (status === 422) return `Érvénytelen kérés${detail ? `: ${detail}` : '.'}`
+  return `Szerverhiba (${status})${detail ? `: ${detail}` : '.'}`
+}
+
+async function request<T>(method: string, path: string, body?: unknown, quiet = false): Promise<T> {
+  let res: Response
+  try {
+    res = await fetch(`/api${path}`, {
+      method,
+      headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    })
+  } catch {
+    const msg = 'A szerver nem érhető el. Fut a backend?'
+    if (!quiet) pushError(msg)
+    throw new ApiError(0, msg)
+  }
+  const text = await res.text()
+  let data: unknown = null
+  if (text) {
+    try {
+      data = JSON.parse(text)
+    } catch {
+      data = text
+    }
+  }
+  if (!res.ok) {
+    const msg = errorMessage(res.status, data)
+    if (!quiet) pushError(msg)
+    throw new ApiError(res.status, msg)
+  }
+  return data as T
+}
+
+const enc = encodeURIComponent
+
+export const api = {
+  getRecommendations: (p: { limit?: number; media_type?: MediaType | ''; refresh?: boolean }) =>
+    request<RecommendationItem[]>('GET', `/recommendations${qs(p)}`),
+  recommendationFeedback: (batchId: string, titleId: number, feedback: 'clicked' | 'dismissed' | 'watched') =>
+    request<unknown>('POST', `/recommendations/${enc(batchId)}/${titleId}/feedback`, { feedback }),
+
+  getTitle: (id: number) => request<TitleDetails>('GET', `/titles/${id}`),
+  listTitles: (p: {
+    q?: string
+    media_type?: MediaType | ''
+    provider?: string
+    genre?: string
+    seen?: boolean | null
+    limit?: number
+    offset?: number
+  }) => request<Page<TitleCard>>('GET', `/titles${qs(p)}`),
+
+  putFeedback: (id: number, body: { liked_text?: string | null; disliked_text?: string | null }) =>
+    request<FeedbackResponse>('PUT', `/titles/${id}/feedback`, body),
+  getSignals: (id: number) => request<PreferenceSignal[]>('GET', `/titles/${id}/signals`),
+  deleteSignal: (signalId: number) => request<unknown>('DELETE', `/signals/${signalId}`),
+  putRating: (id: number, stars: number | null) => request<UserState>('PUT', `/titles/${id}/rating`, { stars }),
+  putSeen: (id: number, seen: boolean) => request<UserState>('PUT', `/titles/${id}/seen`, { seen }),
+  putNotInterested: (id: number, value: boolean) =>
+    request<UserState>('PUT', `/titles/${id}/not-interested`, { value }),
+  addToWatchlist: (id: number) => request<UserState>('POST', `/titles/${id}/watchlist`),
+  removeFromWatchlist: (id: number) => request<UserState>('DELETE', `/titles/${id}/watchlist`),
+
+  getWatchlist: (p: { source?: string; available?: boolean; limit?: number; offset?: number }) =>
+    request<Page<WatchlistEntry>>('GET', `/watchlist${qs(p)}`),
+  getHistory: (p: { q?: string; status?: string; source?: string; limit?: number; offset?: number }) =>
+    request<Page<HistoryItem>>('GET', `/history${qs(p)}`),
+
+  searchTmdb: (q: string, media_type?: MediaType | '') =>
+    request<SearchHit[]>('GET', `/search/tmdb${qs({ q, media_type })}`),
+  ensureTitle: (media_type: MediaType, tmdb_id: number) =>
+    request<TitleCard>('POST', '/titles/ensure', { media_type, tmdb_id }),
+
+  getResolutions: (p: { status?: 'ambiguous' | 'unresolved'; source?: string; limit?: number; offset?: number }) =>
+    request<Page<Resolution>>('GET', `/resolutions${qs(p)}`),
+  setResolution: (id: number, media_type: MediaType, tmdb_id: number) =>
+    request<ResolutionActionResponse>('POST', `/resolutions/${id}/set`, { media_type, tmdb_id }),
+  rejectResolution: (id: number) => request<ResolutionActionResponse>('POST', `/resolutions/${id}/reject`),
+
+  getSyncRuns: (limit = 50) => request<SyncRun[] | Page<SyncRun>>('GET', `/sync/runs${qs({ limit })}`),
+  getSettings: () => request<Settings>('GET', '/settings'),
+  health: () => request<unknown>('GET', '/health', undefined, true),
+}
+
+/** Some list endpoints are not specified as Page<T>; accept both shapes. */
+export function itemsOf<T>(data: T[] | Page<T>): T[] {
+  return Array.isArray(data) ? data : data.items
+}

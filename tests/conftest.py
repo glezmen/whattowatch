@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
+from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -223,3 +224,45 @@ def recommend_db(
     )
     monkeypatch.setattr("whattowatch.preferences.vocabulary.labels_for_title", fake_labels)
     return migrated_session, build_recommend_db(migrated_session)
+
+
+@dataclass
+class ApiEnv:
+    client: TestClient
+    session: Session
+    ids: dict[int, int]
+
+
+def make_api_client(
+    session: Session, *, tmdb_api_key: str | None = None, frontend_dist: Path | None = None
+) -> TestClient:
+    """App over `session` with pinned clock and no .env (no TMDB key unless given)."""
+    from whattowatch.api.app import create_app
+    from whattowatch.api.deps import now_dep, session_dep
+
+    settings = Settings(
+        _env_file=None,  # type: ignore[call-arg]
+        database_url="sqlite://",
+        tmdb_api_key=tmdb_api_key,
+        frontend_dist=str(frontend_dist or Path("/nonexistent-dist")),
+    )
+    app = create_app(settings)
+
+    def _session() -> Iterator[Session]:
+        yield session
+
+    app.dependency_overrides[session_dep] = _session
+    app.dependency_overrides[now_dep] = lambda: NOW
+    return TestClient(app)
+
+
+@pytest.fixture
+def api(recommend_db: tuple[Session, dict[int, int]]) -> ApiEnv:
+    session, ids = recommend_db
+    return ApiEnv(make_api_client(session), session, ids)
+
+
+@pytest.fixture
+def api_tmdb(recommend_db: tuple[Session, dict[int, int]]) -> ApiEnv:
+    session, ids = recommend_db
+    return ApiEnv(make_api_client(session, tmdb_api_key="k"), session, ids)

@@ -1,0 +1,254 @@
+"""Title cards, catalog browsing and the user's per-title actions."""
+
+from __future__ import annotations
+
+from typing import Annotated
+
+from fastapi import APIRouter, HTTPException, Query, Response
+from sqlalchemy import Select, exists, func, or_, select
+from sqlalchemy.orm import Session
+
+from whattowatch.api.cards import (
+    fresh_verified_title_ids,
+    seen_title_ids,
+    title_card,
+    title_cards,
+    user_state,
+)
+from whattowatch.api.deps import (
+    NowDep,
+    RecommenderConfigDep,
+    SessionDep,
+    TmdbDep,
+    get_title_or_404,
+)
+from whattowatch.api.schemas import (
+    FeedbackIn,
+    FeedbackResponse,
+    FlagIn,
+    Page,
+    RatingIn,
+    ResolutionRef,
+    SeenIn,
+    Signal,
+    TitleCard,
+    TitleDetail,
+    TitleRef,
+    UserState,
+)
+from whattowatch.db.models import (
+    Availability,
+    MediaType,
+    PreferenceSignal,
+    Provider,
+    Title,
+    TitleResolution,
+)
+from whattowatch.preferences.vocabulary import all_labels
+from whattowatch.providers import BY_KEY
+from whattowatch.services import feedback as fb
+from whattowatch.services.catalog import ensure_title
+
+router = APIRouter(tags=["titles"])
+
+
+def _signals(session: Session, title_id: int) -> list[Signal]:
+    names = {label.full_key: label.name_hu for label in all_labels()}
+    rows = session.scalars(
+        select(PreferenceSignal)
+        .where(PreferenceSignal.title_id == title_id)
+        .order_by(PreferenceSignal.polarity, PreferenceSignal.category, PreferenceSignal.label)
+    )
+    return [
+        Signal(
+            id=s.id,
+            title_id=s.title_id,
+            feedback_id=s.feedback_id,
+            polarity=s.polarity,
+            category=s.category,
+            label=s.label,
+            label_name=names.get(f"{s.category}/{s.label}"),
+            weight=s.weight,
+            confidence=s.confidence,
+            extractor=s.extractor,
+            model_version=s.model_version,
+            prompt_version=s.prompt_version,
+            created_at=s.created_at,
+        )
+        for s in rows
+    ]
+
+
+def page_titles(
+    query: Select[Title], session: Session, limit: int, offset: int
+) -> tuple[list[Title], int]:
+    total = session.scalar(select(func.count()).select_from(query.subquery())) or 0
+    items = list(session.scalars(query.limit(limit).offset(offset)))
+    return items, total
+
+
+@router.get("/titles", response_model=Page[TitleCard])
+def list_titles(
+    session: SessionDep,
+    cfg: RecommenderConfigDep,
+    now: NowDep,
+    q: str | None = None,
+    media_type: MediaType | None = None,
+    provider: str | None = None,
+    genre: str | None = None,
+    seen: bool | None = None,
+    include_unverified: bool = False,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> Page[TitleCard]:
+    """Local catalog; by default only titles with a fresh verified flatrate on the six."""
+    if provider is not None and provider not in BY_KEY:
+        raise HTTPException(status_code=422, detail=f"Ismeretlen szolgáltató: {provider}")
+    query = select(Title)
+    if q and q.strip():
+        needle = q.strip()
+        query = query.where(
+            or_(
+                Title.title_hu.icontains(needle, autoescape=True),
+                Title.original_title.icontains(needle, autoescape=True),
+                Title.title_en.icontains(needle, autoescape=True),
+            )
+        )
+    if media_type is not None:
+        query = query.where(Title.media_type == media_type)
+    if not include_unverified:
+        ids = fresh_verified_title_ids(
+            session, now=now, max_age_days=cfg.verified_max_age_days, provider_key=provider
+        )
+        query = query.where(Title.id.in_(ids))
+    elif provider is not None:
+        query = query.where(
+            Title.id.in_(
+                select(Availability.title_id)
+                .join(Provider, Provider.id == Availability.provider_id)
+                .where(Provider.key == provider, Availability.offer_type == "flatrate")
+            )
+        )
+    if genre:
+        each = func.json_each(Title.genres).table_valued("value")
+        query = query.where(exists(select(each.c.value).where(each.c.value == genre)))
+    if seen is not None:
+        seen_ids = seen_title_ids(session)
+        query = query.where(Title.id.in_(seen_ids) if seen else Title.id.not_in(seen_ids))
+    query = query.order_by(Title.popularity.desc().nulls_last(), Title.id)
+    items, total = page_titles(query, session, limit, offset)
+    return Page[TitleCard](
+        items=title_cards(session, items, now=now, max_age_days=cfg.verified_max_age_days),
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.post("/titles/ensure", response_model=TitleCard)
+def ensure(
+    body: TitleRef, session: SessionDep, tmdb: TmdbDep, cfg: RecommenderConfigDep, now: NowDep
+) -> TitleCard:
+    """Fetch a title from TMDB into the local catalog (no-op if already cached)."""
+    title = ensure_title(session, tmdb, body.media_type, body.tmdb_id)
+    session.commit()
+    return title_card(session, title, now=now, max_age_days=cfg.verified_max_age_days)
+
+
+@router.get("/titles/{title_id}", response_model=TitleDetail)
+def get_title(
+    title_id: int, session: SessionDep, cfg: RecommenderConfigDep, now: NowDep
+) -> TitleDetail:
+    title = get_title_or_404(session, title_id)
+    card = title_card(session, title, now=now, max_age_days=cfg.verified_max_age_days)
+    resolutions = session.scalars(
+        select(TitleResolution)
+        .where(TitleResolution.title_id == title_id)
+        .order_by(TitleResolution.id)
+    )
+    return TitleDetail(
+        **card.model_dump(),
+        resolutions=[
+            ResolutionRef(
+                id=r.id,
+                source=r.source,
+                lookup_key=r.lookup_key,
+                status=r.status,
+                method=r.method,
+                confidence=r.confidence,
+                resolved_at=r.resolved_at,
+            )
+            for r in resolutions
+        ],
+    )
+
+
+@router.put("/titles/{title_id}/feedback", response_model=FeedbackResponse)
+def put_feedback(title_id: int, body: FeedbackIn, session: SessionDep) -> FeedbackResponse:
+    """Missing key = unchanged; null or empty string = cleared. Re-extracts signals."""
+    get_title_or_404(session, title_id)
+    given = body.model_fields_set
+    fb.set_feedback(
+        session,
+        title_id,
+        liked_text=body.liked_text if "liked_text" in given else fb.UNCHANGED,
+        disliked_text=body.disliked_text if "disliked_text" in given else fb.UNCHANGED,
+    )
+    session.commit()
+    return FeedbackResponse(user=user_state(session, title_id), signals=_signals(session, title_id))
+
+
+@router.get("/titles/{title_id}/signals", response_model=list[Signal])
+def get_signals(title_id: int, session: SessionDep) -> list[Signal]:
+    get_title_or_404(session, title_id)
+    return _signals(session, title_id)
+
+
+@router.delete("/signals/{signal_id}", status_code=204)
+def delete_signal(signal_id: int, session: SessionDep) -> Response:
+    signal = session.get(PreferenceSignal, signal_id)
+    if signal is None:
+        raise HTTPException(status_code=404, detail=f"Nincs ilyen jelzés: {signal_id}")
+    session.delete(signal)
+    session.commit()
+    return Response(status_code=204)
+
+
+@router.put("/titles/{title_id}/rating", response_model=UserState)
+def put_rating(title_id: int, body: RatingIn, session: SessionDep) -> UserState:
+    get_title_or_404(session, title_id)
+    fb.set_star_rating(session, title_id, body.stars)
+    session.commit()
+    return user_state(session, title_id)
+
+
+@router.put("/titles/{title_id}/seen", response_model=UserState)
+def put_seen(title_id: int, body: SeenIn, session: SessionDep) -> UserState:
+    get_title_or_404(session, title_id)
+    fb.set_seen(session, title_id, body.seen)
+    session.commit()
+    return user_state(session, title_id)
+
+
+@router.put("/titles/{title_id}/not-interested", response_model=UserState)
+def put_not_interested(title_id: int, body: FlagIn, session: SessionDep) -> UserState:
+    get_title_or_404(session, title_id)
+    fb.set_not_interested(session, title_id, body.value)
+    session.commit()
+    return user_state(session, title_id)
+
+
+@router.post("/titles/{title_id}/watchlist", response_model=UserState)
+def add_watchlist(title_id: int, session: SessionDep) -> UserState:
+    get_title_or_404(session, title_id)
+    fb.add_to_watchlist(session, title_id)
+    session.commit()
+    return user_state(session, title_id)
+
+
+@router.delete("/titles/{title_id}/watchlist", response_model=UserState)
+def remove_watchlist(title_id: int, session: SessionDep) -> UserState:
+    get_title_or_404(session, title_id)
+    fb.remove_from_watchlist(session, title_id)
+    session.commit()
+    return user_state(session, title_id)

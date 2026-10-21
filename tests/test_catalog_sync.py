@@ -85,6 +85,8 @@ def test_upsert_genres_and_hu_title(session: Session, tmdb: TmdbClient) -> None:
     assert t[("movie", 2)].genres == ["Dráma"]  # unknown genre id dropped
     assert t[("movie", 2)].overview_hu is None
     assert t[("tv", 10)].original_title == "Breaking Bad"
+    # discover does not tell whether a HU translation exists: NULL means "not known"
+    assert {x.has_hu_translation for x in t.values()} == {None}
     est = session.scalars(select(Availability).filter_by(source="tmdb/discover")).all()
     assert len(est) == 4 and {a.confidence for a in est} == {"estimated"}
 

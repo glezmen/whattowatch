@@ -45,7 +45,7 @@ def _upsert_title(
             original_title=hit.original_title,
             original_language="",
             title_hu=hu,
-            has_hu_translation=False,  # column is NOT NULL; False = not confirmed (unknown here)
+            has_hu_translation=None,  # not known from discover; set by details
             year=hit.year,
             genres=genres,
             overview_hu=hit.overview,

@@ -34,7 +34,15 @@ from whattowatch.providers import BY_KEY
 from whattowatch.services.availability import record_snapshot
 from whattowatch.services.catalog import ensure_title
 
-__all__ = ["ImportSource", "ResolveRequest", "build_lookup_key", "normalize", "resolve_title"]
+__all__ = [
+    "ImportSource",
+    "ResolveRequest",
+    "build_lookup_key",
+    "normalize",
+    "reject_resolution",
+    "resolve_title",
+    "set_manual_resolution",
+]
 
 FINAL_STATUSES: frozenset[str] = frozenset({"resolved", "manual", "rejected"})
 RESOLVE_THRESHOLD = 0.92
@@ -266,6 +274,39 @@ def resolve_title(session: Session, tmdb: TmdbClient, req: ResolveRequest) -> Ti
     row.confidence = outcome.confidence
     row.method = outcome.method
     row.candidates = outcome.candidates
+    row.resolved_at = datetime.now(UTC)
+    session.flush()
+    return row
+
+
+def _get_resolution(session: Session, resolution_id: int) -> TitleResolution:
+    row = session.get(TitleResolution, resolution_id)
+    if row is None:
+        raise LookupError(f"resolution {resolution_id} not found")
+    return row
+
+
+def set_manual_resolution(
+    session: Session, tmdb: TmdbClient, resolution_id: int, media_type: MediaType, tmdb_id: int
+) -> TitleResolution:
+    """Link a resolution to a TMDB title by hand (flushes, no commit).
+
+    Existing imported rows are not rebuilt; re-run the import to apply it.
+    Raises LookupError for an unknown resolution id.
+    """
+    row = _get_resolution(session, resolution_id)
+    title = ensure_title(session, tmdb, media_type, tmdb_id)
+    row.title_id = title.id
+    row.status, row.method, row.confidence = "manual", "manual", 1.0
+    row.resolved_at = datetime.now(UTC)
+    session.flush()
+    return row
+
+
+def reject_resolution(session: Session, resolution_id: int) -> TitleResolution:
+    """Mark a resolution rejected (no title; not retried). Flushes, no commit."""
+    row = _get_resolution(session, resolution_id)
+    row.status, row.title_id, row.method = "rejected", None, None
     row.resolved_at = datetime.now(UTC)
     session.flush()
     return row

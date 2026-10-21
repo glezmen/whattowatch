@@ -19,10 +19,20 @@ NEW = (
 )
 
 
+def _set_foreign_keys(enabled: bool) -> None:
+    # Batch mode recreates the table (copy, DROP, rename). With foreign keys on, the
+    # DROP would cascade / SET NULL into child tables (import_rows.resolution_id).
+    bind = op.get_bind()
+    if bind.dialect.name == "sqlite":
+        bind.exec_driver_sql(f"PRAGMA foreign_keys={'ON' if enabled else 'OFF'}")
+
+
 def _replace(values: str) -> None:
+    _set_foreign_keys(False)
     with op.batch_alter_table("title_resolutions", recreate="always") as batch:
         batch.drop_constraint(NAME, type_="check")
         batch.create_check_constraint(NAME, f"method IS NULL OR method IN {values}")
+    _set_foreign_keys(True)
 
 
 def upgrade() -> None:
