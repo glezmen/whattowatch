@@ -150,3 +150,26 @@ mezője mellett `detail_code` is jöhet, ahol van értelme (pl. `no_tmdb_key`).
   valamint `available` (tartalék: „Elérhető az előfizetéseiden.”, ha nincs erősebb indok).
   A régi batch-ek sorainál `reason_codes` üres lista.
 - `detail_code` értékek: `no_tmdb_key` (409), `llm_not_configured` (`/chat` 409).
+
+## Beállítások 2: szolgáltatósorok, kulcsok, LLM-választás (M7b)
+
+**Titkok tárolása.** Az API-kulcsok a repó gyökerében lévő, gitignored `.env`
+fájlban maradnak (egyetlen igazságforrás a CLI-nek és a szervernek). A backend
+írja őket (`services/env_file.py`: atomikus csere, kulcsonként egy sor,
+idézőjelezés), és a beállítás-cache-t üríti. A felület **soha nem kapja vissza
+a kulcs értékét**, csak `set: bool` és `hint` (utolsó 4 karakter) mezőt.
+Naplóba nem kerülnek.
+
+| Metódus, út | Leírás |
+|---|---|
+| `GET /settings/secrets` | `{items: [{key: "TMDB_API_KEY"|"STREAMING_AVAILABILITY_API_KEY"|"ANTHROPIC_API_KEY"|"OPENAI_API_KEY", set: bool, hint: str|null, label_key}]}` + `{lm_studio_base_url: str}` |
+| `PUT /settings/secrets` `{values: {KEY: "…"|null}, lm_studio_base_url?: str}` | `null`/üres = törlés; válasz mint a GET; a TMDB-kulcsnál a mentés előtt `GET /configuration` próba, hibás kulcs → 422 `detail_code: invalid_tmdb_key` |
+| `GET /settings/subscriptions` | bővül: `{key, display_name, enabled, tmdb_provider_ids, logo_url?: str, profiles: [{name, primary_lang?, rows?}], selected_profile?: str, profile_support: "export"|"none"}` — `logo_url` a TMDB `/watch/providers` `logo_path`-ból (`https://image.tmdb.org/t/p/w92…`), a `providers.logo_path` oszlopban cache-elve (migráció 0008); `profiles` a feltöltött exportból (jelenleg csak Netflix), más szolgáltatónál üres és `profile_support: "none"` |
+| `PUT /settings/subscriptions` `{items: [{key, enabled, selected_profile?}]}` | részleges lista is jó; a régi `{enabled: [...]}` forma továbbra is elfogadott |
+| `GET /settings/llm` | `{provider: "lmstudio"|"anthropic"|"openai", model: str|null, options: {lmstudio: {available: bool, base_url, models: [str]}, anthropic: {key_set: bool, models: ["claude-opus-5-5","claude-sonnet-5-5","claude-haiku-4-5","claude-fable-5-1"]}, openai: {key_set: bool, models: []}}, cloud_send_feedback_text: bool, fallback_allowed: bool}` — az LM Studio modellista a `/v1/models` hívásból (nem inferencia), hiba esetén `available: false` |
+| `PUT /settings/llm` `{provider?, model?, cloud_send_feedback_text?, fallback_allowed?}` | `app_settings`-be ment; a futó rendszer ezt részesíti előnyben a `.env` értékekkel szemben (`llm/registry.effective_llm_config(session, settings)`) |
+| `POST /settings/llm/test` `{provider?, model?}` | egy rövid, egysoros próbakérés a kiválasztott providerrel; válasz `{ok, model, reply, usage, error?}`; **csak a felhasználó gombnyomására fut** |
+
+A profilválasztó jelentése: a kiválasztott profil a szolgáltató exportjának
+importjánál az alapértelmezett szűrő (Netflixnél a `netflix_profile_name`
+app-beállítás ugyanez, visszafelé kompatibilisen).
