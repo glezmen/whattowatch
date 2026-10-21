@@ -1,6 +1,6 @@
 # Implementációs terv és architektúradöntések
 
-Állapot: **M0–M5 kész, M6 folyamatban** (2026-10-21). A specifikáció: `docs/spec.md`.
+Állapot: **M0–M6 kész** (2026-10-21). Nyitott tételek a fájl végén.. A specifikáció: `docs/spec.md`.
 
 ## Architektúradöntések
 
@@ -87,7 +87,16 @@ Kulcskonvenciók:
 - [x] LLM-es preferencia-kinyerés zárt szótárral, `wtw recommend extract-preferences --extractor llm`
 - [x] beszélgetős ajánló 7 típusos eszközzel, `POST /api/chat`, `/beszelgetes` oldal
 - [ ] élő próba LM Studio / Anthropic kulccsal (mock-tesztek zöldek)
-### M6 — frissítés, újdonságok, kivezetések (folyamatban)
-- terv: `docs/updates.md`; SA API kulcs és végpont igazolva
-- backend: adapter, migráció 0006, események, értesítések, `run_refresh`
-- bekötés: `wtw refresh`, `/api/updates`, `/api/notifications`, `/ujdonsagok`, `/tavozik`
+### M6 — frissítés, újdonságok, kivezetések (kész, 2026-10-21)
+- [x] Streaming Availability adapter (élő kulccsal igazolva), migráció 0006, `catalog_events`, `notifications`
+- [x] `wtw refresh run|sa-sync|notifications`, `/api/updates`, `/api/notifications`, `/api/refresh`
+- [x] `/ujdonsagok`, `/tavozik`, értesítés-harang; alapállapot-futás hamis „új” nélkül
+- [x] élő futás: 200 kikerülő, 53 érkező, 45 új SA-esemény; 257 teszt
+
+## Nyitott tételek
+- LLM élő próba (LM Studio / Anthropic / OpenAI) — **csak a felhasználó engedélyével**; a `wtw llm test` első próbája `model` paraméter-hibát adott, valószínűleg `LLM_MODEL` beállítás kell
+- Netflix `Thumbs Value` kódok jelentésének megerősítése; a „Norbi” profil megerősítése
+- 140 kétértelmű + 55 feloldatlan Netflix-cím kézi feloldása a `/feloldas` oldalon, majd `wtw import netflix` újrafuttatása
+- kézi összevetés: TMDB elérhetőség vs. szolgáltatói appok 10–20 címen (adatminőség-mérőszám)
+- `wtw refresh run` ütemezése (launchd/cron, README „Napi frissítés”)
+- embedding-alapú `semantic_similarity` komponens (docs/llm.md 2.3)
