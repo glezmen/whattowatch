@@ -511,6 +511,7 @@
     "backendNote": "Titles and availability come from the backend; the model only words the answer.",
     "empty": "Ask away, e.g. “Something light and funny on Netflix tonight” or “What's on my watchlist that I can stream now?”",
     "roundsExhausted": "tool limit reached",
+    "cardsFromText": "(cards inferred from the reply text)",
     "toolCalls": "Tool calls ({n})",
     "loadingCards": "Loading cards…",
     "thinking": "Thinking…",

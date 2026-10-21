@@ -88,9 +88,14 @@ function fmtArgs(args: Record<string, unknown>): string {
             </ol>
           </details>
           <p v-if="turn.cardsLoading" class="small muted"><span class="spinner"></span> {{ t('chat.loadingCards') }}</p>
-          <div v-else-if="turn.cards && turn.cards.length" class="grid cards">
-            <TitleCard v-for="c in turn.cards" :key="c.id" :title="c" />
-          </div>
+          <template v-else-if="turn.cards && turn.cards.length">
+            <p v-if="turn.result.recommended_title_ids_source === 'text'" class="small muted meta">
+              {{ t('chat.cardsFromText') }}
+            </p>
+            <div class="grid cards">
+              <TitleCard v-for="c in turn.cards" :key="c.id" :title="c" />
+            </div>
+          </template>
         </template>
       </div>
       <div v-if="chat.sending" class="turn assistant">

@@ -280,6 +280,10 @@ export interface ChatResult {
   model: string
   usage: Record<string, number>
   rounds_exhausted?: boolean
+  /** Titles the model recommends (UI cards), in reply order. */
+  recommended_title_ids?: number[]
+  /** marker: explicit [[ajanlott: ...]] line; text: inferred from the reply text; none: no cards. */
+  recommended_title_ids_source?: 'marker' | 'text' | 'none'
 }
 
 export type UpdateSection = 'new' | 'upcoming' | 'leaving' | 'new_season' | 'watchlist_available'

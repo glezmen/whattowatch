@@ -14,6 +14,7 @@ from whattowatch.llm.base import LLMError, LLMResponse, Message, ToolCall, ToolS
 from whattowatch.services.chat.agent import (
     FINAL_FALLBACK_REPLY,
     ChatMessage,
+    parse_marker,
     run_chat,
     system_prompt,
 )
@@ -148,3 +149,82 @@ def test_cloud_provider_feedback_text_redaction(recommend_db: Env) -> None:
         chat(recommend_db, provider, allow_cloud_feedback_text=allow)
         tool_msg = provider.seen[1]["messages"][-1].content
         assert ("jó humor" in tool_msg) is expect
+
+
+def _rec_then(reply: str) -> FakeProvider:
+    return FakeProvider(
+        [
+            calls(ToolCall("c1", "get_recommendations", {"limit": 2, "genres": ["Thriller"]})),
+            text(reply),
+        ]
+    )
+
+
+@pytest.mark.parametrize(
+    ("raw", "clean", "ids"),
+    [
+        ("Ajánlom.\n[[ajanlott: 3, 1]]", "Ajánlom.", [3, 1]),
+        ("Pick.\n[[recommended:7]]", "Pick.", [7]),
+        ("Pick.\n[[ recommended_title_ids : 7 , 8 , 7 ]]  ", "Pick.", [7, 8]),
+        ("Semmi.\n[[ajanlott: ]]", "Semmi.", []),
+        ("Nincs jelölő.", "Nincs jelölő.", None),
+    ],
+)
+def test_parse_marker(raw: str, clean: str, ids: list[int] | None) -> None:
+    assert parse_marker(raw) == (clean, ids)
+
+
+def test_system_prompt_marker_per_language() -> None:
+    assert "[[ajanlott:" in system_prompt(NOW, language="hu")
+    en = system_prompt(NOW, language="en")
+    assert "[[recommended:" in en and "[[ajanlott:" not in en
+
+
+def test_marker_selects_cards_and_ignores_unknown_ids(recommend_db: Env) -> None:
+    _, ids = recommend_db
+    reply = f"Hideg nyom (HBO). A Sötét erdőt kihagytam.\n[[ajanlott: {ids[102]}, 99999]]"
+    result = chat(recommend_db, _rec_then(reply))
+    assert result.reply == "Hideg nyom (HBO). A Sötét erdőt kihagytam."
+    assert result.recommended_title_ids == [ids[102]]
+    assert result.recommended_title_ids_source == "marker"
+
+
+def test_empty_marker_means_no_cards(recommend_db: Env) -> None:
+    result = chat(recommend_db, _rec_then("Egyik sem illik ide.\n[[ajanlott: ]]"))
+    assert result.recommended_title_ids == [] and result.recommended_title_ids_source == "marker"
+
+
+def test_text_fallback_matches_hu_and_original_titles(recommend_db: Env) -> None:
+    _, ids = recommend_db
+    result = chat(recommend_db, _rec_then("Nézd meg: original  102, aztán a sötét erdő."))
+    assert result.recommended_title_ids == [ids[102], ids[101]]
+    assert result.recommended_title_ids_source == "text"
+
+
+def test_text_fallback_no_match_is_empty(recommend_db: Env) -> None:
+    result = chat(recommend_db, _rec_then("Nem találtam semmit."))
+    assert result.recommended_title_ids == [] and result.recommended_title_ids_source == "none"
+
+
+def test_final_round_marker_only_with_stray_calls_is_empty(recommend_db: Env) -> None:
+    _, ids = recommend_db
+    rec = calls(ToolCall("c", "get_recommendations", {"limit": 2}))
+    stray = LLMResponse(
+        text=f"[[ajanlott: {ids[101]}]]",
+        tool_calls=(ToolCall("x", "get_watchlist", {}),),
+        json=None,
+        model="fake-1",
+        usage={},
+    )
+    result = chat(recommend_db, FakeProvider([rec, stray]), max_tool_rounds=1)
+    assert result.reply == FINAL_FALLBACK_REPLY and result.recommended_title_ids == []
+    assert result.recommended_title_ids_source == "none"
+
+
+def test_final_round_marker_is_parsed(recommend_db: Env) -> None:
+    _, ids = recommend_db
+    rec = calls(ToolCall("c", "get_recommendations", {"limit": 2}))
+    provider = FakeProvider([rec, text(f"Hideg nyom.\n[[recommended: {ids[102]}]]")])
+    result = chat(recommend_db, provider, max_tool_rounds=1)
+    assert result.rounds_exhausted and result.reply == "Hideg nyom."
+    assert result.recommended_title_ids == [ids[102]]

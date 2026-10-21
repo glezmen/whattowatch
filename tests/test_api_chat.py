@@ -42,6 +42,8 @@ def test_chat_ok(api: ApiEnv) -> None:
     assert data["reply"] == "Sötét erdő, Netflix." and data["provider"] == "fake"
     assert data["tool_trace"][0]["name"] == "search_titles"
     assert data["tool_trace"][0]["title_ids"] == [api.ids[101]]
+    assert data["recommended_title_ids"] == [api.ids[101]]
+    assert data["recommended_title_ids_source"] == "text"
     assert [m.role for m in provider.seen[0]["messages"]] == ["user", "assistant", "user"]
 
 

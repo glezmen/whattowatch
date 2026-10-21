@@ -511,6 +511,7 @@
     "backendNote": "A címeket és az elérhetőséget a backend adja; a modell csak megfogalmazza a választ.",
     "empty": "Kérdezz bátran, pl. „Valami könnyed vígjáték estére a Netflixen” vagy „Mi van a watchlistemen, ami most elérhető?”",
     "roundsExhausted": "eszközkorlát elérve",
+    "cardsFromText": "(a kártyák a válasz szövege alapján)",
     "toolCalls": "Eszközhívások ({n})",
     "loadingCards": "Kártyák betöltése…",
     "thinking": "Gondolkodom…",

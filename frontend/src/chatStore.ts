@@ -14,7 +14,6 @@ export interface Turn {
 
 export const CHAT_PROVIDERS: LlmProviderName[] = ['lmstudio', 'anthropic', 'openai']
 const MAX_CARDS = 8
-const CARD_TOOLS = new Set(['get_recommendations', 'search_titles'])
 
 export const chat = reactive<{
   turns: Turn[]
@@ -45,13 +44,9 @@ export async function loadDefaultProvider(): Promise<void> {
   }
 }
 
+/** Cards come only from the titles the model actually recommends (backend-selected, in reply order). */
 function titleIds(result: ChatResult): number[] {
-  const ids: number[] = []
-  for (const t of result.tool_trace) {
-    if (!CARD_TOOLS.has(t.name)) continue
-    for (const id of t.title_ids) if (!ids.includes(id)) ids.push(id)
-  }
-  return ids.slice(0, MAX_CARDS)
+  return [...new Set(result.recommended_title_ids ?? [])].slice(0, MAX_CARDS)
 }
 
 async function loadCards(turn: Turn): Promise<void> {

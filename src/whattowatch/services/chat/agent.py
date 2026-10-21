@@ -7,6 +7,7 @@ selection, exclusion, ranking and availability come from the backend tools.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
@@ -23,7 +24,10 @@ if TYPE_CHECKING:
 
 MAX_CALLS_PER_RESPONSE = 8
 EMPTY_REPLY = "Nem kaptam érdemi választ a modelltől. Fogalmazd meg másképp a kérést!"
-FINAL_ANSWER_NOTE = "Nincs több eszközhívás. Foglald össze a már lekért adatok alapján a választ."
+FINAL_ANSWER_NOTE = (
+    "Nincs több eszközhívás. Foglald össze a már lekért adatok alapján a választ, "
+    "a záró ajánlásjelölő sorral együtt."
+)
 FINAL_FALLBACK_REPLY = "Nem sikerült befejezni a keresést, próbáld pontosítani a kérést."
 TITLE_ID_TOOLS = ("get_recommendations", "search_titles")
 
@@ -49,6 +53,9 @@ class ChatResult(BaseModel):
     model: str
     usage: dict[str, int]
     rounds_exhausted: bool = False
+    # Titles the model actually recommends (UI cards), in reply order; see _recommended.
+    recommended_title_ids: list[int] = Field(default_factory=list)
+    recommended_title_ids_source: Literal["marker", "text", "none"] = "none"
 
 
 def _mood_vocabulary() -> str:
@@ -78,6 +85,22 @@ _RULES = (
     "A magyar cím mellett add meg az eredeti címet is, ha eltér. Válaszolj tömören: "
     "néhány cím, egy-egy rövid indoklással.",
 )
+_MARKER_RULE = {
+    "hu": "A válaszod legvégén, külön utolsó sorban add meg az általad ajánlott címek "
+    "title_id-it (az eszközeredményekből), a válaszban szereplő sorrendben, pontosan így: "
+    "[[ajanlott: 12, 34]]. Csak a ténylegesen ajánlott címeket sorold fel; azokat, "
+    "amelyeket csak kizárás vagy kihagyás miatt említesz, ne. Ha nem ajánlasz címet: "
+    "[[ajanlott: ]].",
+    "en": "At the very end of your answer, on a separate last line, list the title_ids (from "
+    "the tool results) of the titles you recommend, in the order they appear in your answer, "
+    "exactly like this: [[recommended: 12, 34]]. List only titles you actually recommend; do "
+    "not list titles you mention only to exclude or skip them. If you recommend none: "
+    "[[recommended: ]].",
+}
+_MARKER_RE = re.compile(
+    r"\[\[\s*(?:ajanlott|ajánlott|recommended_title_ids|recommended)\s*:\s*([^\]]*)\]\]",
+    re.IGNORECASE,
+)
 _LANGUAGE_RULE = {
     "hu": "A válaszod nyelve: magyar. Válaszolj magyarul.",
     "en": "Answer language: English. Write your reply in English (keep the Hungarian title "
@@ -97,7 +120,8 @@ def system_prompt(
     listed = ", ".join(f"{p.key} ({p.display_name})" for p in subs) or (
         "nincs bekapcsolt előfizetés; ajánlani nem tudsz, ezt mondd el"
     )
-    rules = list(_RULES) + [_LANGUAGE_RULE.get(language, _LANGUAGE_RULE["hu"])]
+    lang = language if language in _LANGUAGE_RULE else "hu"
+    rules = [*_RULES, _MARKER_RULE[lang], _LANGUAGE_RULE[lang]]
     numbered = "\n".join(f"{i}. {rule}" for i, rule in enumerate(rules, start=1))
     return (
         f"Magyar nyelvű film- és sorozatajánló asszisztens vagy. Mai dátum: {day}.\n"
@@ -127,6 +151,70 @@ def _summary(name: str, result: dict[str, Any]) -> tuple[str, list[int]]:
     if name == "record_feedback":
         return f"mentve: {', '.join(result['saved'])}", []
     return "ok", []
+
+
+def parse_marker(reply: str) -> tuple[str, list[int] | None]:
+    """Strip the `[[ajanlott: ...]]` marker(s); return (clean reply, ids or None if absent)."""
+    matches = list(_MARKER_RE.finditer(reply))
+    if not matches:
+        return reply, None
+    ids = [int(tok) for tok in re.findall(r"\d+", matches[-1].group(1))]
+    clean = _MARKER_RE.sub("", reply)
+    clean = re.sub(r"[ \t]+\n", "\n", clean)
+    return re.sub(r"\n{3,}", "\n\n", clean).strip(), list(dict.fromkeys(ids))
+
+
+def _norm(text: str) -> str:
+    return " ".join(text.split()).casefold()
+
+
+def _text_matches(reply: str, ids: list[int], session: Session) -> list[int]:
+    """Trace titles whose hu/en/original title occurs in the reply, by first occurrence."""
+    from whattowatch.db.models import Title
+
+    haystack = _norm(reply)
+    found: list[tuple[int, int]] = []
+    for tid in ids:
+        title = session.get(Title, tid)
+        if title is None:
+            continue
+        positions: list[int] = []
+        for name in {title.title_hu, title.title_en, title.original_title}:
+            needle = _norm(name or "")
+            hit = needle and re.search(rf"(?<!\w){re.escape(needle)}(?!\w)", haystack)
+            if hit:
+                positions.append(hit.start())
+        if positions:
+            found.append((min(positions), tid))
+    return [tid for _, tid in sorted(found)]
+
+
+def _finish(
+    raw: str,
+    *,
+    fallback: str,
+    trace: list[ToolTraceEntry],
+    session: Session,
+    **fields: Any,
+) -> ChatResult:
+    """Strip the marker and pick the card ids (marker ∩ trace, else reply-text matches)."""
+    reply, marker_ids = parse_marker(raw.strip())
+    known = list(dict.fromkeys(i for entry in trace for i in entry.title_ids))
+    source: Literal["marker", "text", "none"]
+    if not reply:
+        reply, ids, source = fallback, [], "none"
+    elif marker_ids is not None:
+        ids, source = [i for i in marker_ids if i in known], "marker"
+    else:
+        ids = _text_matches(reply, known, session)
+        source = "text" if ids else "none"
+    return ChatResult(
+        reply=reply,
+        tool_trace=trace,
+        recommended_title_ids=ids,
+        recommended_title_ids_source=source,
+        **fields,
+    )
 
 
 def run_chat(
@@ -169,9 +257,11 @@ def run_chat(
         add_usage(resp.usage)
         model = resp.model or model
         if not resp.tool_calls:
-            return ChatResult(
-                reply=(resp.text or "").strip() or EMPTY_REPLY,
-                tool_trace=trace,
+            return _finish(
+                resp.text or "",
+                fallback=EMPTY_REPLY,
+                trace=trace,
+                session=session,
                 provider=provider.name,
                 model=model,
                 usage=usage,
@@ -218,10 +308,11 @@ def run_chat(
                 error="tool_calls_ignored",
             )
         )
-        text = text or FINAL_FALLBACK_REPLY
-    return ChatResult(
-        reply=text or EMPTY_REPLY,
-        tool_trace=trace,
+    return _finish(
+        text,
+        fallback=FINAL_FALLBACK_REPLY if resp.tool_calls else EMPTY_REPLY,
+        trace=trace,
+        session=session,
         provider=provider.name,
         model=resp.model or model,
         usage=usage,
