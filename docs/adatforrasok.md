@@ -161,7 +161,7 @@ szabványos formátum).
 | Szolgáltató | Mód | Átfutás | Formátum | Állapot |
 |---|---|---|---|---|
 | Netflix | gyors CSV a fiókból + teljes adatexport | azonnali / napok | CSV | igazolt |
-| Prime Video | Amazon Privacy Central adatkérés | napok, max. 30 nap | JSON/CSV, fájlonként | közvetett |
+| Prime Video | Amazon Privacy Central adatkérés | ~1 nap (2026-10-21) | ZIP, CSV-k | igazolt |
 | Disney+ | Disney adatvédelmi portál vagy e-mail | hetek | ismeretlen | közvetett |
 | HBO Max | „Individual Rights Request” űrlap | ismeretlen | ismeretlen | közvetett |
 | Apple TV+ | privacy.apple.com, „Apple Media Services” | napok | ZIP, CSV | közvetett |
@@ -387,7 +387,7 @@ négynél nincs adapter, amíg nincs kézben export.
 - [x] Netflix teljes export tartalma és oszlopai (2026-10-20, lásd 2.1).
 - [x] IMDb ratings CSV oszlopai (2026-10-20, lásd 3.1).
 - [x] Netflix `Thumbs Value` számkódjainak jelentése (megerősítve 2026-10-21).
-- [ ] Prime Video adatkérés tényleges tartalma (watchlist benne van-e).
+- [x] Prime Video adatkérés tényleges tartalma: nézési előzmény, watchlist, „Like” visszajelzés (2026-10-21, lásd 2.2).
 - [ ] Disney+, HBO Max, Apple, SkyShowtime adatkérés tényleges tartalma.
 - [ ] IMDb adatkészlet aktuális licencfeltételei.
 - [ ] TMDB API-feltételek aktuális szövege (attribúció, nem kereskedelmi).
