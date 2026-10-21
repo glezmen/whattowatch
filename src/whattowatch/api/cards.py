@@ -175,8 +175,11 @@ def _user_states(session: Session, ids: list[int]) -> dict[int, UserState]:
             seen, seen_source = False, None
         active = [w for w in wl if w.status == "active"]
         stars = None
-        if app_rating is not None and app_rating.raw_value.isdigit():
-            stars = int(app_rating.raw_value)
+        if app_rating is not None:
+            try:
+                stars = float(app_rating.raw_value)
+            except ValueError:
+                stars = None
         out[tid] = UserState(
             seen=seen,
             seen_source=seen_source,

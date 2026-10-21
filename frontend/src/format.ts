@@ -22,6 +22,17 @@ export function fmtInt(n?: number | null): string {
   return n == null ? '' : n.toLocaleString(intlLocale())
 }
 
+/** Star value in 0.5 steps with locale decimal separator ("3,5" / "3.5"). */
+export function fmtStars(n: number): string {
+  return n.toLocaleString(intlLocale(), { minimumFractionDigits: 0, maximumFractionDigits: 1 })
+}
+
+/** Raw rating value; the in-app (star) rating is shown with locale formatting. */
+export function fmtRaw(source: string, raw: string): string {
+  const n = Number(raw)
+  return source === 'app' && Number.isFinite(n) ? fmtStars(n) : raw
+}
+
 export function mediaTypeLabel(mt: MediaType): string {
   return t(mt === 'movie' ? 'mediaType.movie' : 'mediaType.tv')
 }

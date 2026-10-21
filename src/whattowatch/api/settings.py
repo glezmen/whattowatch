@@ -5,7 +5,10 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
+import subprocess
 import time
+from functools import lru_cache
 from typing import Any
 
 import httpx
@@ -23,6 +26,7 @@ from whattowatch.api.deps import (
 from whattowatch.api.schemas import (
     AppSettingsIn,
     AppSettingsOut,
+    ClaudeCodeOption,
     CloudLlmOption,
     LlmOptions,
     LlmSettingsIn,
@@ -57,6 +61,8 @@ SECRET_KEYS: tuple[SecretKey, ...] = (
 LM_STUDIO_BASE_URL = "LM_STUDIO_BASE_URL"
 ANTHROPIC_MODELS = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-4-5", "claude-fable-5-1"]
 LM_STUDIO_TIMEOUT = 3.0
+CLAUDE_CODE_MODELS = ["sonnet", "opus", "haiku"]
+CLAUDE_VERSION_TIMEOUT = 3.0
 LLM_TEST_PROMPT = "Válaszolj egy szóval: működik?"
 # A failed or incomplete logo refresh is retried at most this often (seconds).
 LOGO_RETRY_SECONDS = 3600.0
@@ -310,6 +316,31 @@ def _lm_studio_models(base_url: str) -> tuple[bool, list[str]]:
     return True, [str(m["id"]) for m in items if isinstance(m, dict) and m.get("id")]
 
 
+@lru_cache(maxsize=4)
+def _claude_version(cli: str) -> str | None:
+    """`claude --version` (cached per process and path); any failure -> None."""
+    try:
+        out = subprocess.run(
+            [cli, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=CLAUDE_VERSION_TIMEOUT,
+            check=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out.stdout.strip() or None
+
+
+def _claude_code_option() -> ClaudeCodeOption:
+    cli = shutil.which("claude")
+    return ClaudeCodeOption(
+        available=cli is not None,
+        version=_claude_version(cli) if cli else None,
+        models=list(CLAUDE_CODE_MODELS),
+    )
+
+
 def _llm_settings(session: Session, settings: Settings) -> LlmSettingsOut:
     config = llm_registry.effective_llm_config(session, settings)
     available, models = _lm_studio_models(settings.lm_studio_base_url)
@@ -325,6 +356,7 @@ def _llm_settings(session: Session, settings: Settings) -> LlmSettingsOut:
                 key_set=bool(settings.anthropic_api_key), models=list(ANTHROPIC_MODELS)
             ),
             openai=CloudLlmOption(key_set=bool(settings.openai_api_key), models=[]),
+            claude_code=_claude_code_option(),
         ),
         cloud_send_feedback_text=config.cloud_send_feedback_text,
         fallback_allowed=config.fallback_allowed,

@@ -69,6 +69,7 @@ def test_unknown_tool_and_validation_errors(recommend_db: Env) -> None:
     assert "error" in run(recommend_db, "get_title_details", {"title_id": "x"})
     assert "error" in run(recommend_db, "get_title_details", {"title_id": 1, "sql": "x"})
     assert "error" in run(recommend_db, "record_feedback", {"title_id": 1, "stars": 9})
+    assert "error" in run(recommend_db, "record_feedback", {"title_id": 1, "stars": 3.25})
     err = run(recommend_db, "filter_by_provider", {"title_ids": [1], "provider_key": "hulu"})
     assert "ismeretlen szolgáltató" in err["error"]
     assert "nincs ilyen cím" in run(recommend_db, "get_availability", {"title_id": 9999})["error"]
@@ -177,14 +178,14 @@ def test_record_feedback(recommend_db: Env, send_text: bool) -> None:
     ctx = ToolContext(config=RecommenderConfig(), now=NOW, send_feedback_text=send_text)
     args = {
         "title_id": ids[106],
-        "stars": 4,
+        "stars": 3.5,
         "liked_text": "vicces párbeszédek",
         "seen": True,
         "watchlist": True,
     }
     out = run(recommend_db, "record_feedback", args, ctx=ctx)
     assert out["saved"] == ["stars", "seen", "watchlist", "liked_text"]
-    assert out["user"]["seen"] and out["user"]["stars"] == 4 and out["user"]["on_watchlist"]
+    assert out["user"]["seen"] and out["user"]["stars"] == 3.5 and out["user"]["on_watchlist"]
     # The text is always saved (it comes from the user) ...
     fb = session.query(TitleFeedback).filter_by(title_id=ids[106]).one()
     assert fb.liked_text == "vicces párbeszédek" and fb.disliked_text is None

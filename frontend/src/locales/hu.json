@@ -106,7 +106,7 @@
     "n": "{n} nap"
   },
   "stars": {
-    "group": "Saját értékelés (1–5 csillag)",
+    "group": "Saját értékelés (0,5–5 csillag)",
     "star": "{n} csillag",
     "clear": "Értékelés törlése"
   },
@@ -119,6 +119,8 @@
     "watchlistRemoveTitle": "Eltávolítás az app watchlistjéről",
     "notInterested": "Nem érdekel",
     "ownRating": "Saját értékelés:",
+    "imdbRate": "Értékelés az IMDb-n",
+    "imdbRateHint": "Az IMDb-nek nincs értékelés-írási API-ja; ott kézzel kell pontozni",
     "textToggle": "Szöveges vélemény",
     "textHas": "(van)",
     "separateHint": "A két mező külön kerül feldolgozásra; mindkettő opcionális.",
@@ -447,9 +449,14 @@
       "providers": {
         "lmstudio": "LM Studio (helyi)",
         "anthropic": "Anthropic (felhő)",
-        "openai": "OpenAI (felhő)"
+        "openai": "OpenAI (felhő)",
+        "claude_code": "Claude Code (CLI)"
       },
       "model": "Modell",
+      "modelCliDefault": "(CLI alapértelmezett)",
+      "ccInstalled": "Telepítve: v{version}",
+      "ccUnavailable": "A Claude Code CLI nincs telepítve vagy nincs bejelentkezve (claude login).",
+      "ccPrivacy": "A Claude-előfizetésedet használja a helyi CLI-n keresztül; a szöveges értékeléseid csak akkor kerülnek ki, ha a felhős szöveg-kapcsoló be van kapcsolva.",
       "modelDefault": "– alapértelmezett –",
       "modelCustom": "Egyéni modellnév…",
       "modelPlaceholder": "Modellazonosító",
@@ -513,7 +520,8 @@
     "providers": {
       "lmstudio": "LM Studio (helyi)",
       "anthropic": "Anthropic (felhő)",
-      "openai": "OpenAI (felhő)"
+      "openai": "OpenAI (felhő)",
+      "claude_code": "Claude Code (CLI)"
     },
     "newChat": "Új beszélgetés",
     "backendNote": "A címeket és az elérhetőséget a backend adja; a modell csak megfogalmazza a választ.",

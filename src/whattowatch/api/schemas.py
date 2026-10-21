@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from whattowatch.db.models import MediaType
 
@@ -59,7 +59,7 @@ class UserState(BaseModel):
     seen_source: Literal["import", "manual"] | None = None
     abandoned: bool = False
     not_interested: bool = False
-    stars: int | None = None
+    stars: float | None = None
     liked_text: str | None = None
     disliked_text: str | None = None
     on_watchlist: bool = False
@@ -343,7 +343,7 @@ class SecretsIn(BaseModel):
     lm_studio_base_url: str | None = Field(default=None, max_length=500)
 
 
-LlmProviderName = Literal["lmstudio", "anthropic", "openai"]
+LlmProviderName = Literal["lmstudio", "anthropic", "openai", "claude_code"]
 
 
 class LmStudioOption(BaseModel):
@@ -357,10 +357,17 @@ class CloudLlmOption(BaseModel):
     models: list[str] = Field(default_factory=list)
 
 
+class ClaudeCodeOption(BaseModel):
+    available: bool  # `claude` found on PATH
+    version: str | None = None  # `claude --version`
+    models: list[str] = Field(default_factory=list)
+
+
 class LlmOptions(BaseModel):
     lmstudio: LmStudioOption
     anthropic: CloudLlmOption
     openai: CloudLlmOption
+    claude_code: ClaudeCodeOption
 
 
 class LlmSettingsOut(BaseModel):
@@ -470,7 +477,14 @@ class FeedbackIn(BaseModel):
 
 
 class RatingIn(BaseModel):
-    stars: int | None = Field(default=..., ge=1, le=5)
+    stars: float | None = Field(default=..., ge=0.5, le=5)
+
+    @field_validator("stars")
+    @classmethod
+    def _half_step(cls, v: float | None) -> float | None:
+        if v is not None and round(v * 2) / 2 != v:
+            raise ValueError("stars must be a multiple of 0.5")
+        return v
 
 
 class SeenIn(BaseModel):

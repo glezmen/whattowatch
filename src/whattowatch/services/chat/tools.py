@@ -120,7 +120,9 @@ class GetWatchlistIn(_In):
 
 class RecordFeedbackIn(_In):
     title_id: int = Field(gt=0)
-    stars: int | None = Field(default=None, ge=1, le=5, description="Saját értékelés 1-5.")
+    stars: float | None = Field(
+        default=None, ge=0.5, le=5, description="Saját értékelés 0.5-5, fél csillagos lépésekkel."
+    )
     liked_text: str | None = Field(
         default=None, max_length=MAX_FEEDBACK_TEXT, description='Mi tetszett benne? ("" = törlés)'
     )
@@ -132,6 +134,13 @@ class RecordFeedbackIn(_In):
     seen: bool | None = None
     not_interested: bool | None = None
     watchlist: bool | None = None
+
+    @field_validator("stars")
+    @classmethod
+    def _half_step(cls, v: float | None) -> float | None:
+        if v is not None and round(v * 2) / 2 != v:
+            raise ValueError("stars must be a multiple of 0.5")
+        return v
 
 
 def _check_providers(value: list[str] | None) -> list[str] | None:

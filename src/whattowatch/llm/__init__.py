@@ -2,6 +2,8 @@
 catalog, availability or rating data."""
 
 from whattowatch.llm.base import (
+    AgentCapable,
+    AgentRun,
     LLMError,
     LLMProvider,
     LLMResponse,
@@ -11,4 +13,14 @@ from whattowatch.llm.base import (
     ToolSpec,
 )
 
-__all__ = ["LLMError", "LLMProvider", "LLMResponse", "Message", "Role", "ToolCall", "ToolSpec"]
+__all__ = [
+    "AgentCapable",
+    "AgentRun",
+    "LLMError",
+    "LLMProvider",
+    "LLMResponse",
+    "Message",
+    "Role",
+    "ToolCall",
+    "ToolSpec",
+]

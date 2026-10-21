@@ -106,7 +106,7 @@
     "n": "{n} days"
   },
   "stars": {
-    "group": "Your rating (1–5 stars)",
+    "group": "Your rating (0.5–5 stars)",
     "star": "{n} stars",
     "clear": "Clear rating"
   },
@@ -118,6 +118,8 @@
     "watchlistAddTitle": "Save to the app's watchlist",
     "watchlistRemoveTitle": "Remove from the app's watchlist",
     "notInterested": "Not interested",
+    "imdbRate": "Rate on IMDb",
+    "imdbRateHint": "IMDb has no rating-write API; you have to rate there by hand",
     "ownRating": "Your rating:",
     "textToggle": "Written review",
     "textHas": "(added)",
@@ -447,9 +449,14 @@
       "providers": {
         "lmstudio": "LM Studio (local)",
         "anthropic": "Anthropic (cloud)",
-        "openai": "OpenAI (cloud)"
+        "openai": "OpenAI (cloud)",
+        "claude_code": "Claude Code (CLI)"
       },
       "model": "Model",
+      "modelCliDefault": "(CLI default)",
+      "ccInstalled": "Installed: v{version}",
+      "ccUnavailable": "The Claude Code CLI is not installed or not signed in (claude login).",
+      "ccPrivacy": "Uses your Claude subscription via the local CLI; written reviews are sent only if the cloud-text switch is on.",
       "modelDefault": "– default –",
       "modelCustom": "Custom model name…",
       "modelPlaceholder": "Model ID",
@@ -513,7 +520,8 @@
     "providers": {
       "lmstudio": "LM Studio (local)",
       "anthropic": "Anthropic (cloud)",
-      "openai": "OpenAI (cloud)"
+      "openai": "OpenAI (cloud)",
+      "claude_code": "Claude Code (CLI)"
     },
     "newChat": "New conversation",
     "backendNote": "Titles and availability come from the backend; the model only words the answer.",

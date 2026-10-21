@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api, type ReasonCode, type TitleCard, type UserState } from '../api/client'
-import { fmtDateTime, fmtInt, mediaTypeLabel, sourceLabel } from '../format'
+import { fmtDateTime, fmtInt, fmtRaw, mediaTypeLabel, sourceLabel } from '../format'
 import { reasonTexts } from '../reasons'
 import DescriptionToggle from './DescriptionToggle.vue'
 import FeedbackPanel from './FeedbackPanel.vue'
@@ -92,7 +92,7 @@ const c = computed(() => t.value.community)
         IMDb {{ c.imdb_rating.toFixed(1) }}<template v-if="c.imdb_votes"> ({{ fmtInt(c.imdb_votes) }})</template>
       </span>
       <span v-for="r in user.personal_ratings" :key="r.source + r.raw_value" class="personal">
-        {{ tr('card.personal', { source: sourceLabel(r.source), value: r.raw_value, scale: r.scale }) }}
+        {{ tr('card.personal', { source: sourceLabel(r.source), value: fmtRaw(r.source, r.raw_value), scale: r.scale }) }}
       </span>
     </div>
 
@@ -106,7 +106,7 @@ const c = computed(() => t.value.community)
 
     <DescriptionToggle :overview="t.overview_hu" />
 
-    <FeedbackPanel :title-id="t.id" :user="user" @update:user="onUser" />
+    <FeedbackPanel :title-id="t.id" :imdb-id="t.imdb_id" :user="user" @update:user="onUser" />
   </article>
 </template>
 

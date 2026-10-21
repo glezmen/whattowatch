@@ -6,9 +6,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from dataclasses import dataclass
-from typing import Any, Literal, Protocol
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
+from typing import Any, Literal, Protocol, runtime_checkable
 
 Role = Literal["system", "user", "assistant", "tool"]
 
@@ -68,3 +68,31 @@ class LLMProvider(Protocol):
     ) -> LLMResponse: ...
 
     def embed(self, texts: Sequence[str]) -> list[list[float]] | None: ...
+
+
+@dataclass
+class AgentRun:
+    """Result of a provider-run tool loop. `tool_calls`: (name, arguments, result) in call
+    order; `stop_reason` is `max_turns` when the provider ran out of rounds."""
+
+    text: str
+    tool_calls: list[tuple[str, dict[str, Any], Any]] = field(default_factory=list)
+    model: str = ""
+    usage: dict[str, int] = field(default_factory=dict)
+    stop_reason: str | None = None
+
+
+@runtime_checkable
+class AgentCapable(Protocol):
+    """Optional capability: the provider runs the tool loop itself (e.g. Claude Code),
+    calling `execute(name, arguments)` for each backend tool call."""
+
+    def run_agent(
+        self,
+        messages: Sequence[Message],
+        *,
+        system: str,
+        tools: Sequence[ToolSpec],
+        execute: Callable[[str, dict[str, Any]], Any],
+        max_tool_rounds: int,
+    ) -> AgentRun: ...

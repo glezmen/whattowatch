@@ -9,7 +9,7 @@ import Pagination from '../components/Pagination.vue'
 import PosterWithOverview from '../components/PosterWithOverview.vue'
 import ToggleSwitch from '../components/ToggleSwitch.vue'
 import WatchlistToggle from '../components/WatchlistToggle.vue'
-import { fmtDateTime, mediaTypeLabel, sourceLabel } from '../format'
+import { fmtDateTime, fmtRaw, fmtStars, mediaTypeLabel, sourceLabel } from '../format'
 import { displayTitle, secondaryTitle } from '../titles'
 
 const LIMIT = 50
@@ -131,16 +131,16 @@ function statusOf(it: HistoryItem): string {
           <span v-else>{{ t('history.noEvents') }}</span>
           <span v-if="it.last_watched_at">{{ fmtDateTime(it.last_watched_at) }}</span>
           <span v-if="sourcesOf(it)">{{ sourcesOf(it) }}</span>
-          <span v-if="it.title.user.stars">{{ '★'.repeat(it.title.user.stars) }}</span>
+          <span v-if="it.title.user.stars">{{ '★ ' + fmtStars(it.title.user.stars) }}</span>
           <span v-for="r in it.title.user.personal_ratings" :key="r.source + r.raw_value">
-            {{ sourceLabel(r.source) }}: {{ r.raw_value }} [{{ r.scale }}]
+            {{ sourceLabel(r.source) }}: {{ fmtRaw(r.source, r.raw_value) }} [{{ r.scale }}]
           </span>
         </span>
       </button>
       <div v-if="expanded === it.title.id" class="panel">
         <PosterWithOverview :title="it.title" class="panel-poster" />
         <div class="panel-main">
-          <FeedbackPanel :title-id="it.title.id" :user="it.title.user" start-open @update:user="(u) => onUser(it, u)" />
+          <FeedbackPanel :title-id="it.title.id" :imdb-id="it.title.imdb_id" :user="it.title.user" start-open @update:user="(u) => onUser(it, u)" />
           <DescriptionToggle :overview="it.title.overview_hu" />
         </div>
       </div>

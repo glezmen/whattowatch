@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     leaving_notice_days: str = "14,7,3"
 
     # LLM layer (docs/llm.md). Keys come only from the environment and are never exposed.
-    llm_provider: str = "lmstudio"  # lmstudio | anthropic | openai
+    llm_provider: str = "lmstudio"  # lmstudio | anthropic | openai | claude_code
     llm_model: str | None = None  # None -> per-provider default
     llm_embedding_model: str | None = None
     anthropic_api_key: str | None = None
@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     llm_fallback_allowed: bool = False
     llm_cloud_send_feedback_text: bool = False
     anthropic_server_fallback: bool = True
+    # Claude Code CLI model alias (sonnet | opus | haiku) when LLM_MODEL is empty.
+    claude_code_model: str | None = None
 
     @field_validator("leaving_notice_days")
     @classmethod

@@ -92,9 +92,17 @@ def test_star_rating_upsert_and_delete(session: Session) -> None:
     set_star_rating(session, t.id, 2)
     rating = session.scalars(select(TitleRating)).one()
     assert (rating.source, rating.scale, rating.raw_value) == ("app", "1-5", "2")
-    assert rating.is_personal and rating.normalized == pytest.approx(0.25)
+    assert rating.is_personal and rating.normalized == pytest.approx(1.5 / 4.5)
     with pytest.raises(ValueError):
         set_star_rating(session, t.id, 6)
+    with pytest.raises(ValueError):
+        set_star_rating(session, t.id, 3.25)
+    set_star_rating(session, t.id, 3.5)
+    assert session.scalars(select(TitleRating)).one().raw_value == "3.5"
+    set_star_rating(session, t.id, 0.5)
+    assert session.scalars(select(TitleRating)).one().normalized == pytest.approx(0.0)
+    set_star_rating(session, t.id, 5)
+    assert session.scalars(select(TitleRating)).one().normalized == pytest.approx(1.0)
     set_star_rating(session, t.id, None)
     assert session.scalars(select(TitleRating)).all() == []
 

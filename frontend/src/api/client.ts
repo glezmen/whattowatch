@@ -257,7 +257,7 @@ export interface TitleDetails extends TitleCard {
   resolutions?: { id: number; source: string; lookup_key: string; status: string }[]
 }
 
-export type LlmProviderName = 'lmstudio' | 'anthropic' | 'openai'
+export type LlmProviderName = 'lmstudio' | 'anthropic' | 'openai' | 'claude_code'
 
 export interface ChatMessage {
   role: 'user' | 'assistant'
@@ -379,6 +379,7 @@ export interface LlmSettings {
     lmstudio: { available: boolean; base_url: string; models: string[] }
     anthropic: { key_set: boolean; models: string[] }
     openai: { key_set: boolean; models: string[] }
+    claude_code: { available: boolean; version: string | null; models: string[] }
   }
   cloud_send_feedback_text: boolean
   fallback_allowed: boolean

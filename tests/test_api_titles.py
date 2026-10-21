@@ -193,6 +193,9 @@ def test_rating_round_trip(api: ApiEnv) -> None:
     assert user["stars"] == 4 and user["seen"] is True and user["seen_source"] == "manual"
     assert [p["source"] for p in user["personal_ratings"]] == ["app"]
     assert api.client.put(url, json={"stars": 6}).status_code == 422
+    assert api.client.put(url, json={"stars": 3.25}).status_code == 422
+    half = api.client.put(url, json={"stars": 3.5}).json()
+    assert half["stars"] == 3.5 and half["personal_ratings"][0]["raw_value"] == "3.5"
     assert api.client.put(url, json={}).status_code == 422
     user = api.client.put(url, json={"stars": None}).json()
     assert user["stars"] is None and user["personal_ratings"] == []

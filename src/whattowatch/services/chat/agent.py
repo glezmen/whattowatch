@@ -8,13 +8,14 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from whattowatch.llm.base import AgentCapable, Message, ToolSpec
 from whattowatch.providers import SUBSCRIPTIONS, SubscriptionProvider
 from whattowatch.services.chat.tools import ChatTmdb, ToolContext, execute_tool, tool_specs
 from whattowatch.services.recommend.config import RecommenderConfig
@@ -217,6 +218,48 @@ def _finish(
     )
 
 
+def _trace_entry(name: str, arguments: Any, result: Any) -> ToolTraceEntry:
+    result = result if isinstance(result, dict) else {"error": "érvénytelen eszközeredmény"}
+    summary, ids = _summary(name, result)
+    return ToolTraceEntry(
+        name=name,
+        arguments=dict(arguments) if isinstance(arguments, dict) else {},
+        result_summary=summary,
+        error=result.get("error"),
+        title_ids=ids,
+    )
+
+
+def _run_provider_agent(
+    provider: LLMProvider,
+    history: list[Message],
+    *,
+    system: str,
+    specs: list[ToolSpec],
+    execute: Callable[[str, dict[str, Any]], dict[str, Any]],
+    max_tool_rounds: int,
+    session: Session,
+) -> ChatResult:
+    """The provider runs the tool loop itself (`AgentCapable`); same trace and marker
+    handling as the manual loop."""
+    assert isinstance(provider, AgentCapable)
+    run = provider.run_agent(
+        history, system=system, tools=specs, execute=execute, max_tool_rounds=max_tool_rounds
+    )
+    trace = [_trace_entry(name, args, result) for name, args, result in run.tool_calls]
+    exhausted = run.stop_reason == "max_turns"
+    return _finish(
+        run.text,
+        fallback=FINAL_FALLBACK_REPLY if exhausted else EMPTY_REPLY,
+        trace=trace,
+        session=session,
+        provider=provider.name,
+        model=run.model or provider.model,
+        usage=dict(run.usage),
+        rounds_exhausted=exhausted,
+    )
+
+
 def run_chat(
     messages: list[ChatMessage],
     *,
@@ -229,8 +272,6 @@ def run_chat(
     allow_cloud_feedback_text: bool = False,
 ) -> ChatResult:
     """Run the tool loop and return the final Hungarian reply; `LLMError` propagates."""
-    from whattowatch.llm.base import Message
-
     ctx = ToolContext(
         config=config or RecommenderConfig(),
         now=now,
@@ -251,6 +292,19 @@ def run_chat(
     def add_usage(u: dict[str, int]) -> None:
         for k, v in u.items():
             usage[k] = usage.get(k, 0) + v
+
+    if isinstance(provider, AgentCapable):
+        return _run_provider_agent(
+            provider,
+            history,
+            system=system,
+            specs=specs,
+            execute=lambda name, args: execute_tool(
+                name, args, session=session, tmdb=tmdb, ctx=ctx
+            ),
+            max_tool_rounds=max_tool_rounds,
+            session=session,
+        )
 
     for _ in range(max_tool_rounds):
         resp = provider.complete(history, system=system, tools=specs)
@@ -276,16 +330,7 @@ def run_chat(
                 result = execute_tool(
                     call.name, call.arguments, session=session, tmdb=tmdb, ctx=ctx
                 )
-            summary, ids = _summary(call.name, result)
-            trace.append(
-                ToolTraceEntry(
-                    name=call.name,
-                    arguments=dict(call.arguments) if isinstance(call.arguments, dict) else {},
-                    result_summary=summary,
-                    error=result.get("error"),
-                    title_ids=ids,
-                )
-            )
+            trace.append(_trace_entry(call.name, call.arguments, result))
             history.append(
                 Message(
                     role="tool",

@@ -156,5 +156,5 @@ Későbbi mérföldkövek: `title_features` (spec 10.).
 ## Normalizálás
 
 - IMDb 1–10 → `(v-1)/9`; Netflix thumbs 1/2/3 → 0 / 0.5 / 1 (0 = visszavont,
-  nem tárolunk értékelést); app 1–5 → `(v-1)/4`. A normalizált érték csak
+  nem tárolunk értékelést); app 1–5 (fél csillagos lépésekkel, 0.5–5) → `(v-0.5)/4.5`. A normalizált érték csak
   összehasonlításra, az eredeti marad.

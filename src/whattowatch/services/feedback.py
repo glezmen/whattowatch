@@ -83,8 +83,8 @@ def set_feedback(
     return feedback
 
 
-def set_star_rating(session: Session, title_id: int, stars: int | None) -> TitleRating | None:
-    """Upsert the in-app 1-5 star rating; None deletes it."""
+def set_star_rating(session: Session, title_id: int, stars: float | None) -> TitleRating | None:
+    """Upsert the in-app 1-5 star rating (half steps, 0.5-5); None deletes it."""
     _require_title(session, title_id)
     rating = session.scalar(
         select(TitleRating).where(
@@ -96,15 +96,15 @@ def set_star_rating(session: Session, title_id: int, stars: int | None) -> Title
             session.delete(rating)
             session.flush()
         return None
-    if not 1 <= stars <= 5:
-        raise ValueError("stars must be between 1 and 5")
+    if not 0.5 <= stars <= 5 or round(stars * 2) / 2 != stars:
+        raise ValueError("stars must be a multiple of 0.5 between 0.5 and 5")
     if rating is None:
         rating = TitleRating(title_id=title_id, source=APP_SOURCE)
         session.add(rating)
     rating.is_personal = True
     rating.scale = "1-5"
-    rating.raw_value = str(stars)
-    rating.normalized = (stars - 1) / 4
+    rating.raw_value = f"{stars:g}"
+    rating.normalized = (stars - 0.5) / 4.5
     rating.rated_at = _now()
     session.flush()
     return rating

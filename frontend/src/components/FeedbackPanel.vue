@@ -8,7 +8,7 @@ import StarRating from './StarRating.vue'
 
 type TextField = 'liked_text' | 'disliked_text'
 
-const props = defineProps<{ titleId: number; user: UserState; startOpen?: boolean }>()
+const props = defineProps<{ titleId: number; user: UserState; startOpen?: boolean; imdbId?: string | null }>()
 const emit = defineEmits<{ 'update:user': [user: UserState] }>()
 
 const { t } = useI18n()
@@ -184,6 +184,16 @@ async function removeSignal(s: PreferenceSignal) {
     <div class="row">
       <span class="small muted">{{ t('feedback.ownRating') }}</span>
       <StarRating :model-value="user.stars" :disabled="busy" @update:model-value="setStars" />
+      <a
+        v-if="imdbId"
+        class="small imdb-link"
+        :href="`https://www.imdb.com/title/${imdbId}/`"
+        target="_blank"
+        rel="noopener noreferrer"
+        :title="t('feedback.imdbRateHint')"
+      >
+        {{ t('feedback.imdbRate') }}
+      </a>
     </div>
 
     <button type="button" class="link small" :aria-expanded="open" @click="open = !open">

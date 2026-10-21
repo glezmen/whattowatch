@@ -146,7 +146,7 @@ Or with crontab (`crontab -e`), run from the repository directory:
 
 The chat recommender and the LLM analysis of free-text feedback share one provider layer
 (`src/whattowatch/llm/`, design: `docs/llm.md`). Provider: `LLM_PROVIDER` (`lmstudio` -
-default, local; `anthropic`; `openai`), model: `LLM_MODEL` (if empty: the first loaded model
+default, local; `anthropic`; `openai`; `claude_code`), model: `LLM_MODEL` (if empty: the first loaded model
 for LM Studio, `claude-opus-5-5` for Anthropic, and the placeholder `gpt-4o-mini` for
 OpenAI, whose availability on your account is not verified). Embeddings:
 `LLM_EMBEDDING_MODEL` (OpenAI-compatible servers only).
@@ -165,6 +165,15 @@ OpenAI, whose availability on your account is not verified). Embeddings:
   reasons, the server retries within the same call with a substitute Claude model. This is
   an Anthropic-internal mechanism, not the same as the cross-provider
   `LLM_FALLBACK_ALLOWED`.
+- **Claude Code (CLI)** (`LLM_PROVIDER=claude_code`): uses the local Claude Code CLI login
+  (your Claude subscription) through the official Claude Agent SDK, no API key. It requires
+  `claude` on `PATH` and a prior `claude login`. Model: `LLM_MODEL`, else
+  `CLAUDE_CODE_MODEL` (`sonnet` | `opus` | `haiku`), else the CLI default. Every call runs
+  isolated: in an empty temporary directory, without project files or settings (no
+  `CLAUDE.md`), with all built-in tools disabled; in chat only the backend's typed tools are
+  exposed (as an in-process MCP server) and the CLI runs the tool loop. It is a cloud
+  provider: data goes to Anthropic, so feedback text is only sent when
+  `LLM_CLOUD_SEND_FEEDBACK_TEXT=true`.
 
 ## Tests and quality checks
 

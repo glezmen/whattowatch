@@ -13,12 +13,13 @@ from typing import TYPE_CHECKING, Any
 from whattowatch.config import Settings
 from whattowatch.llm.anthropic_provider import AnthropicProvider
 from whattowatch.llm.base import LLMError, LLMProvider
+from whattowatch.llm.claude_code_provider import ClaudeCodeProvider, find_cli
 from whattowatch.llm.openai_compat import LMStudioProvider, OpenAIProvider
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
-PROVIDER_NAMES: tuple[str, ...] = ("lmstudio", "anthropic", "openai")
+PROVIDER_NAMES: tuple[str, ...] = ("lmstudio", "anthropic", "openai", "claude_code")
 
 # `app_settings` keys of the UI LLM choice.
 LLM_PROVIDER = "llm_provider"
@@ -89,6 +90,13 @@ def get_provider(
         return AnthropicProvider.from_settings(settings)
     if name == "openai":
         return OpenAIProvider(settings)
+    if name == "claude_code":
+        cli = find_cli()
+        if cli is None:
+            raise LLMError(
+                "Claude Code CLI nincs telepítve (a `claude` parancs nem található a PATH-on)."
+            )
+        return ClaudeCodeProvider(settings.llm_model or settings.claude_code_model, cli_path=cli)
     raise LLMError(f"Ismeretlen LLM-provider: {name!r} (választható: {', '.join(PROVIDER_NAMES)}).")
 
 

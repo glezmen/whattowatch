@@ -24,7 +24,7 @@ def recommend_run(
 def extract_preferences(
     extractor: Annotated[str, typer.Option(help="rules | llm")] = "rules",
     provider: Annotated[
-        str | None, typer.Option(help="LLM provider (lmstudio | anthropic | openai)")
+        str | None, typer.Option(help="LLM provider (lmstudio | anthropic | openai | claude_code)")
     ] = None,
 ) -> None:
     """Re-run preference signal extraction over all text feedback."""
