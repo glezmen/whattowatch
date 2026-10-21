@@ -155,12 +155,37 @@ Két út:
    `https://www.netflix.com/account/getmyinfo` (Fiók oldal alján,
    „Adatvédelem”, „Személyes adataim másolatának kérése”). Azonosítás után
    e-mailben jön a letöltési link; a Netflix szerint max. 30 nap, gyakorlatban
-   napok. ZIP, benne többek közt:
-   - `CONTENT_INTERACTION/ViewingActivity.csv` — teljes előzmény minden
-     profilhoz, időtartammal, eszközzel;
-   - `CONTENT_INTERACTION/MyList.csv` — watchlist: profilnév, cím, ország,
-     hozzáadás UTC dátuma;
-   - `CONTENT_INTERACTION/Ratings.csv` — hüvelykujjas értékelések.
+   napok (2026-10-20-án a kérés napján megérkezett). ZIP, benne egy
+   számozott könyvtár alatt kategóriánként CSV-k. A projekt számára releváns
+   fájlok, **valós exporton ellenőrzött** oszlopokkal:
+   - `CONTENT_INTERACTION/ViewingActivity.csv` — minden profil teljes
+     előzménye. Oszlopok: `Profile Name`, `Start Time` (UTC), `Duration`
+     (óó:pp:mm), `Bookmark`, `Latest Bookmark`, `Country`,
+     `Supplemental Video Type`, `Attributes`, `Device Type`, `Title`.
+     A `Title` a profil nyelvén, epizódoknál
+     „Sorozat: N. évad: Epizódcím (M. epizód)” formában. Nincs azonosító.
+     A `Supplemental Video Type` nem üres értékei (`HOOK`, `TRAILER`,
+     `TEASER_TRAILER`, `RECAP`, `PROMOTIONAL`, `BUMPER`, `BONUS_VIDEO`)
+     automatikusan lejátszott előzetesek — **importnál ki kell szűrni**;
+     a vizsgált exportban a sorok ~40%-a ilyen volt.
+   - `CONTENT_INTERACTION/MyList.csv` — watchlist. Oszlopok: `Profile Name`,
+     `Country`, `Utc Title Add Date` (nap pontosságú), `Title Name`. Nincs
+     azonosító.
+   - `CONTENT_INTERACTION/Ratings.csv` — értékelések. Oszlopok:
+     `Profile Name`, `Device Model`, `Star Value` (üres, régi csillagos
+     rendszer), `Rating Type` (`thumb`), `Title Name`, `Thumbs Value`,
+     `Event Utc Ts`, `Region View Date`. `Thumbs Value` látott értékei:
+     0, 1, 2, 3. Feltételezett jelentés: 1 = nem tetszik, 2 = tetszik,
+     3 = nagyon tetszik, 0 = visszavont értékelés — **igazolandó**.
+   - `PROFILES/Profiles.csv` — profilnevek, elsődleges nyelv; az import
+     profilszűréséhez kell.
+
+   Technikai megjegyzés: a ZIP-ben a két magyar nevű PDF fájlneve nem
+   érvényes UTF-8, a parancssori `unzip` interaktív kérdésnél megakad.
+   Az import Python `zipfile`-lal, csak a CSV-ket kibontva olvassa.
+
+   Háztartási fiók: az export minden profil adatát tartalmazza, ezért az
+   import **profilnév szerint szűrjön**, konfigurálható alapértelmezéssel.
 
 Megjegyzés: ha a felhasználó csak profiltulajdonos, nem fióktulajdonos, a
 `privacy@netflix.com` címre kell írni, és a profilhoz e-mail címnek kell
@@ -251,9 +276,13 @@ jön, így a címfeloldás a TMDB `find` végpontjával egy lépés.
 - **Egyedi listák**: a lista nevénél a három pontos menü → „Export”.
 - Csak asztali böngészőben; a mobilapp és a mobilos oldal nem exportál.
 
-A ratings CSV oszlopai: IMDb-azonosító (`Const`), saját értékelés (1–10),
-értékelés dátuma, cím, eredeti cím, típus, IMDb közösségi pontszám,
-szavazatszám, év, műfajok, hossz, rendező. A személyes és a közösségi pont egy
+A ratings CSV oszlopai (**valós exporton ellenőrzött**, 2026-10-20): `Const`
+(IMDb-azonosító), `Your Rating` (1–10), `Date Rated`, `Title`,
+`Original Title`, `URL`, `Title Type` (`Movie`, `TV Series`, `TV Episode`),
+`IMDb Rating`, `Runtime (mins)`, `Year`, `Genres`, `Num Votes`,
+`Release Date`, `Directors`. A `TV Episode` típusú sorokat epizódszintű
+értékelésként kell kezelni, nem sorozatszintűként; az AGENTS.md 5. szakasza
+szerint első körben sorozatszintre aggregálható, az eredeti sor megőrzésével. A személyes és a közösségi pont egy
 fájlban, de külön oszlopban jön — a 8. alapelv szerint külön adatként kell
 tárolni. A watchlist CSV-ben van `Created` dátum (hozzáadás ideje).
 
@@ -312,6 +341,9 @@ négynél nincs adapter, amíg nincs kézben export.
 - [ ] HU provider-id-k a TMDB-ben a hat szolgáltatóhoz (M1).
 - [ ] Streaming Availability API: HU adatminőség és a `catalogs` id-k a hat
       szolgáltatóra; mennyire egyezik a TMDB-vel.
+- [x] Netflix teljes export tartalma és oszlopai (2026-10-20, lásd 2.1).
+- [x] IMDb ratings CSV oszlopai (2026-10-20, lásd 3.1).
+- [ ] Netflix `Thumbs Value` számkódjainak jelentése.
 - [ ] Prime Video adatkérés tényleges tartalma (watchlist benne van-e).
 - [ ] Disney+, HBO Max, Apple, SkyShowtime adatkérés tényleges tartalma.
 - [ ] IMDb adatkészlet aktuális licencfeltételei.

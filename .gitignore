@@ -38,3 +38,11 @@
 
 # MacOS
 .DS_Store
+
+# Személyes exportok, soha ne kerüljenek a repóba
+data/
+imports/
+*.db
+*.sqlite
+*.sqlite3
+.env
