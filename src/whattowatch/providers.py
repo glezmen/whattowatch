@@ -20,20 +20,45 @@ class SubscriptionProvider:
     display_name: str
     tmdb_provider_ids: tuple[int, ...]
     name_patterns: tuple[str, ...]
+    # Streaming Availability API (Movie of the Night) catalog id, verified for HU on
+    # 2026-10-21 (docs/adatforrasok.md 1.3).
+    sa_catalog_id: str = ""
+    # True where the SA service also lists rent/buy/addon offers: only
+    # `streamingOptionType == "subscription"` counts as our subscription.
+    sa_subscription_only: bool = False
 
 
 SUBSCRIPTIONS: tuple[SubscriptionProvider, ...] = (
-    SubscriptionProvider("netflix", "Netflix", (8,), ("netflix",)),
-    SubscriptionProvider("disney_plus", "Disney+", (337,), ("disney plus", "disney+")),
-    SubscriptionProvider("hbo_max", "HBO Max", (1899,), ("hbo max", "max")),
+    SubscriptionProvider("netflix", "Netflix", (8,), ("netflix",), "netflix"),
+    SubscriptionProvider("disney_plus", "Disney+", (337,), ("disney plus", "disney+"), "disney"),
+    SubscriptionProvider("hbo_max", "HBO Max", (1899,), ("hbo max", "max"), "hbo"),
     SubscriptionProvider(
-        "prime_video", "Prime Video", (119,), ("amazon prime video", "prime video")
+        "prime_video",
+        "Prime Video",
+        (119,),
+        ("amazon prime video", "prime video"),
+        "prime",
+        sa_subscription_only=True,
     ),
-    SubscriptionProvider("apple_tv_plus", "Apple TV+", (350,), ("apple tv+", "apple tv plus")),
-    SubscriptionProvider("skyshowtime", "SkyShowtime", (1773,), ("skyshowtime",)),
+    SubscriptionProvider(
+        "apple_tv_plus",
+        "Apple TV+",
+        (350,),
+        ("apple tv+", "apple tv plus"),
+        "apple",
+        sa_subscription_only=True,
+    ),
+    SubscriptionProvider("skyshowtime", "SkyShowtime", (1773,), ("skyshowtime",), "skyshowtime"),
 )
 
 BY_KEY: dict[str, SubscriptionProvider] = {p.key: p for p in SUBSCRIPTIONS}
+BY_SA_ID: dict[str, SubscriptionProvider] = {p.sa_catalog_id: p for p in SUBSCRIPTIONS}
+SA_CATALOG_IDS: tuple[str, ...] = tuple(p.sa_catalog_id for p in SUBSCRIPTIONS)
+
+
+def provider_for_sa(service_id: str) -> SubscriptionProvider | None:
+    """Map a Streaming Availability service id (e.g. "hbo") to our subscription."""
+    return BY_SA_ID.get(service_id)
 
 
 def _normalize(name: str) -> str:

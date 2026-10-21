@@ -6,6 +6,7 @@ rows are `estimated`; the top titles are then verified via watch/providers (`ver
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 
 import typer
@@ -114,7 +115,10 @@ def sync_catalog(
     pages: int,
     verify_top: int,
     media_types: tuple[MediaType, ...],
+    verify_title_ids: Sequence[int] = (),
 ) -> SyncRun:
+    """`verify_title_ids` (e.g. watchlist titles) are always re-checked via watch/providers,
+    independent of discover, staleness and `verify_top`."""
     now = datetime.now(UTC)
     run = SyncRun(source="tmdb_discover", started_at=now, status="running", errors=[])
     session.add(run)
@@ -152,12 +156,25 @@ def sync_catalog(
             if page >= result.total_pages:
                 break
 
+    forced: dict[int, Title] = {}
+    for title_id in dict.fromkeys(verify_title_ids):
+        forced_title = session.get(Title, title_id)
+        if forced_title is not None:
+            forced[title_id] = forced_title
+    for title in forced.values():
+        try:
+            snapshot = tmdb.watch_providers(title.media_type, title.tmdb_id)
+            with session.begin_nested():
+                record_snapshot(session, title, snapshot)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"watch_providers {title.media_type} {title.tmdb_id}: {exc}")
+
     verified = 0
     candidates = sorted(seen.values(), key=lambda t: t.popularity or 0.0, reverse=True)
     for title in candidates:
         if verified >= verify_top:
             break
-        if not _needs_verification(session, title, now):
+        if title.id in forced or not _needs_verification(session, title, now):
             continue
         try:
             snapshot = tmdb.watch_providers(title.media_type, title.tmdb_id)
@@ -194,6 +211,7 @@ def sync_catalog(
     session.commit()
     typer.echo(
         f"Katalógus-szinkron: {len(seen)} cím ({created} új), {verified} ellenőrizve, "
+        f"{f'{len(forced)} kötelezően ellenőrzött cím, ' if forced else ''}"
         f"{with_flatrate} cím ellenőrzött előfizetéses ajánlattal a hat szolgáltatón"
         f"{f', {len(errors)} hiba' if errors else ''}."
     )
@@ -207,6 +225,7 @@ def run_sync(
     session: Session | None = None,
     tmdb: TmdbClient | None = None,
     media_types: tuple[MediaType, ...] = ("movie", "tv"),
+    verify_title_ids: Sequence[int] = (),
 ) -> SyncRun:
     own_tmdb = tmdb is None
     if tmdb is None:
@@ -221,10 +240,20 @@ def run_sync(
             engine = create_engine_from_settings(get_settings())
             with session_factory(engine)() as own_session:
                 return sync_catalog(
-                    own_session, tmdb, pages=pages, verify_top=verify_top, media_types=media_types
+                    own_session,
+                    tmdb,
+                    pages=pages,
+                    verify_top=verify_top,
+                    media_types=media_types,
+                    verify_title_ids=verify_title_ids,
                 )
         return sync_catalog(
-            session, tmdb, pages=pages, verify_top=verify_top, media_types=media_types
+            session,
+            tmdb,
+            pages=pages,
+            verify_top=verify_top,
+            media_types=media_types,
+            verify_title_ids=verify_title_ids,
         )
     finally:
         if own_tmdb:

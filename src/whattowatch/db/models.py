@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any, Literal, get_args
 
 from sqlalchemy import (
     JSON,
     CheckConstraint,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -21,7 +22,12 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 MediaType = Literal["movie", "tv"]
 ProviderKind = Literal["streaming", "rating"]
 ImportSource = Literal[
-    "netflix_viewing", "netflix_mylist", "netflix_ratings", "imdb_ratings", "imdb_watchlist"
+    "netflix_viewing",
+    "netflix_mylist",
+    "netflix_ratings",
+    "imdb_ratings",
+    "imdb_watchlist",
+    "sa_changes",
 ]
 ResolutionStatus = Literal["resolved", "ambiguous", "unresolved", "manual", "rejected"]
 ResolutionMethod = Literal[
@@ -39,6 +45,11 @@ AvailabilityConfidence = Literal["verified", "stale", "estimated", "conflicting"
 LeavingConfidence = Literal["exact", "estimated"]
 WatchlistStatus = Literal["active", "watched", "removed"]
 Polarity = Literal["+", "-"]
+CatalogEventType = Literal[
+    "new", "removed", "expiring", "upcoming", "new_season", "watchlist_available"
+]
+EventConfidence = Literal["verified", "exact", "estimated"]
+NotificationChannel = Literal["inapp"]
 
 
 def _in(column: str, literal: Any) -> str:
@@ -254,6 +265,10 @@ class Availability(TimestampMixin, Base):
             "leaving_confidence IS NULL OR " + _in("leaving_confidence", LeavingConfidence),
             name="ck_availability_leaving_confidence",
         ),
+        CheckConstraint(
+            "arriving_confidence IS NULL OR " + _in("arriving_confidence", LeavingConfidence),
+            name="ck_availability_arriving_confidence",
+        ),
         Index("ix_availability_provider_id", "provider_id"),
     )
 
@@ -270,6 +285,8 @@ class Availability(TimestampMixin, Base):
     confidence: Mapped[AvailabilityConfidence] = mapped_column(String)
     leaving_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     leaving_confidence: Mapped[LeavingConfidence | None] = mapped_column(String)
+    arriving_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    arriving_confidence: Mapped[LeavingConfidence | None] = mapped_column(String)
 
     title: Mapped[Title] = relationship(back_populates="availability")
 
@@ -339,3 +356,45 @@ class Recommendation(TimestampMixin, Base):
     feedback_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     title: Mapped[Title] = relationship()
+
+
+class CatalogEvent(TimestampMixin, Base):
+    """A detected catalog change (docs/updates.md 3). `event_date` is a day, never a guess:
+    for undated SA expiring/upcoming changes it is the detection day (confidence estimated)."""
+
+    __tablename__ = "catalog_events"
+    __table_args__ = (
+        UniqueConstraint("title_id", "provider_id", "event_type", "event_date", "source"),
+        CheckConstraint(_in("event_type", CatalogEventType), name="ck_catalog_events_event_type"),
+        CheckConstraint(_in("confidence", EventConfidence), name="ck_catalog_events_confidence"),
+        Index("ix_catalog_events_type_date", "event_type", "event_date"),
+        Index("ix_catalog_events_title_id", "title_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title_id: Mapped[int] = _fk("titles.id")
+    provider_id: Mapped[int | None] = _fk("providers.id", nullable=True, ondelete="SET NULL")
+    event_type: Mapped[CatalogEventType] = mapped_column(String)
+    event_date: Mapped[date] = mapped_column(Date)
+    source: Mapped[str] = mapped_column(String)
+    confidence: Mapped[EventConfidence] = mapped_column(String)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    title: Mapped[Title] = relationship()
+
+
+class Notification(TimestampMixin, Base):
+    __tablename__ = "notifications"
+    __table_args__ = (
+        CheckConstraint(_in("channel", NotificationChannel), name="ck_notifications_channel"),
+        Index("ix_notifications_event_id", "event_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = _fk("catalog_events.id")
+    channel: Mapped[NotificationChannel] = mapped_column(String, default="inapp")
+    dedupe_key: Mapped[str] = mapped_column(String, unique=True)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    event: Mapped[CatalogEvent] = relationship()

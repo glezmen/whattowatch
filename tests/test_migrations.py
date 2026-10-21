@@ -50,3 +50,71 @@ def test_0005_keeps_child_rows_when_recreating_titles(
         conn.execute(text("UPDATE titles SET has_hu_translation = NULL"))
         assert conn.execute(text("SELECT has_hu_translation FROM titles")).scalar() is None
     engine.dispose()
+
+
+def test_0006_keeps_child_rows_when_recreating_source_tables(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy import text
+
+    from whattowatch.cli import ROOT
+
+    db_file = tmp_path / "test.db"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_file}")
+    cfg = Config(str(ROOT / "alembic.ini"))
+    cfg.set_main_option("script_location", str(ROOT / "src/whattowatch/db/migrations"))
+    command.upgrade(cfg, "0005")
+    engine = create_engine(f"sqlite:///{db_file}")
+    with engine.begin() as conn:
+        conn.exec_driver_sql("PRAGMA foreign_keys=ON")
+        conn.execute(
+            text(
+                "INSERT INTO titles (id, media_type, tmdb_id, original_title, original_language,"
+                " genres, fetched_at) VALUES (1, 'movie', 1, 'X', 'en', '[]', '2026-01-01')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO title_resolutions (id, source, lookup_key, title_id, status)"
+                " VALUES (1, 'imdb_ratings', 'x', 1, 'resolved')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO import_rows (id, source, file_sha256, row_hash, raw, title_text,"
+                " parsed, resolution_id, imported_at)"
+                " VALUES (1, 'imdb_ratings', 'f', 'r', '{}', 'X', '{}', 1, '2026-01-01')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO title_ratings (title_id, source, is_personal, scale, raw_value,"
+                " import_row_id) VALUES (1, 'imdb_user', 1, '1-10', '8', 1)"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO availability (title_id, tmdb_provider_id, provider_name, offer_type,"
+                " region, source, first_seen_at, last_seen_at, confidence, leaving_confidence)"
+                " VALUES (1, 8, 'Netflix', 'flatrate', 'HU', 'tmdb/justwatch', '2026-01-01',"
+                " '2026-01-01', 'verified', NULL)"
+            )
+        )
+    command.upgrade(cfg, "head")
+    with engine.begin() as conn:
+        assert conn.execute(text("SELECT resolution_id FROM import_rows")).scalar() == 1
+        assert conn.execute(text("SELECT import_row_id FROM title_ratings")).scalar() == 1
+        assert conn.execute(text("SELECT count(*) FROM availability")).scalar() == 1
+        conn.execute(
+            text(
+                "INSERT INTO title_resolutions (source, lookup_key, status)"
+                " VALUES ('sa_changes', 'y', 'unresolved')"
+            )
+        )
+    command.downgrade(cfg, "0005")
+    with engine.begin() as conn:
+        assert conn.execute(text("SELECT resolution_id FROM import_rows")).scalar() == 1
+        assert conn.execute(text("SELECT count(*) FROM title_resolutions")).scalar() == 1
+    engine.dispose()

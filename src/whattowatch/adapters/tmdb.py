@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Mapping, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any, Literal, get_args
 
 import httpx
@@ -40,6 +40,14 @@ class SearchHit(BaseModel):
     vote_count: int
 
 
+class EpisodeAir(BaseModel):
+    """`last_episode_to_air` / `next_episode_to_air` of a TV details response."""
+
+    air_date: date | None
+    season_number: int | None
+    episode_number: int | None
+
+
 class TitleDetails(BaseModel):
     media_type: MediaType
     tmdb_id: int
@@ -55,6 +63,8 @@ class TitleDetails(BaseModel):
     runtime: int | None
     number_of_seasons: int | None
     status: str | None
+    last_episode_to_air: EpisodeAir | None = None
+    next_episode_to_air: EpisodeAir | None = None
 
 
 class FindResult(BaseModel):
@@ -138,6 +148,21 @@ def _discover_hit(item: Mapping[str, Any], media_type: MediaType) -> DiscoverHit
     )
 
 
+def _episode(value: Any) -> EpisodeAir | None:
+    if not isinstance(value, Mapping):
+        return None
+    try:
+        air_date = date.fromisoformat(value["air_date"]) if value.get("air_date") else None
+    except (TypeError, ValueError):
+        air_date = None
+    season, episode = value.get("season_number"), value.get("episode_number")
+    return EpisodeAir(
+        air_date=air_date,
+        season_number=season if isinstance(season, int) else None,
+        episode_number=episode if isinstance(episode, int) else None,
+    )
+
+
 def _translation(
     translations: Sequence[Mapping[str, Any]], lang: str, prefer_country: str
 ) -> Mapping[str, Any] | None:
@@ -165,6 +190,7 @@ def parse_details(data: Mapping[str, Any], media_type: MediaType) -> TitleDetail
     en = _translation(translations, "en", "US")
     title_en = _nonempty(((en or {}).get("data") or {}).get(title_key))
 
+    is_tv = media_type == "tv"
     external_ids = data.get("external_ids") or {}
     imdb_id = _nonempty(external_ids.get("imdb_id")) or _nonempty(data.get("imdb_id"))
     return TitleDetails(
@@ -182,6 +208,8 @@ def parse_details(data: Mapping[str, Any], media_type: MediaType) -> TitleDetail
         runtime=data.get("runtime") if media_type == "movie" else None,
         number_of_seasons=data.get("number_of_seasons") if media_type == "tv" else None,
         status=data.get("status"),
+        last_episode_to_air=_episode(data.get("last_episode_to_air") if is_tv else None),
+        next_episode_to_air=_episode(data.get("next_episode_to_air") if is_tv else None),
     )
 
 

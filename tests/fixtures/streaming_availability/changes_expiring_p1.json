@@ -1,0 +1,49 @@
+{
+  "changes": [
+    {
+      "changeType": "expiring",
+      "itemType": "show",
+      "showId": "7542608",
+      "showType": "series",
+      "service": {"id": "netflix", "name": "Netflix", "homePage": "https://www.netflix.com/"},
+      "streamingOptionType": "subscription",
+      "timestamp": 1792619999,
+      "link": "https://www.netflix.com/title/81502033"
+    },
+    {
+      "changeType": "expiring",
+      "itemType": "show",
+      "showId": "2124",
+      "showType": "movie",
+      "service": {"id": "prime", "name": "Prime Video", "homePage": "https://www.primevideo.com/"},
+      "streamingOptionType": "subscription",
+      "link": "https://app.primevideo.com/detail?gti=x"
+    }
+  ],
+  "shows": {
+    "7542608": {
+      "itemType": "show",
+      "showType": "series",
+      "id": "7542608",
+      "imdbId": "tt1234567",
+      "tmdbId": "tv/275279",
+      "title": "Some Series",
+      "originalTitle": "Egy sorozat",
+      "firstAirYear": 2025,
+      "streamingOptions": {"hu": []}
+    },
+    "2124": {
+      "itemType": "show",
+      "showType": "movie",
+      "id": "2124",
+      "imdbId": "tt0361748",
+      "tmdbId": "",
+      "title": "Inglourious Basterds",
+      "originalTitle": "Inglourious Basterds",
+      "releaseYear": 2009,
+      "streamingOptions": {"hu": []}
+    }
+  },
+  "hasMore": true,
+  "nextCursor": "1793401140:2576457876"
+}

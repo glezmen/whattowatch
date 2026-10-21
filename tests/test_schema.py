@@ -29,6 +29,8 @@ EXPECTED_TABLES = {
     "title_user_state",
     "sync_runs",
     "recommendations",
+    "catalog_events",
+    "notifications",
 }
 
 

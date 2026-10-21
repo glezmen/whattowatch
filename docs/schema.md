@@ -118,6 +118,7 @@ extractor, model_version)**.
 | confidence | `verified`, `stale`, `estimated`, `conflicting`, `user_denied` |
 | leaving_at | datetime? |
 | leaving_confidence | `exact`, `estimated`, NULL |
+| arriving_at, arriving_confidence | M6 (0006): SA `upcoming`; `exact`, `estimated`, NULL |
 | **unique (title_id, source, tmdb_provider_id, offer_type, region)** | |
 
 ### watchlist_items
@@ -133,8 +134,24 @@ extractor, model_version)**.
 `source`, `started_at`, `finished_at`, `status`, `processed`, `created`,
 `updated`, `skipped`, `errors` JSON, `file_sha256`?.
 
-Későbbi mérföldkövek: `title_features`, `recommendations`, `notifications`
-(spec 10.).
+### catalog_events (M6, migráció 0006)
+`title_id` FK, `provider_id` FK? (NULL pl. `new_season`), `event_type`
+(`new`, `removed`, `expiring`, `upcoming`, `new_season`, `watchlist_available`),
+`event_date` (nap), `source` (`streaming_availability`, `tmdb/justwatch`, `tmdb`),
+`confidence` (`verified`, `exact`, `estimated`), `payload` JSON, `detected_at`;
+**unique (title_id, provider_id, event_type, event_date, source)**. Dátum nélküli
+SA `expiring`/`upcoming` változásnál `event_date` az észlelés napja,
+`confidence = estimated`, `payload.undated = true` — ez nem távozási dátum.
+
+### notifications (M6, migráció 0006)
+`event_id` FK → catalog_events, `channel` (`inapp`), `dedupe_key` **unique**
+(`{event_type}:{title_id}:{provider_id}:{bucket}`; bucket = 14/7/3 nap, `soon`
+dátum nélküli kivezetésnél, egyébként az esemény dátuma), `created_at`, `read_at`?.
+
+`import_rows.source` / `title_resolutions.source` 0006 óta `sa_changes`-t is
+megenged (SA show címfeloldás).
+
+Későbbi mérföldkövek: `title_features` (spec 10.).
 
 ## Normalizálás
 
