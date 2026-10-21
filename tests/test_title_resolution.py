@@ -75,7 +75,7 @@ def test_imdb_id_resolves_and_creates_title(session: Session, tmdb: TmdbClient) 
     title = session.get(Title, r.title_id)
     assert title is not None
     assert (title.media_type, title.tmdb_id, title.imdb_id) == ("tv", 1396, "tt0903747")
-    assert title.number_of_seasons == 5 and title.vote_average is None
+    assert title.number_of_seasons == 5 and title.vote_average == 8.9
 
 
 @respx.mock

@@ -63,6 +63,10 @@ class TitleDetails(BaseModel):
     runtime: int | None
     number_of_seasons: int | None
     status: str | None
+    poster_path: str | None = None
+    popularity: float | None = None
+    vote_average: float | None = None
+    vote_count: int | None = None
     last_episode_to_air: EpisodeAir | None = None
     next_episode_to_air: EpisodeAir | None = None
 
@@ -173,6 +177,10 @@ def _translation(
     return matches[0] if matches else None
 
 
+def _opt_float(value: Any) -> float | None:
+    return float(value) if value is not None else None
+
+
 def parse_details(data: Mapping[str, Any], media_type: MediaType) -> TitleDetails:
     title_key = "title" if media_type == "movie" else "name"
     original_key = "original_title" if media_type == "movie" else "original_name"
@@ -208,6 +216,10 @@ def parse_details(data: Mapping[str, Any], media_type: MediaType) -> TitleDetail
         runtime=data.get("runtime") if media_type == "movie" else None,
         number_of_seasons=data.get("number_of_seasons") if media_type == "tv" else None,
         status=data.get("status"),
+        poster_path=_nonempty(data.get("poster_path")),
+        popularity=_opt_float(data.get("popularity")),
+        vote_average=_opt_float(data.get("vote_average")),
+        vote_count=int(data["vote_count"]) if data.get("vote_count") is not None else None,
         last_episode_to_air=_episode(data.get("last_episode_to_air") if is_tv else None),
         next_episode_to_air=_episode(data.get("next_episode_to_air") if is_tv else None),
     )

@@ -76,6 +76,8 @@ def test_details_with_hu_translation(client: TmdbClient) -> None:
     assert d.genres == ["Kaland", "Dráma", "Sci-Fi"]
     assert d.runtime == 169 and d.number_of_seasons is None
     assert d.year == 2014
+    assert d.poster_path == "/if.jpg" and d.popularity == 88.5
+    assert d.vote_average == 8.4 and d.vote_count == 35000
 
 
 @respx.mock
@@ -89,6 +91,7 @@ def test_details_without_hu_translation_never_uses_english_fallback(
     assert not d.has_hu_translation
     assert d.title_en == "Obscure Indie Film"
     assert d.imdb_id is None
+    assert d.poster_path is None and d.vote_count is None
 
 
 @respx.mock
@@ -100,6 +103,7 @@ def test_details_tv(client: TmdbClient) -> None:
     assert d.imdb_id == "tt0903747"
     assert d.number_of_seasons == 5 and d.runtime is None
     assert d.status == "Ended"
+    assert d.poster_path == "/bb.jpg" and d.vote_count == 15000
 
 
 @respx.mock
