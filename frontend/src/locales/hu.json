@@ -608,7 +608,7 @@
     "passwordConfirm": "Jelszó még egyszer",
     "passwordMismatch": "A két jelszó nem egyezik.",
     "passwordHint": "Jelszó nélkül bárki beléphet ebbe a profilba ezen a gépen. Később a Beállításokban módosítható.",
-    "createNeedsSession": "Új profilt egy meglévő profilba belépve lehet létrehozni.",
+    "createNeedsSession": "Hálózati módban új profilt csak adminisztrátor hozhat létre, belépve.",
     "menuLabel": "Profil: {name}",
     "signedInAs": "Belépve: {name}",
     "switch": "Profilváltás",

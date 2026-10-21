@@ -24,6 +24,7 @@ from whattowatch.api.deps import (
     NowDep,
     OptionalUserDep,
     SessionDep,
+    SettingsDep,
     no_profile,
 )
 from whattowatch.api.schemas import (
@@ -81,9 +82,13 @@ def _get_or_404(session: Session, user_id: int) -> User:
 
 
 @router.get("", response_model=UsersOut)
-def get_users(session: SessionDep) -> UsersOut:
+def get_users(session: SessionDep, current: OptionalUserDep, settings: SettingsDep) -> UsersOut:
     """All profiles for the picker (no cookie needed)."""
-    return UsersOut(items=[_user_out(u) for u in users_svc.list_users(session)])
+    users = users_svc.list_users(session)
+    can_create = (
+        not users or not settings.network_mode or (current is not None and current.is_admin)
+    )
+    return UsersOut(items=[_user_out(u) for u in users], can_create=can_create)
 
 
 @router.post("", response_model=UserOut, status_code=201)
@@ -94,12 +99,16 @@ def post_user(
     session: SessionDep,
     current: OptionalUserDep,
     now: NowDep,
+    settings: SettingsDep,
 ) -> UserOut:
-    """New profile. Without a cookie only while no profile exists (first start): that
-    profile becomes admin and is signed in. Otherwise any signed-in profile may add one."""
+    """New profile. The first profile (no profiles yet) becomes admin and is signed in.
+    Household mode (default): anyone at the picker may add a profile, signed in or not.
+    Network mode (`WTW_NETWORK_MODE=true`): only a signed-in admin may add one after the first."""
     first = not users_svc.list_users(session)
-    if current is None and not first:
-        raise no_profile()
+    if not first and settings.network_mode and (current is None or not current.is_admin):
+        if current is None:
+            raise no_profile()
+        raise CodedHTTPException(403, "Ehhez adminisztrátori profil kell.", "admin_required")
     color = _check_color(body.avatar_color)
     if body.password is not None:
         _check_new_password(body.password)

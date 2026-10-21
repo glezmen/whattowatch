@@ -276,6 +276,7 @@ def make_api_client(
     frontend_dist: Path | None = None,
     streaming_availability_api_key: str | None = None,
     login: bool = True,
+    network_mode: bool = False,
 ) -> TestClient:
     """App over `session` with pinned clock and no .env (no TMDB key unless given).
 
@@ -291,6 +292,7 @@ def make_api_client(
         streaming_availability_api_key=streaming_availability_api_key,
         frontend_dist=str(frontend_dist or Path("/nonexistent-dist")),
         session_secret=TEST_SESSION_SECRET,
+        network_mode=network_mode,
     )
     app = create_app(settings)
 

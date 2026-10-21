@@ -36,7 +36,9 @@ async function load() {
   loading.value = true
   loadError.value = null
   try {
-    users.value = (await api.listUsers()).items
+    const res = await api.listUsers()
+    users.value = res.items
+    serverCanCreate.value = res.can_create ?? true
   } catch (e) {
     loadError.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -95,7 +97,8 @@ const formError = ref<string | null>(null)
 const saving = ref(false)
 const firstProfile = computed(() => !loading.value && !loadError.value && users.value.length === 0)
 /** Without a session the backend only allows creating the very first profile. */
-const canCreate = computed(() => firstProfile.value || me.value !== null)
+const serverCanCreate = ref(true)
+const canCreate = computed(() => firstProfile.value || serverCanCreate.value || me.value !== null)
 
 function openCreate() {
   creating.value = true

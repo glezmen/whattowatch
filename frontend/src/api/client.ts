@@ -777,7 +777,7 @@ export const api = {
   },
 
   // Profiles and session (M8/A). Quiet: the profile views show errors inline.
-  listUsers: () => request<{ items: UserProfile[] }>('GET', '/users', undefined, true),
+  listUsers: () => request<{ items: UserProfile[]; can_create?: boolean }>('GET', '/users', undefined, true),
   getMe: () => request<Me>('GET', '/auth/me', undefined, true),
   selectProfile: (user_id: number, password?: string | null) =>
     request<unknown>('POST', '/auth/select', password ? { user_id, password } : { user_id }, true),

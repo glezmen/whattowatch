@@ -610,6 +610,7 @@ class UserOut(MeOut):
 
 class UsersOut(BaseModel):
     items: list[UserOut]
+    can_create: bool = True
 
 
 class AuthSelectIn(BaseModel):

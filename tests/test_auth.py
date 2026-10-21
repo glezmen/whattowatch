@@ -199,7 +199,7 @@ def test_first_profile_without_cookie(migrated_session: Session) -> None:
         migrated_session.delete(user)
     migrated_session.commit()
     client = make_api_client(migrated_session, login=False)
-    assert client.get("/api/users").json() == {"items": []}
+    assert client.get("/api/users").json() == {"items": [], "can_create": True}
     bad = client.post("/api/users", json={"name": "   "})
     assert bad.status_code == 422 and bad.json()["detail_code"] == "invalid_name"
     r = client.post("/api/users", json={"name": "  Anna  ", "avatar_color": "#1F80E0"})
@@ -210,6 +210,22 @@ def test_first_profile_without_cookie(migrated_session: Session) -> None:
     assert client.get("/api/auth/me").json()["id"] == body["id"]  # signed in
 
     logout(client)
+    # Household mode (default): the picker may add profiles without a session.
+    allowed = client.post("/api/users", json={"name": "Bence"})
+    assert allowed.status_code == 201
+    assert client.get("/api/users").json()["can_create"] is True
+    assert [u.name for u in list_users(migrated_session)] == ["Anna", "Bence"]
+
+
+def test_network_mode_restricts_profile_creation(migrated_session: Session) -> None:
+    for user in list_users(migrated_session):
+        migrated_session.delete(user)
+    migrated_session.commit()
+    client = make_api_client(migrated_session, login=False, network_mode=True)
+    r = client.post("/api/users", json={"name": "Anna"})  # first profile is always allowed
+    assert r.status_code == 201 and r.json()["is_admin"] is True
+    logout(client)
+    assert client.get("/api/users").json()["can_create"] is False
     refused = client.post("/api/users", json={"name": "Betolakodó"})
     assert refused.status_code == 401 and refused.json()["detail_code"] == "no_profile"
     assert [u.name for u in list_users(migrated_session)] == ["Anna"]
