@@ -94,8 +94,9 @@ Kulcskonvenciók:
 - [x] élő futás: 200 kikerülő, 53 érkező, 45 új SA-esemény; 257 teszt
 
 ## Nyitott tételek
-- LLM élő próba (LM Studio / Anthropic / OpenAI) — **csak a felhasználó engedélyével**; a `wtw llm test` első próbája `model` paraméter-hibát adott, valószínűleg `LLM_MODEL` beállítás kell
-- Netflix `Thumbs Value` kódok jelentésének megerősítése; a „Norbi” profil megerősítése
+- LLM élő próba: LM Studio-val sikeres (`wtw llm test`, `/api/chat`, 2026-10-21); Anthropic/OpenAI kulcs nélkül nem próbált; LM Studio-hívás csak a felhasználó engedélyével
+- a „Norbi” profil megerősítése (a Thumbs-kódok megerősítve)
+- beszélgetős eszköz: sorozatoknál a „Thriller” műfaj leképezése TMDB „Bűnügyi”/„Rejtély” műfajra (a TMDB tv-műfajok közt nincs Thriller)
 - 140 kétértelmű + 55 feloldatlan Netflix-cím kézi feloldása a `/feloldas` oldalon, majd `wtw import netflix` újrafuttatása
 - kézi összevetés: TMDB elérhetőség vs. szolgáltatói appok 10–20 címen (adatminőség-mérőszám)
 - `wtw refresh run` ütemezése (launchd/cron, README „Napi frissítés”)

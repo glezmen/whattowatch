@@ -199,9 +199,11 @@ Két út:
    - `CONTENT_INTERACTION/Ratings.csv` — értékelések. Oszlopok:
      `Profile Name`, `Device Model`, `Star Value` (üres, régi csillagos
      rendszer), `Rating Type` (`thumb`), `Title Name`, `Thumbs Value`,
-     `Event Utc Ts`, `Region View Date`. `Thumbs Value` látott értékei:
-     0, 1, 2, 3. Feltételezett jelentés: 1 = nem tetszik, 2 = tetszik,
-     3 = nagyon tetszik, 0 = visszavont értékelés — **igazolandó**.
+     `Event Utc Ts`, `Region View Date`. `Thumbs Value` értékei, **a
+     felhasználó által megerősítve 2026-10-21-én**: 1 = nem tetszik,
+     2 = tetszik, 3 = nagyon tetszik (dupla hüvelykujj), 0 = visszavont
+     értékelés. Normalizálás: 0 / 0,5 / 1; a 0 kód törli a korábbi
+     értékelést.
    - `PROFILES/Profiles.csv` — profilnevek, elsődleges nyelv; az import
      profilszűréséhez kell.
 
@@ -384,7 +386,7 @@ négynél nincs adapter, amíg nincs kézben export.
 - [x] Streaming Availability API: végpont, kulcs, `catalogs` id-k (2026-10-21); adatminőség-összevetés a TMDB-vel az M6 után.
 - [x] Netflix teljes export tartalma és oszlopai (2026-10-20, lásd 2.1).
 - [x] IMDb ratings CSV oszlopai (2026-10-20, lásd 3.1).
-- [ ] Netflix `Thumbs Value` számkódjainak jelentése.
+- [x] Netflix `Thumbs Value` számkódjainak jelentése (megerősítve 2026-10-21).
 - [ ] Prime Video adatkérés tényleges tartalma (watchlist benne van-e).
 - [ ] Disney+, HBO Max, Apple, SkyShowtime adatkérés tényleges tartalma.
 - [ ] IMDb adatkészlet aktuális licencfeltételei.
