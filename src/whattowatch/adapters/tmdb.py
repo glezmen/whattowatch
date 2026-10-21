@@ -57,6 +57,11 @@ class TitleDetails(BaseModel):
     status: str | None
 
 
+class FindResult(BaseModel):
+    hits: list[SearchHit]
+    episode_show_ids: list[int]
+
+
 class Offer(BaseModel):
     provider_id: int
     provider_name: str
@@ -216,9 +221,13 @@ class TmdbClient:
         return response.text[:200]
 
     def search(
-        self, query: str, media_type: MediaType | None = None, year: int | None = None
+        self,
+        query: str,
+        media_type: MediaType | None = None,
+        year: int | None = None,
+        language: str | None = None,
     ) -> list[SearchHit]:
-        params: dict[str, Any] = {"query": query, "language": self.language}
+        params: dict[str, Any] = {"query": query, "language": language or self.language}
         if media_type == "movie":
             params["region"] = self.region
             if year is not None:
@@ -310,10 +319,18 @@ class TmdbClient:
             results=[_hit(r, media_type) for r in data.get("results", [])],
         )
 
-    def find_by_imdb_id(self, imdb_id: str) -> list[SearchHit]:
+    def find(self, imdb_id: str) -> FindResult:
+        """Look up an IMDb id; episode ids yield the parent show's TMDB id."""
         data = self._get(
             f"/find/{imdb_id}", {"external_source": "imdb_id", "language": self.language}
         )
-        return [_hit(r, "movie") for r in data.get("movie_results", [])] + [
+        hits = [_hit(r, "movie") for r in data.get("movie_results", [])] + [
             _hit(r, "tv") for r in data.get("tv_results", [])
         ]
+        show_ids = [
+            int(r["show_id"]) for r in data.get("tv_episode_results", []) if r.get("show_id")
+        ]
+        return FindResult(hits=hits, episode_show_ids=list(dict.fromkeys(show_ids)))
+
+    def find_by_imdb_id(self, imdb_id: str) -> list[SearchHit]:
+        return self.find(imdb_id).hits
