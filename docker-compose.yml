@@ -8,6 +8,10 @@ services:
       # Database, uploaded imports, backups and the `.env` with API keys.
       - ./data:/app/data
     environment:
+      # Owner of the files created on ./data; set these to your host user's ids (`id -u`, `id -g`)
+      # so the data stays readable by you. Defaults to 1000:1000.
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
       WTW_ENV_FILE: /app/data/.env
       DATABASE_URL: sqlite:////app/data/whattowatch.db
       IMPORTS_DIR: /app/data/imports

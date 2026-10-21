@@ -6,9 +6,30 @@ set -euo pipefail
 DATA_DIR=/app/data
 ENV_FILE="${WTW_ENV_FILE:-$DATA_DIR/.env}"
 PORT="${WTW_PORT:-8000}"
+APP_USER=app
+
+# Running as root (the image sets no USER): align the app user with PUID/PGID if given so files
+# on the bind-mounted volume belong to the host user, make the volume writable, then re-exec
+# this script as the app user via gosu. If the container was started with `--user`, we are not
+# root and simply continue as that user.
+if [[ "$(id -u)" == "0" ]]; then
+  PUID="${PUID:-1000}"
+  PGID="${PGID:-1000}"
+  if [[ "$(id -g "$APP_USER")" != "$PGID" ]]; then
+    groupmod -o -g "$PGID" "$APP_USER"
+  fi
+  if [[ "$(id -u "$APP_USER")" != "$PUID" ]]; then
+    usermod -o -u "$PUID" "$APP_USER"
+  fi
+  mkdir -p "$DATA_DIR" "${IMPORTS_DIR:-$DATA_DIR/imports}" "${BACKUPS_DIR:-$DATA_DIR/backups}"
+  # Only touch what is not already owned by the app user (cheap on big volumes).
+  find "$DATA_DIR" \( ! -user "$PUID" -o ! -group "$PGID" \) -exec chown "$PUID:$PGID" {} + 2>/dev/null || true
+  chown "$PUID:$PGID" /tmp 2>/dev/null || true
+  exec gosu "$APP_USER" "$0" "$@"
+fi
 
 if ! mkdir -p "$DATA_DIR" "${IMPORTS_DIR:-$DATA_DIR/imports}" "${BACKUPS_DIR:-$DATA_DIR/backups}"; then
-  echo "ERROR: $DATA_DIR is not writable by uid $(id -u); fix the owner of the mounted ./data directory" >&2
+  echo "ERROR: $DATA_DIR is not writable by uid $(id -u); start the container as root (default) or fix the owner of ./data" >&2
   exit 1
 fi
 

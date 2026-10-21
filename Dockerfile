@@ -30,7 +30,11 @@ RUN uv sync --frozen --no-dev --no-editable
 COPY alembic.ini .env.example docker-entrypoint.sh ./
 COPY --from=frontend /build/frontend/dist ./frontend/dist
 
-RUN useradd --create-home --uid 1000 --shell /usr/sbin/nologin app \
+# gosu: the entrypoint starts as root only to fix the ownership of the mounted data volume,
+# then drops to the unprivileged app user (uid/gid overridable with PUID/PGID).
+RUN apt-get update && apt-get install -y --no-install-recommends gosu \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --uid 1000 --shell /usr/sbin/nologin app \
     && chmod 755 /app/docker-entrypoint.sh \
     && mkdir -p /app/data \
     && chown app:app /app/data
@@ -47,7 +51,7 @@ ENV PATH=/app/.venv/bin:$PATH \
     FRONTEND_DIST=/app/frontend/dist \
     WTW_PORT=8000
 
-USER app
+# No USER here: docker-entrypoint.sh drops privileges with gosu after fixing the volume owner.
 VOLUME ["/app/data"]
 EXPOSE 8000
 

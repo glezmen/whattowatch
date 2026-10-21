@@ -52,6 +52,20 @@ The image (`Dockerfile`) builds the web UI with Node 22, installs the backend wi
 
   Other CLI commands work the same way (`docker compose exec whattowatch uv run wtw ...`).
 
+### File ownership on Linux
+
+The container starts as root only to make the mounted `./data` directory writable,
+then drops to an unprivileged user via `gosu`. Files it creates are owned by
+`PUID:PGID` (default `1000:1000`). To keep them owned by your own user:
+
+```bash
+PUID=$(id -u) PGID=$(id -g) docker compose up --build
+```
+
+or put `PUID=...` and `PGID=...` into a `.env` file next to `docker-compose.yml`.
+If `./data` already exists and is owned by root (Docker created it on a first failed
+start), the entrypoint fixes its ownership automatically.
+
 ## Installation
 
 ```
