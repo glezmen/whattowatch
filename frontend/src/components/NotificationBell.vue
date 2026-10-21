@@ -50,6 +50,14 @@ async function markRead(n: NotificationItem) {
   }
 }
 
+/** Opening a notification through its title link marks it read (optimistic), then the link navigates. */
+function openItem(n: NotificationItem) {
+  open.value = false
+  items.value = items.value.filter((x) => x.id !== n.id)
+  unread.value = Math.max(0, unread.value - 1)
+  api.markNotificationRead(n.id).catch(() => refreshCount())
+}
+
 function titleOf(n: NotificationItem): string {
   return displayTitle(n.title)
 }
@@ -114,10 +122,13 @@ onBeforeUnmount(() => {
       <p v-else-if="!items.length" class="small muted">{{ $t('bell.empty') }}</p>
       <ul v-else>
         <li v-for="n in items" :key="n.id">
-          <RouterLink :to="eventRoute(n.event_type)" class="item-link" @click="open = false">
+          <RouterLink :to="`/cim/${n.title.id}`" class="item-link" @click="openItem(n)">
             <span class="tag">{{ eventTypeLabel(n.event_type) }}</span>
             <strong>{{ titleOf(n) }}</strong>
             <span class="small muted">{{ fmtDate(n.event_date) }}</span>
+          </RouterLink>
+          <RouterLink :to="eventRoute(n.event_type)" class="link small section-link" @click="open = false">
+            {{ eventRoute(n.event_type) === '/tavozik' ? $t('bellSection.leaving') : $t('bellSection.updates') }}
           </RouterLink>
           <button type="button" class="link small" @click="markRead(n)">{{ $t('bell.markRead') }}</button>
         </li>
@@ -187,6 +198,10 @@ li:last-child {
   gap: 4px 8px;
   color: var(--text);
   text-decoration: none;
+}
+.section-link {
+  align-self: flex-start;
+  color: var(--text-muted);
 }
 .item-link:hover strong {
   text-decoration: underline;

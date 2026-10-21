@@ -667,7 +667,7 @@ export const api = {
   recommendationFeedback: (batchId: string, titleId: number, feedback: 'clicked' | 'dismissed' | 'watched') =>
     request<unknown>('POST', `/recommendations/${enc(batchId)}/${titleId}/feedback`, { feedback }),
 
-  getTitle: (id: number) => request<TitleDetails>('GET', `/titles/${id}`),
+  getTitle: (id: number, quiet = false) => request<TitleDetails>('GET', `/titles/${id}`, undefined, quiet),
   listTitles: (p: {
     q?: string
     media_type?: MediaType | ''

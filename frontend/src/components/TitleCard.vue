@@ -50,7 +50,7 @@ const c = computed(() => t.value.community)
     <div class="top">
       <PosterWithOverview :title="t" />
       <div class="meta">
-        <h3>{{ mainTitle }}</h3>
+        <h3><RouterLink :to="`/cim/${t.id}`" class="title-link">{{ mainTitle }}</RouterLink></h3>
         <p v-if="secondary" class="original">{{ secondary }}</p>
         <p v-if="!t.title_hu && t.has_hu_translation === false" class="hint">{{ tr('card.noHuTitle') }}</p>
         <p class="small muted">
@@ -130,6 +130,13 @@ const c = computed(() => t.value.community)
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+.title-link {
+  color: inherit;
+  text-decoration: none;
+}
+.title-link:hover {
+  text-decoration: underline;
 }
 h3 {
   margin: 0;

@@ -436,17 +436,17 @@
       "title": "Katalógusfrissítés",
       "button": "Frissítés most",
       "hint": "Lekéri az elérhetőség-változásokat, újdonságokat és értesítéseket. Akár egy percig is eltarthat.",
-    "auto": {
-      "title": "Automatikus frissítés",
-      "days": "Legalább ennyi naponta (0 = ki)",
-      "hour": "Kedvelt óra",
-      "last": "Utolsó sikeres futás",
-      "next": "Következő esedékes",
-      "never": "még nem volt",
-      "off": "ki",
-      "running": "fut…",
-      "hint": "A szerver magától frissít, ha az utolsó sikeres futás óta eltelt a megadott idő; az esedékes futás megvárja a kedvelt órát."
-    }
+      "auto": {
+        "title": "Automatikus frissítés",
+        "days": "Legalább ennyi naponta (0 = ki)",
+        "hour": "Kedvelt óra",
+        "last": "Utolsó sikeres futás",
+        "next": "Következő esedékes",
+        "never": "még nem volt",
+        "off": "ki",
+        "running": "fut…",
+        "hint": "A szerver magától frissít, ha az utolsó sikeres futás óta eltelt a megadott idő; az esedékes futás megvárja a kedvelt órát."
+      }
     },
     "env": {
       "title": "Diagnosztika",
@@ -667,5 +667,23 @@
     "deleteBody": "Ez nem vonható vissza.",
     "confirmLabel": "A megerősítéshez írd be: {word}",
     "deleted": "„{name}” profil törölve."
+  },
+  "titlePage": {
+    "fallbackTitle": "Cím",
+    "back": "Vissza",
+    "notFound": "A cím nem található",
+    "home": "Vissza a főoldalra",
+    "loadFailed": "Nem sikerült betölteni a címet.",
+    "availability": "Elérhetőség",
+    "leavesOn": "Távozik: {date}",
+    "arrivesOn": "Érkezik: {date}",
+    "description": "Leírás",
+    "scores": "Pontszámok",
+    "openTitle": "Megnyitás: {title}",
+    "toggleRow": "Részletek"
+  },
+  "bellSection": {
+    "leaving": "Távozók",
+    "updates": "Újdonságok"
   }
 }

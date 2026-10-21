@@ -120,9 +120,12 @@ function statusOf(it: HistoryItem): string {
   <p v-else-if="!items.length" class="empty">{{ t('history.empty') }}</p>
   <ul v-else class="history">
     <li v-for="it in items" :key="it.title.id" class="card">
-      <button type="button" class="row-head" :aria-expanded="expanded === it.title.id" @click="expanded = expanded === it.title.id ? null : it.title.id">
+      <div class="row-head">
+        <button type="button" class="chev" :aria-expanded="expanded === it.title.id" :aria-label="t('titlePage.toggleRow')" @click="expanded = expanded === it.title.id ? null : it.title.id">
+          {{ expanded === it.title.id ? '▾' : '▸' }}
+        </button>
         <span class="name">
-          <strong>{{ displayTitle(it.title) }}</strong>
+          <RouterLink :to="`/cim/${it.title.id}`" class="title-link"><strong>{{ displayTitle(it.title) }}</strong></RouterLink>
           <span v-if="secondaryTitle(it.title)" class="muted"> · {{ secondaryTitle(it.title) }}</span>
           <span class="small muted"> ({{ it.title.year ?? '?' }}, {{ mediaTypeLabel(it.title.media_type) }})</span>
         </span>
@@ -136,7 +139,7 @@ function statusOf(it: HistoryItem): string {
             {{ sourceLabel(r.source) }}: {{ fmtRaw(r.source, r.raw_value) }} [{{ r.scale }}]
           </span>
         </span>
-      </button>
+      </div>
       <div v-if="expanded === it.title.id" class="panel">
         <PosterWithOverview :title="it.title" class="panel-poster" />
         <div class="panel-main">
@@ -171,6 +174,25 @@ function statusOf(it: HistoryItem): string {
   background: none;
   text-align: left;
   padding: 10px 12px;
+  align-items: baseline;
+}
+.name {
+  flex: 1;
+  min-width: 0;
+}
+.chev {
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0 4px;
+}
+.title-link {
+  color: inherit;
+  text-decoration: none;
+}
+.title-link:hover {
+  text-decoration: underline;
 }
 .info {
   display: flex;

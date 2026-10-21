@@ -2,10 +2,10 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-const props = defineProps<{ overview?: string | null }>()
+const props = defineProps<{ overview?: string | null; startOpen?: boolean }>()
 const { t: tr, locale } = useI18n()
 const text = computed(() => props.overview?.trim() || '')
-const open = ref(false)
+const open = ref(!!props.startOpen)
 </script>
 
 <template>

@@ -23,6 +23,7 @@ const props = defineProps<{
   checkedAt?: string | null
   confidence?: string
   source?: string
+  large?: boolean
 }>()
 
 const { t } = useI18n()
@@ -82,7 +83,7 @@ async function onClick() {
 
 <template>
   <a v-if="href" class="plink" :href="href" target="_blank" rel="noopener noreferrer" :title="tipLines.join('\n')" :aria-label="fullText">
-    <ProviderBadge :provider-key="providerKey" :fallback-name="fallbackName" :uncertain="uncertain" />
+    <ProviderBadge :provider-key="providerKey" :fallback-name="fallbackName" :uncertain="uncertain" :large="large" />
     <svg class="ext" viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
       <path d="M9 2h5v5M14 2 7 9M12 9v4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
     </svg>
@@ -91,7 +92,7 @@ async function onClick() {
     </span>
   </a>
   <button v-else type="button" class="plink" :title="tipLines.join('\n')" :aria-label="fullText" :disabled="loading" @click="onClick">
-    <ProviderBadge :provider-key="providerKey" :fallback-name="fallbackName" :uncertain="uncertain" />
+    <ProviderBadge :provider-key="providerKey" :fallback-name="fallbackName" :uncertain="uncertain" :large="large" />
     <span v-if="loading" class="spin" aria-hidden="true"></span>
     <svg v-else class="ext" viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
       <path d="M9 2h5v5M14 2 7 9M12 9v4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />

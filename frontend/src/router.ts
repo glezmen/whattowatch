@@ -16,6 +16,7 @@ export const router = createRouter({
       meta: { titleKey: 'profile.pickerTitle', bare: true },
     },
     { path: '/', component: HomeView, meta: { titleKey: 'nav.home' } },
+    { path: '/cim/:id(\\d+)', component: () => import('./views/TitleView.vue'), meta: { titleKey: 'titlePage.fallbackTitle' } },
     { path: '/felfedezes', component: () => import('./views/DiscoverView.vue'), meta: { titleKey: 'nav.discover' } },
     { path: '/beszelgetes', component: () => import('./views/ChatView.vue'), meta: { titleKey: 'nav.chat' } },
     { path: '/watchlist', component: () => import('./views/WatchlistView.vue'), meta: { titleKey: 'nav.watchlist' } },
@@ -38,6 +39,11 @@ export const router = createRouter({
 export function updateDocumentTitle(): void {
   const key = router.currentRoute.value.meta.titleKey
   const app = t('app.name')
+  const text = router.currentRoute.value.meta.titleText
+  if (typeof text === 'string' && text) {
+    document.title = `${text} · ${app}`
+    return
+  }
   document.title = typeof key === 'string' ? `${t(key)} · ${app}` : app
 }
 
