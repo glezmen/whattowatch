@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { api, type RefreshSummary, type Settings } from '../api/client'
+import { api, type RefreshSchedule, type RefreshSummary, type Settings } from '../api/client'
 import { DATA_RESTORED_EVENT, loadAppSettings, loadSubscriptions } from '../appSettings'
 import { me } from '../auth'
 import BackupSection from '../components/BackupSection.vue'
@@ -20,6 +20,37 @@ const isAdmin = computed(() => !!me.value?.is_admin)
 const refreshing = ref(false)
 const summary = ref<RefreshSummary | null>(null)
 
+const schedule = ref<RefreshSchedule | null>(null)
+
+async function loadSchedule() {
+  try {
+    schedule.value = await api.getRefreshSchedule()
+  } catch {
+    // toast already shown
+  }
+}
+
+async function saveSchedule(patch: { interval_days?: number; hour?: number }) {
+  try {
+    schedule.value = await api.putRefreshSchedule(patch)
+  } catch {
+    // toast already shown (422 on bad values)
+  }
+}
+
+function onDays(e: Event) {
+  const n = Number((e.target as HTMLInputElement).value)
+  if (Number.isInteger(n) && n >= 0 && n <= 365) void saveSchedule({ interval_days: n })
+}
+
+function onHour(e: Event) {
+  void saveSchedule({ hour: Number((e.target as HTMLSelectElement).value) })
+}
+
+function fmt(v: string | null): string {
+  return v ? new Date(v).toLocaleString() : t('settings.refresh.auto.never')
+}
+
 async function refreshNow() {
   refreshing.value = true
   summary.value = null
@@ -29,10 +60,12 @@ async function refreshNow() {
     // toast already shown (409: TMDB key missing)
   } finally {
     refreshing.value = false
+    void loadSchedule()
   }
 }
 
 onMounted(async () => {
+  void loadSchedule()
   try {
     s.value = await api.getSettings()
   } catch {
@@ -108,6 +141,35 @@ function show(v: unknown): string {
     <h2>{{ t('settings.language') }}</h2>
     <p class="small muted">{{ t('settings.languageHint') }}</p>
     <LanguageSwitch />
+  </section>
+
+  <section v-if="schedule" class="card">
+    <h2>{{ t('settings.refresh.auto.title') }}</h2>
+    <p class="small muted">{{ t('settings.refresh.auto.hint') }}</p>
+    <div v-if="isAdmin" class="toolbar refresh">
+      <label>
+        {{ t('settings.refresh.auto.days') }}
+        <input type="number" min="0" max="365" :value="schedule.interval_days" @change="onDays" />
+      </label>
+      <label>
+        {{ t('settings.refresh.auto.hour') }}
+        <select :value="schedule.hour" @change="onHour">
+          <option v-for="h in 24" :key="h" :value="h - 1">{{ String(h - 1).padStart(2, '0') }}:00</option>
+        </select>
+      </label>
+    </div>
+    <p v-else class="small">
+      {{ schedule.enabled ? `${schedule.interval_days} / ${String(schedule.hour).padStart(2, '0')}:00` : t('settings.refresh.auto.off') }}
+    </p>
+    <p class="small">
+      {{ t('settings.refresh.auto.last') }}: {{ fmt(schedule.last_ok_at) }}<br />
+      <template v-if="schedule.enabled">
+        {{ t('settings.refresh.auto.next') }}: {{ fmt(schedule.next_due_at) }}
+      </template>
+      <span v-if="schedule.running" class="muted">
+        <span class="spinner" aria-hidden="true"></span> {{ t('settings.refresh.auto.running') }}
+      </span>
+    </p>
   </section>
 
   <section v-if="isAdmin" class="card">

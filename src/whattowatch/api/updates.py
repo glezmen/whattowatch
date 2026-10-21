@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from whattowatch.api.cards import title_cards
 from whattowatch.api.deps import (
     AdminDep,
+    CodedHTTPException,
     CurrentUserDep,
     NowDep,
     SessionDep,
@@ -31,6 +32,7 @@ from whattowatch.db.models import CatalogEvent, Notification, Provider, SyncRun
 from whattowatch.providers import BY_KEY
 from whattowatch.services import updates as updates_service
 from whattowatch.services.recommend.candidates import active_watchlist_ids
+from whattowatch.services.scheduler import REFRESH_LOCK
 from whattowatch.services.updates import Section
 
 router = APIRouter(tags=["updates"])
@@ -171,4 +173,9 @@ def refresh(session: SessionDep, settings: SettingsDep, _admin: AdminDep) -> dic
     SA changes). Notifications are generated for every profile."""
     if not settings.tmdb_api_key:
         raise no_tmdb_key()
-    return updates_service.run_refresh(session=session, settings=settings)
+    if not REFRESH_LOCK.acquire(blocking=False):
+        raise CodedHTTPException(409, "Már fut egy frissítés.", "refresh_running")
+    try:
+        return updates_service.run_refresh(session=session, settings=settings)
+    finally:
+        REFRESH_LOCK.release()

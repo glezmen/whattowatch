@@ -424,6 +424,21 @@ class AppSettingsIn(BaseModel):
     onboarding_done: bool | None = None
 
 
+class RefreshScheduleOut(BaseModel):
+    enabled: bool
+    interval_days: int
+    hour: int
+    last_ok_at: datetime | None
+    last_status: str | None
+    next_due_at: datetime | None
+    running: bool
+
+
+class RefreshScheduleIn(BaseModel):
+    interval_days: int | None = Field(default=None, ge=0, le=365)
+    hour: int | None = Field(default=None, ge=0, le=23)
+
+
 class ImportSummary(BaseModel):
     processed: int = 0
     created: int = 0

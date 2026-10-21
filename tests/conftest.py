@@ -299,6 +299,7 @@ def make_api_client(
         frontend_dist=str(frontend_dist or Path("/nonexistent-dist")),
         session_secret=TEST_SESSION_SECRET,
         network_mode=network_mode,
+        scheduler_enabled=False,
     )
     app = create_app(settings)
 

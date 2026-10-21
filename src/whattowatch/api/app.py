@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -33,6 +34,7 @@ from whattowatch.api import (
 from whattowatch.api.deps import CodedHTTPException, current_user_dep
 from whattowatch.config import Settings, env_file_path, get_settings
 from whattowatch.services import env_file
+from whattowatch.services.scheduler import start_scheduler
 
 log = logging.getLogger(__name__)
 
@@ -141,7 +143,11 @@ def create_app(settings_override: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        stop = threading.Event()
+        if app_settings.scheduler_enabled:
+            start_scheduler(lambda: app.state.settings or get_settings(), stop)
         yield
+        stop.set()
         engine: Engine | None = getattr(app.state, "engine", None)
         if engine is not None:
             engine.dispose()

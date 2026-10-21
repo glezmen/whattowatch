@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     backups_dir: str = "data/backups"
     # Days before a known leaving date when an in-app notice is created (docs/updates.md 4).
     leaving_notice_days: str = "14,7,3"
+    # Built-in periodic refresh (services/scheduler.py): at least every N days, 0 = off.
+    # The app setting (Settings page) overrides this fallback. Tests set it False.
+    auto_refresh_interval_days: int = 7
+    scheduler_enabled: bool = True
 
     # LLM layer (docs/llm.md). Keys come only from the environment and are never exposed.
     llm_provider: str = "lmstudio"  # lmstudio | anthropic | openai | claude_code

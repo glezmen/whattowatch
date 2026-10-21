@@ -62,9 +62,11 @@ def refresh_run(
 ) -> None:
     """Full daily refresh (catalog sync, SA changes, new seasons, notifications)."""
     from whattowatch.services import updates
+    from whattowatch.services.scheduler import REFRESH_LOCK
 
     try:
-        summary = updates.run_refresh(pages=pages, verify_top=verify_top, use_sa=not no_sa)
+        with REFRESH_LOCK:
+            summary = updates.run_refresh(pages=pages, verify_top=verify_top, use_sa=not no_sa)
     except RuntimeError as exc:
         typer.echo(f"Hiba: {exc}", err=True)
         raise typer.Exit(1) from exc

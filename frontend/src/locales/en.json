@@ -435,7 +435,18 @@
     "refresh": {
       "title": "Catalog refresh",
       "button": "Refresh now",
-      "hint": "Fetches availability changes, new arrivals and notifications. This can take up to a minute."
+      "hint": "Fetches availability changes, new arrivals and notifications. This can take up to a minute.",
+    "auto": {
+      "title": "Automatic refresh",
+      "days": "At least every N days (0 = off)",
+      "hour": "Preferred hour",
+      "last": "Last successful run",
+      "next": "Next due",
+      "never": "never",
+      "off": "off",
+      "running": "running…",
+      "hint": "The server refreshes by itself once the interval since the last successful run has passed; a due run waits for the preferred hour."
+    }
     },
     "env": {
       "title": "Diagnostics",

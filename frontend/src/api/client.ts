@@ -464,6 +464,16 @@ export interface NetflixProfile {
   viewing_rows: number
 }
 
+export interface RefreshSchedule {
+  enabled: boolean
+  interval_days: number
+  hour: number
+  last_ok_at: string | null
+  last_status: string | null
+  next_due_at: string | null
+  running: boolean
+}
+
 export type RefreshSummary = Record<string, number | string>
 
 export interface TmdbAccountStatus {
@@ -727,6 +737,9 @@ export const api = {
   markNotificationRead: (id: number) => request<NotificationItem>('POST', `/notifications/${id}/read`),
   /** Polled in the background: quiet (no toast on failure). */
   getNotificationCount: () => request<{ unread: number }>('GET', '/notifications/count', undefined, true),
+  getRefreshSchedule: () => request<RefreshSchedule>('GET', '/settings/refresh'),
+  putRefreshSchedule: (body: { interval_days?: number; hour?: number }) =>
+    request<RefreshSchedule>('PUT', '/settings/refresh', body),
   postRefresh: () => request<RefreshSummary>('POST', '/refresh'),
 
   getSubscriptions: () => request<{ items: SubscriptionItem[] }>('GET', '/settings/subscriptions'),

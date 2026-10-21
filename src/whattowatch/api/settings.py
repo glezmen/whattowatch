@@ -38,6 +38,8 @@ from whattowatch.api.schemas import (
     LlmTestOut,
     LmStudioOption,
     ProviderProfileOut,
+    RefreshScheduleIn,
+    RefreshScheduleOut,
     SecretItem,
     SecretKey,
     SecretsIn,
@@ -56,7 +58,7 @@ from whattowatch.api.schemas import (
 from whattowatch.config import Settings, env_file_path
 from whattowatch.llm import registry as llm_registry
 from whattowatch.services import app_settings as app_cfg
-from whattowatch.services import env_file, subscriptions, tmdb_account
+from whattowatch.services import env_file, scheduler, subscriptions, tmdb_account
 
 router = APIRouter(tags=["settings"])
 log = logging.getLogger(__name__)
@@ -323,6 +325,26 @@ def put_app_settings(
         app_cfg.set_onboarding_done(session, body.onboarding_done, user_id=user.id)
     session.commit()
     return _app_settings(session, settings, user.id)
+
+
+@router.get("/settings/refresh", response_model=RefreshScheduleOut)
+def get_refresh_schedule(
+    session: SessionDep, _user: CurrentUserDep, settings: SettingsDep
+) -> dict[str, Any]:
+    return scheduler.scheduler_status(session, settings)
+
+
+@router.put("/settings/refresh", response_model=RefreshScheduleOut)
+def put_refresh_schedule(
+    body: RefreshScheduleIn, session: SessionDep, settings: SettingsDep, _admin: AdminDep
+) -> dict[str, Any]:
+    given = body.model_fields_set
+    if "interval_days" in given and body.interval_days is not None:
+        app_cfg.set_setting(session, scheduler.AUTO_REFRESH_INTERVAL_DAYS, body.interval_days)
+    if "hour" in given and body.hour is not None:
+        app_cfg.set_setting(session, scheduler.AUTO_REFRESH_HOUR, body.hour)
+    session.commit()
+    return scheduler.scheduler_status(session, settings)
 
 
 # --- LLM ----------------------------------------------------------------------------------

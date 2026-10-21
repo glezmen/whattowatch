@@ -219,6 +219,13 @@ notification. Without `STREAMING_AVAILABILITY_API_KEY` the SA step is skipped
 ("Streaming Availability: no key"), and the other steps still run. In the web UI,
 `POST /api/refresh` runs the same thing.
 
+**Built-in scheduler:** the server itself guarantees a refresh at least every
+`AUTO_REFRESH_INTERVAL_DAYS` days (default 7, `0` = off; the Settings page value overrides
+it, together with the preferred local hour, default 6). It checks every 15 minutes; a due
+run waits for the preferred hour but never more than a day past due. Runs never overlap
+with `POST /api/refresh` or `wtw refresh run` (`409 refresh_running`). cron / launchd below
+is optional now, for example for daily runs.
+
 **Quota:** the SA free plan has a monthly request limit; one refresh costs roughly
 4 types × the number of pages (by default at most 4 × 10). Run daily, that can reach
 ~1200 requests a month, so if the quota is tight, use `--no-sa` on some days or run

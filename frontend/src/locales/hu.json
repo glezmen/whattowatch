@@ -435,7 +435,18 @@
     "refresh": {
       "title": "Katalógusfrissítés",
       "button": "Frissítés most",
-      "hint": "Lekéri az elérhetőség-változásokat, újdonságokat és értesítéseket. Akár egy percig is eltarthat."
+      "hint": "Lekéri az elérhetőség-változásokat, újdonságokat és értesítéseket. Akár egy percig is eltarthat.",
+    "auto": {
+      "title": "Automatikus frissítés",
+      "days": "Legalább ennyi naponta (0 = ki)",
+      "hour": "Kedvelt óra",
+      "last": "Utolsó sikeres futás",
+      "next": "Következő esedékes",
+      "never": "még nem volt",
+      "off": "ki",
+      "running": "fut…",
+      "hint": "A szerver magától frissít, ha az utolsó sikeres futás óta eltelt a megadott idő; az esedékes futás megvárja a kedvelt órát."
+    }
     },
     "env": {
       "title": "Diagnosztika",
