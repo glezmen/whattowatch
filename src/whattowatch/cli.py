@@ -9,6 +9,7 @@ from whattowatch.cli_catalog import app as catalog_app
 from whattowatch.cli_import import app as import_app
 from whattowatch.cli_llm import app as llm_app
 from whattowatch.cli_recommend import app as recommend_app
+from whattowatch.cli_refresh import app as refresh_app
 from whattowatch.cli_resolve import resolve_app
 from whattowatch.cli_tmdb import tmdb_app
 from whattowatch.config import Settings
@@ -24,6 +25,7 @@ app.add_typer(catalog_app, name="catalog")
 app.add_typer(recommend_app, name="recommend")
 app.add_typer(resolve_app, name="resolve")
 app.add_typer(llm_app, name="llm")
+app.add_typer(refresh_app, name="refresh")
 
 ROOT = Path(__file__).resolve().parents[2]
 

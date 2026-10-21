@@ -12,10 +12,15 @@ TitleCard {
   title_hu?, original_title, title_en?, has_hu_translation?: bool|null,   // null = nem ismert
   year?, genres: string[], overview_hu?, poster_path?, runtime?, number_of_seasons?,
   community: { tmdb_vote_average?, tmdb_vote_count?, imdb_rating?, imdb_votes?, fetched_at? },
-  availability: AvailabilityEntry[],        // csak a hat szolgáltató, flatrate, szolgáltatónként a legfrissebb
+  availability: AvailabilityEntry[],        // csak a hat szolgáltató, flatrate, szolgáltatónként egy
   user: UserState
 }
-AvailabilityEntry { provider_key, provider_name, offer_type, source, confidence, last_seen_at, leaving_at?, leaving_confidence? }
+AvailabilityEntry { provider_key, provider_name, offer_type, source, confidence, last_seen_at,
+                    leaving_at?, leaving_confidence?, arriving_at?, arriving_confidence? }
+  // szolgáltatónként a legfrissebb "verified" sor, ha van, különben a legfrissebb sor (egy
+  // harmadik feles "estimated" sor nem takarja el az ellenőrzöttet);
+  // leaving_*/arriving_*: a szolgáltató bármely sorából, a legerősebb bizonyosságú (exact >
+  // estimated) nem üres érték; "estimated" + üres dátum = „hamarosan”, pontos dátum nélkül
   // confidence: a tárolt érték; "verified" helyett "stale", ha last_seen_at régebbi,
   // mint a recommender verified_max_age_days (alap 14 nap)
 UserState { seen: bool, seen_source?: "import"|"manual", abandoned: bool, not_interested: bool,
@@ -23,6 +28,13 @@ UserState { seen: bool, seen_source?: "import"|"manual", abandoned: bool, not_in
             personal_ratings: { source, scale, raw_value, rated_at }[] }
   // seen: kézi felülírás (PUT seen) elsőbbséget élvez; különben "manual" = kézi esemény vagy
   // app-csillag, "import" = importált watched esemény / személyes értékelés / watched watchlist-tétel
+UpdateItem { event: UpdateEvent, title: TitleCard }
+UpdateEvent { id, event_type: "new"|"removed"|"expiring"|"upcoming"|"new_season"|"watchlist_available",
+              event_date: "YYYY-MM-DD", source, confidence: "verified"|"exact"|"estimated",
+              provider_key?, provider_name?, payload: {..}, detected_at,
+              leaving_at?: "YYYY-MM-DD", arriving_at?: "YYYY-MM-DD" }
+  // estimated (dátum nélküli SA-esemény): event_date = észlelés napja, leaving_at/arriving_at null
+Notification { id, event_id, event_type, title: TitleCard, event_date, dedupe_key, created_at, read_at? }
 RecommendationItem { rank, score, reasons: string[], components: {..}, title: TitleCard, batch_id, generated_at, feedback? }
 Page<T> { items: T[], total, limit, offset }
 
@@ -63,6 +75,11 @@ Settings { tmdb_api_key_set: bool, netflix_profile_name?, lm_studio_base_url, re
 | `POST /resolutions/{id}/set` `{media_type, tmdb_id}` / `POST /resolutions/{id}/reject` | kézi feloldás; válasz `{resolution: ResolutionItem, reimport_needed}`; `set` után a kapcsolódó import újraépítése nem automatikus (`reimport_needed: true`), `reject`-nél `false` |
 | `GET /sync/runs?limit=50` | `SyncRun[]`, legújabb elöl |
 | `POST /chat` `{messages: [{role: "user"\|"assistant", content}], provider?: "lmstudio"\|"anthropic"\|"openai"}` | beszélgetős ajánló (docs/llm.md 2.2); válasz `ChatResult {reply, tool_trace: [{name, arguments, result_summary, error, title_ids}], provider, model, usage, rounds_exhausted}`; az utolsó üzenet `user`; a modell csak a hét típusos eszközt hívhatja (max. 6 kör, utána eszköz nélküli zárás); a `title_ids` a `get_recommendations`/`search_titles` helyi találatai a kártyákhoz. `409` ha a provider nincs beállítva, `502` ha a provider hívása hibázik. A `get_recommendations` eszköz új ajánlás-batch-et ment (ez lesz a legutóbbi); szűrőkkel nagyobb (max. 50) batch-et kér és utószűr, a `mood_labels` csak előre sorol (a cím műfajaiból képzett szótárcímkék egyezése szerint), nem szűr |
+| `GET /updates?section=new\|upcoming\|leaving\|new_season\|watchlist_available&days=31&limit=50` | `{section, items: UpdateItem[], source_status: {tmdb: bool, streaming_availability: bool}}`; címenként+szolgáltatónként egy esemény, látott/„nem érdekel” címek nélkül (`new_season`: csak a „nem érdekel” esik ki); `new`/`watchlist_available` visszafelé néz, legújabb elöl, `upcoming`/`leaving` előre (dátum nélküli `estimated` események is), `new_season` mindkét irányba. `source_status.streaming_availability` = van SA-kulcs **és** volt már `sa_changes` szinkron; `leaving`/`upcoming` enélkül üres lehet |
+| `GET /notifications?unread=true&limit=50` | `Notification[]`, legújabb elöl; `unread=false` az olvasottakat is adja |
+| `GET /notifications/count` | `{unread: n}` |
+| `POST /notifications/{id}/read` | olvasottnak jelöl (idempotens), válasz a frissített `Notification`; ismeretlen id `404` |
+| `POST /refresh` | a napi frissítés (`wtw refresh run`) szinkron futtatása, válasz az összefoglaló (`{catalog, sa: n\|"no_key", new_titles, new_seasons, watchlist_available, notifications}`); akár egy percig is tarthat (TMDB discover + ellenőrzés, SA-kérések); TMDB-kulcs nélkül `409` |
 | `GET /settings` | `Settings` (nem titkos): van-e TMDB-kulcs (bool), profilnév, LLM alap-URL, teljes recommender-konfiguráció |
 | `GET /health` | `{status: "ok"}` (a gyökéren `/health` is) |
 

@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,6 +14,8 @@ class Settings(BaseSettings):
     netflix_profile_name: str | None = None
     recommender_config_path: str | None = None
     frontend_dist: str = "frontend/dist"
+    # Days before a known leaving date when an in-app notice is created (docs/updates.md 4).
+    leaving_notice_days: str = "14,7,3"
 
     # LLM layer (docs/llm.md). Keys come only from the environment and are never exposed.
     llm_provider: str = "lmstudio"  # lmstudio | anthropic | openai
@@ -23,6 +26,32 @@ class Settings(BaseSettings):
     llm_fallback_allowed: bool = False
     llm_cloud_send_feedback_text: bool = False
     anthropic_server_fallback: bool = True
+
+    @field_validator("leaving_notice_days")
+    @classmethod
+    def _check_notice_days(cls, value: str) -> str:
+        parse_notice_days(value)
+        return value
+
+    @property
+    def leaving_notice_thresholds(self) -> tuple[int, ...]:
+        """`LEAVING_NOTICE_DAYS` as distinct positive ints, largest first."""
+        return parse_notice_days(self.leaving_notice_days)
+
+
+def parse_notice_days(value: str) -> tuple[int, ...]:
+    """`"14, 7,3"` -> (14, 7, 3); raises ValueError on non-positive or non-integer parts."""
+    days: set[int] = set()
+    for part in value.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if not part.isdigit() or int(part) <= 0:
+            raise ValueError(f"invalid leaving notice day: {part!r}")
+        days.add(int(part))
+    if not days:
+        raise ValueError("leaving_notice_days must list at least one day")
+    return tuple(sorted(days, reverse=True))
 
 
 @lru_cache

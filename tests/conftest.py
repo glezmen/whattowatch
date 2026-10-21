@@ -234,7 +234,11 @@ class ApiEnv:
 
 
 def make_api_client(
-    session: Session, *, tmdb_api_key: str | None = None, frontend_dist: Path | None = None
+    session: Session,
+    *,
+    tmdb_api_key: str | None = None,
+    frontend_dist: Path | None = None,
+    streaming_availability_api_key: str | None = None,
 ) -> TestClient:
     """App over `session` with pinned clock and no .env (no TMDB key unless given)."""
     from whattowatch.api.app import create_app
@@ -244,6 +248,7 @@ def make_api_client(
         _env_file=None,  # type: ignore[call-arg]
         database_url="sqlite://",
         tmdb_api_key=tmdb_api_key,
+        streaming_availability_api_key=streaming_availability_api_key,
         frontend_dist=str(frontend_dist or Path("/nonexistent-dist")),
     )
     app = create_app(settings)

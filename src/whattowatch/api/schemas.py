@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -27,6 +27,8 @@ class AvailabilityEntry(BaseModel):
     last_seen_at: datetime
     leaving_at: datetime | None = None
     leaving_confidence: str | None = None
+    arriving_at: datetime | None = None
+    arriving_confidence: str | None = None
 
 
 class PersonalRating(BaseModel):
@@ -250,3 +252,48 @@ class FlagIn(BaseModel):
 class TitleRef(BaseModel):
     media_type: MediaType
     tmdb_id: int = Field(gt=0)
+
+
+class UpdateEvent(BaseModel):
+    id: int
+    event_type: str
+    event_date: date
+    source: str
+    confidence: str
+    provider_key: str | None = None
+    provider_name: str | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+    detected_at: datetime
+    leaving_at: date | None = None
+    arriving_at: date | None = None
+
+
+class UpdateItem(BaseModel):
+    event: UpdateEvent
+    title: TitleCard
+
+
+class SourceStatus(BaseModel):
+    tmdb: bool
+    streaming_availability: bool
+
+
+class UpdatesOut(BaseModel):
+    section: str
+    items: list[UpdateItem]
+    source_status: SourceStatus
+
+
+class NotificationOut(BaseModel):
+    id: int
+    event_id: int
+    event_type: str
+    title: TitleCard
+    event_date: date
+    dedupe_key: str
+    created_at: datetime
+    read_at: datetime | None = None
+
+
+class NotificationCount(BaseModel):
+    unread: int

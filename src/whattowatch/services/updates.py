@@ -801,8 +801,12 @@ def run_refresh(
     settings: Settings | None = None,
     pages: int = 10,
     verify_top: int = 200,
+    use_sa: bool = True,
 ) -> dict[str, Any]:
-    """Daily refresh (docs/updates.md 4). Everything injectable; owns what it creates."""
+    """Daily refresh (docs/updates.md 4). Everything injectable; owns what it creates.
+
+    `use_sa=False` skips the Streaming Availability step (saves the monthly quota).
+    """
     settings = settings or get_settings()
     now = now or datetime.now(UTC)
     own_tmdb = tmdb is None
@@ -812,13 +816,15 @@ def run_refresh(
         if not settings.tmdb_api_key:
             raise RuntimeError("TMDB_API_KEY is not set")
         tmdb = TmdbClient(settings.tmdb_api_key)
-    if sa is None and settings.streaming_availability_api_key:
+    if not use_sa:
+        sa = None
+    elif sa is None and settings.streaming_availability_api_key:
         sa = StreamingAvailabilityClient(settings.streaming_availability_api_key)
         own_sa = True
     if session is None:
         engine = create_engine_from_settings(settings)
         session = session_factory(engine)()
-    notice_days = tuple(getattr(settings, "leaving_notice_days", DEFAULT_LEAVING_NOTICE_DAYS))
+    notice_days = settings.leaving_notice_thresholds
     summary: dict[str, Any] = {}
     errors: list[str] = []
     run = SyncRun(source="refresh", started_at=now, status="running", errors=[])
@@ -840,7 +846,9 @@ def run_refresh(
             session.rollback()
             errors.append(f"catalog: {exc}")
             summary["catalog"] = 0
-        if sa is None:
+        if not use_sa:
+            summary["sa"] = "skipped"
+        elif sa is None:
             summary["sa"] = "no_key"
         else:
             sa_run = sync_sa_changes(session, sa, tmdb, now=now)

@@ -45,12 +45,31 @@ def _float(value: str) -> float | None:
         return None
 
 
+_STRENGTH = {"exact": 0, "estimated": 1}
+
+
+def _dated(rows: list[Availability], at: str, conf: str) -> tuple[datetime | None, str | None]:
+    """Strongest non-null (`at`, `conf`) pair among `rows` (exact > estimated, then newest)."""
+    candidates = [r for r in rows if getattr(r, conf) is not None]
+    if not candidates:
+        return None, None
+    best = min(
+        candidates,
+        key=lambda r: (_STRENGTH.get(getattr(r, conf), 9), -_aware(r.last_seen_at).timestamp()),
+    )
+    value: datetime | None = getattr(best, at)
+    return (_aware(value) if value else None), getattr(best, conf)
+
+
 def _availability(
     session: Session, ids: list[int], now: datetime, max_age_days: int
 ) -> dict[int, list[AvailabilityEntry]]:
-    """Flatrate offers on the six subscriptions; newest `last_seen_at` per provider.
+    """Flatrate offers on the six subscriptions, one entry per provider.
 
-    A `verified` row older than `max_age_days` is reported as `stale`.
+    The entry's offer comes from the newest `verified` row of that provider, or the newest
+    row when none is verified (so a third-party `estimated` row never hides a verified
+    one). Leaving/arriving dates come from any row of that provider, strongest confidence
+    first. A `verified` row older than `max_age_days` is reported as `stale`.
     """
     rows = session.execute(
         select(Availability, Provider.key)
@@ -61,18 +80,22 @@ def _availability(
             Provider.key.in_(list(BY_KEY)),
         )
     ).all()
-    newest: dict[tuple[int, str], Availability] = {}
+    grouped: dict[tuple[int, str], list[Availability]] = {}
     for row, key in rows:
-        current = newest.get((row.title_id, key))
-        if current is None or _aware(row.last_seen_at) > _aware(current.last_seen_at):
-            newest[(row.title_id, key)] = row
+        grouped.setdefault((row.title_id, key), []).append(row)
     cutoff = now - timedelta(days=max_age_days)
     out: dict[int, list[AvailabilityEntry]] = {}
-    for (title_id, key), row in sorted(newest.items(), key=lambda kv: _KEY_ORDER[kv[0][1]]):
+    for (title_id, key), group in sorted(grouped.items(), key=lambda kv: _KEY_ORDER[kv[0][1]]):
+        row = max(
+            group,
+            key=lambda r: (r.confidence == "verified", _aware(r.last_seen_at), r.id),
+        )
         last_seen = _aware(row.last_seen_at)
         confidence: str = row.confidence
         if confidence == "verified" and last_seen < cutoff:
             confidence = "stale"
+        leaving_at, leaving_confidence = _dated(group, "leaving_at", "leaving_confidence")
+        arriving_at, arriving_confidence = _dated(group, "arriving_at", "arriving_confidence")
         out.setdefault(title_id, []).append(
             AvailabilityEntry(
                 provider_key=key,
@@ -81,8 +104,10 @@ def _availability(
                 source=row.source,
                 confidence=confidence,
                 last_seen_at=last_seen,
-                leaving_at=_aware(row.leaving_at) if row.leaving_at else None,
-                leaving_confidence=row.leaving_confidence,
+                leaving_at=leaving_at,
+                leaving_confidence=leaving_confidence,
+                arriving_at=arriving_at,
+                arriving_confidence=arriving_confidence,
             )
         )
     return out

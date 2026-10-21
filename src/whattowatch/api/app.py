@@ -21,6 +21,7 @@ from whattowatch.api import (
     settings,
     sync,
     titles,
+    updates,
     watchlist,
 )
 from whattowatch.config import Settings, get_settings
@@ -33,7 +34,17 @@ def _health() -> dict[str, str]:
 def _api_router() -> APIRouter:
     api = APIRouter(prefix="/api")
     api.add_api_route("/health", _health, methods=["GET"], tags=["health"])
-    for module in (recommendations, chat, titles, watchlist, history, resolutions, sync, settings):
+    for module in (
+        recommendations,
+        chat,
+        titles,
+        watchlist,
+        history,
+        resolutions,
+        sync,
+        settings,
+        updates,
+    ):
         api.include_router(module.router)
     api.include_router(search.router)
     return api

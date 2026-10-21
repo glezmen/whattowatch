@@ -34,12 +34,59 @@ uv run wtw recommend extract-preferences --extractor rules|llm [--provider lmstu
 
 uv run wtw llm test [--provider anthropic]   # egysoros magyar próba: modell, válasz, tokenek
 uv run wtw llm models                        # az LM Studio által kínált modellek
+
+uv run wtw refresh run [--pages 10] [--verify-top 200] [--no-sa]   # napi frissítés
+uv run wtw refresh sa-sync --types new,removed,expiring,upcoming    # csak a Streaming Availability lépés
+uv run wtw refresh notifications [--all]     # értesítések (alapból az olvasatlanok)
 ```
 
 Az importok idempotensek: ugyanaz a fájl kétszer betöltve nem duplikál. A
 személyes exportokat a gitignored `data/` alá tedd. Az adatforrások
 részleteit a `docs/adatforrasok.md` írja le. Az ajánló súlyai a `RECOMMENDER_CONFIG_PATH`
 változóval megadott YAML-fájlból felülírhatók (`docs/recommender.md`).
+
+## Napi frissítés
+
+A `wtw refresh run` egy lépésben frissíti a katalógust (TMDB discover + ellenőrzés), behúzza a
+Streaming Availability `changes` eseményeit (új, kikerült, hamarosan távozó, érkező címek),
+felismeri az új évadokat és a watchlistről elérhetővé vált címeket, majd értesítéseket készít
+(`docs/updates.md`). A távozási értesítések küszöbei a `LEAVING_NOTICE_DAYS` változóval
+állíthatók (alap `14,7,3`); ugyanarról az eseményről nem készül ismételt értesítés.
+`STREAMING_AVAILABILITY_API_KEY` nélkül az SA-lépés kimarad („Streaming Availability: nincs
+kulcs”), a többi lépés lefut. A webes felületen a `POST /api/refresh` ugyanezt futtatja.
+
+**Kvóta:** az SA ingyenes csomagja havi kérésszámkorláttal jár; egy frissítés nagyjából
+4 típus × a lapok száma kérés (alapból legfeljebb 4 × 10). Napi futtatásnál ez havonta akár
+~1200 kérés is lehet, ezért szűkös kvótánál használd a `--no-sa` kapcsolót a napok egy részén,
+vagy futtasd ritkábban a `wtw refresh sa-sync`-et.
+
+Ütemezés macOS-en `launchd`-vel (`~/Library/LaunchAgents/local.whattowatch.refresh.plist`,
+betöltés: `launchctl load ~/Library/LaunchAgents/local.whattowatch.refresh.plist`):
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>local.whattowatch.refresh</string>
+  <key>WorkingDirectory</key><string>/ABSZOLUT/UT/whattowatch</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string><string>-lc</string><string>uv run wtw refresh run</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict>
+  <key>StandardOutPath</key><string>/tmp/whattowatch-refresh.log</string>
+  <key>StandardErrorPath</key><string>/tmp/whattowatch-refresh.log</string>
+</dict>
+</plist>
+```
+
+Vagy crontab-bal (`crontab -e`), a repository könyvtárából futtatva:
+
+```
+0 6 * * * cd /ABSZOLUT/UT/whattowatch && uv run wtw refresh run >> /tmp/whattowatch-refresh.log 2>&1
+```
 
 ## LLM-providerek
 

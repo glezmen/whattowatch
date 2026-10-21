@@ -13,6 +13,8 @@ export interface AvailabilityEntry {
   last_seen_at: string
   leaving_at?: string | null
   leaving_confidence?: 'exact' | 'estimated' | null
+  arriving_at?: string | null
+  arriving_confidence?: 'exact' | 'estimated' | null
 }
 
 export interface PersonalRating {
@@ -215,6 +217,49 @@ export interface ChatResult {
   rounds_exhausted?: boolean
 }
 
+export type UpdateSection = 'new' | 'upcoming' | 'leaving' | 'new_season' | 'watchlist_available'
+export type EventConfidence = 'exact' | 'estimated' | 'verified'
+
+export interface CatalogEvent {
+  id: number
+  event_type: string
+  /** YYYY-MM-DD */
+  event_date: string
+  source: string
+  confidence: EventConfidence | string
+  provider_key?: string | null
+  provider_name?: string | null
+  /** May contain `undated: true`. */
+  payload: Record<string, unknown>
+  detected_at: string
+  leaving_at?: string | null
+  arriving_at?: string | null
+}
+
+export interface UpdateItem {
+  event: CatalogEvent
+  title: TitleCard
+}
+
+export interface UpdatesResponse {
+  section: UpdateSection
+  items: UpdateItem[]
+  source_status: { tmdb: boolean; streaming_availability: boolean }
+}
+
+export interface NotificationItem {
+  id: number
+  event_id: number
+  event_type: string
+  title: TitleCard
+  event_date: string
+  dedupe_key: string
+  created_at: string
+  read_at?: string | null
+}
+
+export type RefreshSummary = Record<string, number | string>
+
 export class ApiError extends Error {
   status: number
   constructor(status: number, message: string) {
@@ -335,6 +380,15 @@ export const api = {
   getSettings: () => request<Settings>('GET', '/settings'),
   postChat: (messages: ChatMessage[], provider?: LlmProviderName | string) =>
     request<ChatResult>('POST', '/chat', { messages, provider: provider || undefined }),
+
+  getUpdates: (section: UpdateSection, days = 31, limit = 50) =>
+    request<UpdatesResponse>('GET', `/updates${qs({ section, days, limit })}`),
+  getNotifications: (unread = true, limit = 50) =>
+    request<NotificationItem[]>('GET', `/notifications${qs({ unread, limit })}`),
+  markNotificationRead: (id: number) => request<NotificationItem>('POST', `/notifications/${id}/read`),
+  /** Polled in the background: quiet (no toast on failure). */
+  getNotificationCount: () => request<{ unread: number }>('GET', '/notifications/count', undefined, true),
+  postRefresh: () => request<RefreshSummary>('POST', '/refresh'),
   health: () => request<unknown>('GET', '/health', undefined, true),
 }
 
