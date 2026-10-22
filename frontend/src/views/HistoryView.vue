@@ -21,6 +21,9 @@ const offset = ref(0)
 const loading = ref(false)
 const filteredWatchlist = ref(0)
 const expanded = ref<number | null>(null)
+function toggleRow(id: number): void {
+  expanded.value = expanded.value === id ? null : id
+}
 const HIDE_KEY = 'history_hide_rated'
 function readHide(): boolean {
   try {
@@ -120,12 +123,12 @@ function statusOf(it: HistoryItem): string {
   <p v-else-if="!items.length" class="empty">{{ t('history.empty') }}</p>
   <ul v-else class="history">
     <li v-for="it in items" :key="it.title.id" class="card">
-      <div class="row-head">
-        <button type="button" class="chev" :aria-expanded="expanded === it.title.id" :aria-label="t('titlePage.toggleRow')" @click="expanded = expanded === it.title.id ? null : it.title.id">
+      <div class="row-head" role="button" tabindex="0" :aria-expanded="expanded === it.title.id" @click="toggleRow(it.title.id)" @keydown.enter.prevent="toggleRow(it.title.id)" @keydown.space.prevent="toggleRow(it.title.id)">
+        <button type="button" class="chev" tabindex="-1" :aria-label="t('titlePage.toggleRow')" @click.stop="toggleRow(it.title.id)">
           {{ expanded === it.title.id ? '▾' : '▸' }}
         </button>
         <span class="name">
-          <RouterLink :to="`/cim/${it.title.id}`" class="title-link"><strong>{{ displayTitle(it.title) }}</strong></RouterLink>
+          <RouterLink :to="`/cim/${it.title.id}`" class="title-link" @click.stop><strong>{{ displayTitle(it.title) }}</strong></RouterLink>
           <span v-if="secondaryTitle(it.title)" class="muted"> · {{ secondaryTitle(it.title) }}</span>
           <span class="small muted"> ({{ it.title.year ?? '?' }}, {{ mediaTypeLabel(it.title.media_type) }})</span>
         </span>
@@ -165,6 +168,8 @@ function statusOf(it: HistoryItem): string {
   padding: 0;
 }
 .row-head {
+  cursor: pointer;
+  user-select: none;
   width: 100%;
   display: flex;
   flex-wrap: wrap;
