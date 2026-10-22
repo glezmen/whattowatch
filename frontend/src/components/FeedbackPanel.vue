@@ -97,20 +97,27 @@ watch(
   { immediate: true },
 )
 
-/** Sends only the given fields; a missing key means "unchanged" per the contract. */
-async function saveFields(fields: Partial<Record<TextField, string | null>>) {
-  if (Object.keys(fields).length === 0) return
-  saving.value = true
-  try {
-    const res = await api.putFeedback(props.titleId, fields)
-    emit('update:user', res.user)
-    signals.value = res.signals
-    pushToast(t('feedback.saved'))
-  } catch {
-    // Drafts are kept so the text is not lost; the toast shows the error.
-  } finally {
-    saving.value = false
+/** Sends only the given fields; a missing key means "unchanged" per the contract.
+ *  Saves are serialised: a textarea blur and a "Mentés" click can fire together, and two
+ *  concurrent requests would race to create the same feedback row. */
+let saveChain: Promise<void> = Promise.resolve()
+function saveFields(fields: Partial<Record<TextField, string | null>>): Promise<void> {
+  if (Object.keys(fields).length === 0) return Promise.resolve()
+  const run = async () => {
+    saving.value = true
+    try {
+      const res = await api.putFeedback(props.titleId, fields)
+      emit('update:user', res.user)
+      signals.value = res.signals
+      pushToast(t('feedback.saved'))
+    } catch {
+      // Drafts are kept so the text is not lost; the toast shows the error.
+    } finally {
+      saving.value = false
+    }
   }
+  saveChain = saveChain.then(run, run)
+  return saveChain
 }
 
 function saveField(f: TextField) {

@@ -6,6 +6,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Response
 from sqlalchemy import Select, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from whattowatch.api.cards import (
@@ -251,14 +252,19 @@ def put_feedback(
     """Missing key = unchanged; null or empty string = cleared. Re-extracts signals."""
     get_title_or_404(session, title_id)
     given = body.model_fields_set
-    fb.set_feedback(
-        session,
-        title_id,
-        user_id=user.id,
+    kwargs = dict(
         liked_text=body.liked_text if "liked_text" in given else fb.UNCHANGED,
         disliked_text=body.disliked_text if "disliked_text" in given else fb.UNCHANGED,
     )
-    session.commit()
+    try:
+        fb.set_feedback(session, title_id, user_id=user.id, **kwargs)
+        session.commit()
+    except IntegrityError:
+        # Two saves raced (e.g. textarea blur + "Mentés" click) and both tried to insert
+        # the user's feedback row; retry once as an update of the row that won.
+        session.rollback()
+        fb.set_feedback(session, title_id, user_id=user.id, **kwargs)
+        session.commit()
     return FeedbackResponse(
         user=user_state(session, title_id, user_id=user.id),
         signals=_signals(session, title_id, user.id),
