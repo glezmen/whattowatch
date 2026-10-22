@@ -138,6 +138,8 @@ export interface SearchHit {
   year?: number | null
   popularity?: number
   vote_count?: number
+  poster_path?: string | null
+  overview?: string | null
   /** Local title id if the hit is already in the catalog. */
   title_id?: number | null
 }
@@ -254,8 +256,27 @@ export interface Settings {
   [key: string]: unknown
 }
 
+/** The current profile's imported rows that resolved to a title. */
+export interface ImportText {
+  source: string
+  title_text: string
+  rows: number
+}
+
 export interface TitleDetails extends TitleCard {
   resolutions?: { id: number; source: string; lookup_key: string; status: string }[]
+  import_texts?: ImportText[]
+}
+
+/** POST /titles/{id}/reassign */
+export interface ReassignResponse {
+  result: {
+    new_title_id: number
+    moved: Record<string, number>
+    merged: Record<string, number>
+    resolutions_updated: number
+  }
+  title: TitleCard
 }
 
 export type LlmProviderName = 'lmstudio' | 'anthropic' | 'openai' | 'claude_code'
@@ -715,6 +736,8 @@ export const api = {
     request<SearchHit[]>('GET', `/search/tmdb${qs({ q, media_type })}`),
   ensureTitle: (media_type: MediaType, tmdb_id: number) =>
     request<TitleCard>('POST', '/titles/ensure', { media_type, tmdb_id }),
+  reassignTitle: (id: number, media_type: MediaType, tmdb_id: number) =>
+    request<ReassignResponse>('POST', `/titles/${id}/reassign`, { media_type, tmdb_id }),
 
   getResolutions: (p: { status?: 'ambiguous' | 'unresolved'; source?: string; limit?: number; offset?: number }) =>
     request<Page<Resolution>>('GET', `/resolutions${qs(p)}`),

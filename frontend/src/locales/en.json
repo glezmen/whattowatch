@@ -680,7 +680,25 @@
     "description": "Description",
     "scores": "Scores",
     "openTitle": "Open: {title}",
-    "toggleRow": "Details"
+    "toggleRow": "Details",
+    "fix": {
+      "link": "Wrong title? Fix mapping",
+      "title": "Fix mapping",
+      "intro": "Pick the correct title; your data moves to it.",
+      "mappedFrom": "Mapped from:",
+      "importText": "{source} {kind}: “{text}” · {n} rows",
+      "kind": {
+        "viewing": "history",
+        "list": "list",
+        "rating": "rating",
+        "other": "import"
+      },
+      "noImports": "No imported rows point here; only data recorded in the app will move.",
+      "confirm": "All your data (history, ratings, review, watchlist) will move to the selected title: {title}. Continue?",
+      "done": "Moved to: {title}",
+      "current": "current",
+      "tmdbLink": "TMDB"
+    }
   },
   "bellSection": {
     "leaving": "Leaving",

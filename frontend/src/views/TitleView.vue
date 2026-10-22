@@ -2,10 +2,12 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import { api, ApiError, type TitleDetails, type UserState } from '../api/client'
+import { api, ApiError, type ImportText, type MediaType, type SearchHit, type TitleDetails, type UserState } from '../api/client'
 import DescriptionToggle from '../components/DescriptionToggle.vue'
 import FeedbackPanel from '../components/FeedbackPanel.vue'
+import PosterWithOverview from '../components/PosterWithOverview.vue'
 import ProviderLink from '../components/ProviderLink.vue'
+import { pushToast } from '../toast'
 import { confidenceLabel, fmtDate, fmtDateTime, fmtInt, fmtRaw, mediaTypeLabel, sourceLabel } from '../format'
 import { updateDocumentTitle } from '../router'
 import { displayTitle, secondaryTitle } from '../titles'
@@ -57,6 +59,93 @@ onBeforeUnmount(() => {
   route.meta.titleText = undefined
 })
 
+// --- fixing a wrong import mapping ----------------------------------------------------
+const fixOpen = ref(false)
+const fixQ = ref('')
+const fixType = ref<MediaType | ''>('')
+const fixHits = ref<SearchHit[] | null>(null)
+const fixLoading = ref(false)
+const fixBusy = ref(false)
+
+const importTexts = computed<ImportText[]>(() => title.value?.import_texts ?? [])
+const hasPersonal = computed(() => {
+  const u = user.value
+  if (!u) return false
+  return (
+    u.seen ||
+    u.abandoned ||
+    u.not_interested ||
+    u.on_watchlist ||
+    u.stars != null ||
+    !!u.liked_text ||
+    !!u.disliked_text ||
+    u.personal_ratings.length > 0
+  )
+})
+const canFix = computed(() => importTexts.value.length > 0 || hasPersonal.value)
+
+const VIEWING = new Set(['netflix_viewing', 'prime_viewing'])
+const LISTS = new Set(['netflix_mylist', 'prime_watchlist', 'imdb_watchlist'])
+const RATINGS = new Set(['netflix_ratings', 'prime_feedback', 'imdb_ratings'])
+function importLine(i: ImportText): string {
+  const kind = VIEWING.has(i.source) ? 'viewing' : LISTS.has(i.source) ? 'list' : RATINGS.has(i.source) ? 'rating' : 'other'
+  return tr('titlePage.fix.importText', {
+    source: sourceLabel(i.source),
+    kind: tr(`titlePage.fix.kind.${kind}`),
+    text: i.title_text,
+    n: i.rows,
+  })
+}
+
+function toggleFix() {
+  fixOpen.value = !fixOpen.value
+  if (fixOpen.value && !fixQ.value) {
+    fixQ.value = importTexts.value[0]?.title_text ?? title.value?.original_title ?? ''
+    fixType.value = title.value?.media_type ?? ''
+    if (fixQ.value) runFixSearch()
+  }
+}
+
+async function runFixSearch() {
+  const q = fixQ.value.trim()
+  if (!q) return
+  fixLoading.value = true
+  try {
+    fixHits.value = await api.searchTmdb(q, fixType.value)
+  } catch {
+    fixHits.value = []
+  } finally {
+    fixLoading.value = false
+  }
+}
+
+function isCurrent(h: SearchHit): boolean {
+  return !!title.value && h.media_type === title.value.media_type && h.tmdb_id === title.value.tmdb_id
+}
+
+function hitPoster(h: SearchHit) {
+  return { original_title: h.title, poster_path: h.poster_path, overview_hu: h.overview }
+}
+
+async function pickFix(h: SearchHit) {
+  if (!title.value || fixBusy.value) return
+  const name = h.year ? `${h.title} (${h.year})` : h.title
+  if (!window.confirm(tr('titlePage.fix.confirm', { title: name }))) return
+  fixBusy.value = true
+  try {
+    const res = await api.reassignTitle(title.value.id, h.media_type, h.tmdb_id)
+    pushToast(tr('titlePage.fix.done', { title: displayTitle(res.title) }))
+    fixOpen.value = false
+    fixQ.value = ''
+    fixHits.value = null
+    await router.replace(`/cim/${res.title.id}`)
+  } catch {
+    // toast already shown
+  } finally {
+    fixBusy.value = false
+  }
+}
+
 function back() {
   if (window.history.state?.back) router.back()
   else router.push('/')
@@ -91,6 +180,48 @@ function back() {
         <h1>{{ mainTitle }}</h1>
         <p v-if="secondary" class="original">{{ secondary }}</p>
         <p v-if="!title.title_hu && title.has_hu_translation === false" class="hint">{{ tr('card.noHuTitle') }}</p>
+        <p v-if="canFix" class="small">
+          <button type="button" class="linklike" :aria-expanded="fixOpen" @click="toggleFix">{{ tr('titlePage.fix.link') }}</button>
+        </p>
+        <section v-if="fixOpen" class="card fix" :aria-label="tr('titlePage.fix.title')">
+          <h2>{{ tr('titlePage.fix.title') }}</h2>
+          <p class="small muted">{{ tr('titlePage.fix.intro') }}</p>
+          <template v-if="importTexts.length">
+            <p class="small">{{ tr('titlePage.fix.mappedFrom') }}</p>
+            <ul class="imports small">
+              <li v-for="i in importTexts" :key="i.source + i.title_text">{{ importLine(i) }}</li>
+            </ul>
+          </template>
+          <p v-else class="small muted">{{ tr('titlePage.fix.noImports') }}</p>
+          <form class="toolbar fix-search" @submit.prevent="runFixSearch">
+            <input v-model="fixQ" type="search" :aria-label="tr('resolution.searchLabel')" />
+            <select v-model="fixType" :aria-label="tr('common.type')">
+              <option value="">{{ tr('common.all') }}</option>
+              <option value="movie">{{ tr('mediaType.movieCap') }}</option>
+              <option value="tv">{{ tr('mediaType.tvCap') }}</option>
+            </select>
+            <button type="submit" :disabled="fixLoading">{{ tr('common.search') }}</button>
+            <span v-if="fixLoading" class="spinner"></span>
+          </form>
+          <ul v-if="fixHits" class="hits">
+            <li v-if="!fixHits.length" class="small muted">{{ tr('common.noResults') }}</li>
+            <li v-for="h in fixHits" :key="h.media_type + h.tmdb_id" class="hit">
+              <PosterWithOverview :title="hitPoster(h)" small hide-lang-note />
+              <div class="hit-body">
+                <div>
+                  <strong>{{ h.title }}</strong>
+                  <span v-if="h.original_title && h.original_title !== h.title" class="muted"> · {{ h.original_title }}</span>
+                </div>
+                <div class="small muted">
+                  {{ h.year ?? '–' }} · {{ mediaTypeLabel(h.media_type) }}
+                  · <a :href="`https://www.themoviedb.org/${h.media_type}/${h.tmdb_id}`" target="_blank" rel="noopener noreferrer">{{ tr('titlePage.fix.tmdbLink') }} ↗</a>
+                </div>
+              </div>
+              <span v-if="isCurrent(h)" class="tag">{{ tr('titlePage.fix.current') }}</span>
+              <button v-else type="button" class="pick" :disabled="fixBusy" @click="pickFix(h)">{{ tr('common.thisOne') }}</button>
+            </li>
+          </ul>
+        </section>
         <p class="muted">
           {{ title.year ?? tr('card.yearUnknown') }} · {{ mediaTypeLabel(title.media_type) }}
           <template v-if="title.media_type === 'tv' && title.number_of_seasons"> · {{ tr('card.seasons', { n: title.number_of_seasons }) }}</template>
@@ -227,6 +358,45 @@ h2 {
 }
 .warn {
   color: var(--warn);
+}
+.linklike {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-muted);
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}
+.fix {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.imports {
+  margin: 0;
+  padding-left: 18px;
+}
+.hits {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.hit {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.hit-body {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.pick {
+  flex-shrink: 0;
 }
 .personal {
   color: var(--text-muted);

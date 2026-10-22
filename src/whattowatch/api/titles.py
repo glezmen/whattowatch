@@ -17,6 +17,7 @@ from whattowatch.api.cards import (
     user_state,
 )
 from whattowatch.api.deps import (
+    CodedHTTPException,
     CurrentUserDep,
     NowDep,
     OptionalSADep,
@@ -31,10 +32,13 @@ from whattowatch.api.schemas import (
     FeedbackIn,
     FeedbackResponse,
     FlagIn,
+    ImportText,
     LinkItem,
     LinksResult,
     Page,
     RatingIn,
+    ReassignOut,
+    ReassignResponse,
     ResolutionRef,
     SeenIn,
     Signal,
@@ -45,6 +49,7 @@ from whattowatch.api.schemas import (
 )
 from whattowatch.db.models import (
     Availability,
+    ImportRow,
     MediaType,
     PreferenceSignal,
     Provider,
@@ -57,6 +62,7 @@ from whattowatch.services import deep_links
 from whattowatch.services import feedback as fb
 from whattowatch.services.catalog import ensure_title
 from whattowatch.services.recommend.candidates import active_watchlist_ids, genre_clause
+from whattowatch.services.title_resolution import SameTitleError, reassign_title
 
 router = APIRouter(tags=["titles"])
 
@@ -198,13 +204,16 @@ def get_title(
     card = title_card(
         session, title, user_id=user.id, now=now, max_age_days=cfg.verified_max_age_days
     )
-    resolutions = session.scalars(
-        select(TitleResolution)
-        .where(TitleResolution.title_id == title_id)
-        .order_by(TitleResolution.id)
+    resolutions = list(
+        session.scalars(
+            select(TitleResolution)
+            .where(TitleResolution.title_id == title_id)
+            .order_by(TitleResolution.id)
+        )
     )
     return TitleDetail(
         **card.model_dump(),
+        import_texts=_import_texts(session, [r.id for r in resolutions], user.id),
         resolutions=[
             ResolutionRef(
                 id=r.id,
@@ -217,6 +226,66 @@ def get_title(
             )
             for r in resolutions
         ],
+    )
+
+
+def _import_texts(session: Session, resolution_ids: list[int], user_id: int) -> list[ImportText]:
+    """The user's import rows behind the title, grouped by source and display text."""
+    if not resolution_ids:
+        return []
+    counts: dict[tuple[str, str], int] = {}
+    rows = session.execute(
+        select(ImportRow.source, ImportRow.title_text, ImportRow.parsed)
+        .where(ImportRow.user_id == user_id, ImportRow.resolution_id.in_(resolution_ids))
+        .order_by(ImportRow.id)
+    )
+    for source, text, parsed in rows:
+        p = parsed or {}
+        shown = p.get("display_title") or p.get("lookup_title") or text
+        key = (source, str(shown))
+        counts[key] = counts.get(key, 0) + 1
+    ordered = sorted(counts.items(), key=lambda kv: -kv[1])
+    return [ImportText(source=s, title_text=t, rows=n) for (s, t), n in ordered]
+
+
+@router.post("/titles/{title_id}/reassign", response_model=ReassignResponse)
+def reassign(
+    title_id: int,
+    body: TitleRef,
+    session: SessionDep,
+    user: CurrentUserDep,
+    tmdb: TmdbDep,
+    cfg: RecommenderConfigDep,
+    now: NowDep,
+) -> ReassignResponse:
+    """Move the user's data from a wrongly resolved title to `body` (see docs/api.md)."""
+    get_title_or_404(session, title_id)
+    try:
+        result = reassign_title(
+            session,
+            user_id=user.id,
+            old_title_id=title_id,
+            media_type=body.media_type,
+            tmdb_id=body.tmdb_id,
+            tmdb=tmdb,
+        )
+    except SameTitleError:
+        session.rollback()
+        raise CodedHTTPException(
+            422, "A kiválasztott cím ugyanaz, mint a jelenlegi.", "same_title"
+        ) from None
+    session.commit()
+    new = get_title_or_404(session, result.new_title_id)
+    return ReassignResponse(
+        result=ReassignOut(
+            new_title_id=result.new_title_id,
+            moved=result.moved,
+            merged=result.merged,
+            resolutions_updated=result.resolutions_updated,
+        ),
+        title=title_card(
+            session, new, user_id=user.id, now=now, max_age_days=cfg.verified_max_age_days
+        ),
     )
 
 

@@ -680,7 +680,25 @@
     "description": "Leírás",
     "scores": "Pontszámok",
     "openTitle": "Megnyitás: {title}",
-    "toggleRow": "Részletek"
+    "toggleRow": "Részletek",
+    "fix": {
+      "link": "Rossz cím? Javítás",
+      "title": "Hozzárendelés javítása",
+      "intro": "Válaszd ki a helyes címet; a te adataid átkerülnek rá.",
+      "mappedFrom": "Ebből lett hozzárendelve:",
+      "importText": "{source} {kind}: „{text}” · {n} sor",
+      "kind": {
+        "viewing": "előzmény",
+        "list": "lista",
+        "rating": "értékelés",
+        "other": "import"
+      },
+      "noImports": "Nincs hozzá importált sor; csak az alkalmazásban rögzített adataid kerülnek át.",
+      "confirm": "Minden adatod (előzmény, értékelés, vélemény, watchlist) átkerül a kiválasztott címre: {title}. Folytatod?",
+      "done": "Átkerült: {title}",
+      "current": "jelenlegi",
+      "tmdbLink": "TMDB"
+    }
   },
   "bellSection": {
     "leaving": "Távozók",

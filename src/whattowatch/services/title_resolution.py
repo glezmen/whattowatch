@@ -27,22 +27,32 @@ from whattowatch.db.models import (
     ImportRow,
     ImportSource,
     MediaType,
+    PreferenceSignal,
     ResolutionMethod,
     ResolutionStatus,
+    TitleFeedback,
+    TitleRating,
     TitleResolution,
+    TitleUserState,
+    WatchEvent,
+    WatchlistItem,
 )
+from whattowatch.preferences.extract import extract_for_feedback
 from whattowatch.providers import BY_KEY
 from whattowatch.services.availability import record_snapshot
 from whattowatch.services.catalog import ensure_title
 
 __all__ = [
     "ImportSource",
+    "ReassignResult",
     "ResolveRequest",
+    "SameTitleError",
     "build_lookup_key",
     "normalize",
     "refresh_resolution",
     "reject_resolution",
     "request_for_rows",
+    "reassign_title",
     "resolve_title",
     "set_manual_resolution",
 ]
@@ -456,3 +466,283 @@ def refresh_resolution(
     if req is None:
         return None
     return resolve_title(session, tmdb, req)
+
+
+# --- reassigning a wrongly resolved title --------------------------------------------
+
+
+class SameTitleError(ValueError):
+    """The reassign target is the title the data already belongs to."""
+
+
+@dataclass
+class ReassignResult:
+    new_title_id: int
+    moved: dict[str, int]  # table -> rows re-pointed to the new title
+    merged: dict[str, int]  # table -> rows merged into an existing row of the new title
+    resolutions_updated: int
+
+
+def _min_dt(a: datetime | None, b: datetime | None) -> datetime | None:
+    return min(a, b) if a is not None and b is not None else a or b
+
+
+def _max_dt(a: datetime | None, b: datetime | None) -> datetime | None:
+    return max(a, b) if a is not None and b is not None else a or b
+
+
+def _sum(a: int | None, b: int | None) -> int | None:
+    return None if a is None and b is None else (a or 0) + (b or 0)
+
+
+def _aware(dt: datetime | None) -> datetime | None:
+    return dt.replace(tzinfo=UTC) if dt is not None and dt.tzinfo is None else dt
+
+
+def _move_watch_events(session: Session, user_id: int, old: int, new: int) -> tuple[int, int]:
+    def rows(title_id: int) -> list[WatchEvent]:
+        return list(
+            session.scalars(
+                select(WatchEvent).where(
+                    WatchEvent.user_id == user_id, WatchEvent.title_id == title_id
+                )
+            )
+        )
+
+    target = {e.source: e for e in rows(new)}
+    moved = merged = 0
+    for e in rows(old):
+        t = target.get(e.source)
+        if t is None:
+            e.title_id = new
+            moved += 1
+            continue
+        t.first_watched_at = _min_dt(_aware(t.first_watched_at), _aware(e.first_watched_at))
+        t.last_watched_at = _max_dt(_aware(t.last_watched_at), _aware(e.last_watched_at))
+        t.total_seconds = _sum(t.total_seconds, e.total_seconds)
+        t.episode_count = _sum(t.episode_count, e.episode_count)
+        if "watched" in (t.status, e.status):
+            t.status = "watched"
+        session.delete(e)
+        merged += 1
+    session.flush()
+    return moved, merged
+
+
+def _move_ratings(session: Session, user_id: int, old: int, new: int) -> tuple[int, int]:
+    """Personal ratings only; community scores (`is_personal` False) describe the old title."""
+
+    def rows(title_id: int) -> list[TitleRating]:
+        return list(
+            session.scalars(
+                select(TitleRating).where(
+                    TitleRating.user_id == user_id,
+                    TitleRating.title_id == title_id,
+                    TitleRating.is_personal,
+                )
+            )
+        )
+
+    target = {r.source: r for r in rows(new)}
+    moved = merged = 0
+    for r in rows(old):
+        t = target.get(r.source)
+        if t is None:
+            # A non-personal row with this source on the new title would collide too.
+            clash = session.scalar(
+                select(TitleRating).where(
+                    TitleRating.user_id == user_id,
+                    TitleRating.title_id == new,
+                    TitleRating.source == r.source,
+                )
+            )
+            if clash is not None:
+                session.delete(clash)
+                session.flush()
+            r.title_id = new
+            moved += 1
+            continue
+        old_at, new_at = _aware(r.rated_at), _aware(t.rated_at)
+        if old_at is not None and (new_at is None or old_at > new_at):
+            session.delete(t)
+            session.flush()
+            r.title_id = new
+        else:
+            session.delete(r)
+        merged += 1
+    session.flush()
+    return moved, merged
+
+
+def _move_feedback(
+    session: Session, user_id: int, old: int, new: int
+) -> tuple[dict[str, int], dict[str, int]]:
+    moved = {"title_feedback": 0, "preference_signals": 0}
+    merged = {"title_feedback": 0, "preference_signals": 0}
+
+    def feedback(title_id: int) -> TitleFeedback | None:
+        return session.scalar(
+            select(TitleFeedback).where(
+                TitleFeedback.user_id == user_id, TitleFeedback.title_id == title_id
+            )
+        )
+
+    src, dst = feedback(old), feedback(new)
+    if src is not None and dst is None:
+        src.title_id = new
+        moved["title_feedback"] = 1
+        dst = src
+    elif src is not None and dst is not None:
+        # The new title's text wins per field; the old text fills the empty fields.
+        dst.liked_text = dst.liked_text or src.liked_text
+        dst.disliked_text = dst.disliked_text or src.disliked_text
+        merged["title_feedback"] = 1
+    session.flush()
+
+    signals = list(
+        session.scalars(
+            select(PreferenceSignal).where(
+                PreferenceSignal.user_id == user_id, PreferenceSignal.title_id == old
+            )
+        )
+    )
+    if signals:
+        feedback_id = dst.id if dst is not None else None
+        existing = {
+            (s.feedback_id, s.polarity, s.category, s.label, s.extractor, s.model_version)
+            for s in session.scalars(
+                select(PreferenceSignal).where(
+                    PreferenceSignal.user_id == user_id,
+                    PreferenceSignal.title_id == new,
+                )
+            )
+        }
+        for s in signals:
+            fid = feedback_id or s.feedback_id
+            key = (fid, s.polarity, s.category, s.label, s.extractor, s.model_version)
+            if key in existing:
+                session.delete(s)
+                merged["preference_signals"] += 1
+            else:
+                s.title_id, s.feedback_id = new, fid
+                existing.add(key)
+                moved["preference_signals"] += 1
+        session.flush()
+    if src is not None and dst is not None and src is not dst:
+        session.delete(src)
+        session.flush()
+        extract_for_feedback(session, dst)  # rule signals follow the merged text
+    return moved, merged
+
+
+def _move_watchlist(session: Session, user_id: int, old: int, new: int) -> tuple[int, int]:
+    def rows(title_id: int) -> list[WatchlistItem]:
+        return list(
+            session.scalars(
+                select(WatchlistItem).where(
+                    WatchlistItem.user_id == user_id, WatchlistItem.title_id == title_id
+                )
+            )
+        )
+
+    target = {w.source: w for w in rows(new)}
+    moved = merged = 0
+    for w in rows(old):
+        t = target.get(w.source)
+        if t is None:
+            w.title_id = new
+            moved += 1
+            continue
+        t.added_at = _min_dt(_aware(t.added_at), _aware(w.added_at))
+        if "active" in (t.status, w.status):
+            t.status = "active"
+        elif "watched" in (t.status, w.status):
+            t.status = "watched"
+        session.delete(w)
+        merged += 1
+    session.flush()
+    return moved, merged
+
+
+def _move_user_state(session: Session, user_id: int, old: int, new: int) -> tuple[int, int]:
+    def row(title_id: int) -> TitleUserState | None:
+        return session.scalar(
+            select(TitleUserState).where(
+                TitleUserState.user_id == user_id, TitleUserState.title_id == title_id
+            )
+        )
+
+    src, dst = row(old), row(new)
+    if src is None:
+        return 0, 0
+    if dst is None:
+        src.title_id = new
+        session.flush()
+        return 1, 0
+    if src.not_interested and not dst.not_interested:
+        dst.not_interested = True
+        dst.not_interested_at = src.not_interested_at
+    if dst.seen_override is None:
+        dst.seen_override = src.seen_override
+    if not dst.notes:
+        dst.notes = src.notes
+    session.delete(src)
+    session.flush()
+    return 0, 1
+
+
+def reassign_title(
+    session: Session,
+    *,
+    user_id: int,
+    old_title_id: int,
+    media_type: MediaType,
+    tmdb_id: int,
+    tmdb: TmdbClient,
+) -> ReassignResult:
+    """Move one profile's personal data from a wrongly resolved title to the right one.
+
+    Moved: watch events, personal ratings, text feedback + preference signals, watchlist
+    items and title state; same-source conflicts on the target are merged. Recommendations
+    and notifications stay (they describe the old title). Resolutions pointing at the old
+    title that this user's import rows use are re-linked as `manual`; the resolution cache
+    is household-wide, so another profile's rows with the same lookup key follow on their
+    next import (their already imported data is not touched). Flushes, no commit.
+    Raises SameTitleError when the target is the old title.
+    """
+    target = ensure_title(session, tmdb, media_type, tmdb_id)
+    if target.id == old_title_id:
+        raise SameTitleError(f"title {old_title_id} is already TMDB {media_type}/{tmdb_id}")
+    new = target.id
+    moved: dict[str, int] = {}
+    merged: dict[str, int] = {}
+    for table, fn in (
+        ("watch_events", _move_watch_events),
+        ("title_ratings", _move_ratings),
+        ("watchlist_items", _move_watchlist),
+        ("title_user_state", _move_user_state),
+    ):
+        moved[table], merged[table] = fn(session, user_id, old_title_id, new)
+    fb_moved, fb_merged = _move_feedback(session, user_id, old_title_id, new)
+    moved.update(fb_moved)
+    merged.update(fb_merged)
+
+    resolutions = list(
+        session.scalars(
+            select(TitleResolution).where(
+                TitleResolution.title_id == old_title_id,
+                TitleResolution.id.in_(
+                    select(ImportRow.resolution_id).where(
+                        ImportRow.user_id == user_id, ImportRow.resolution_id.is_not(None)
+                    )
+                ),
+            )
+        )
+    )
+    now = datetime.now(UTC)
+    for r in resolutions:
+        r.title_id = new
+        r.status, r.method, r.confidence = "manual", "manual", 1.0
+        r.resolved_at = now
+    session.flush()
+    return ReassignResult(new, moved, merged, len(resolutions))

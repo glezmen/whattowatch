@@ -106,8 +106,29 @@ class ResolutionRef(BaseModel):
     resolved_at: datetime | None = None
 
 
+class ImportText(BaseModel):
+    """An imported text the current user's rows map to this title through (`rows` rows)."""
+
+    source: str
+    title_text: str
+    rows: int
+
+
 class TitleDetail(TitleCard):
     resolutions: list[ResolutionRef] = Field(default_factory=list)
+    import_texts: list[ImportText] = Field(default_factory=list)
+
+
+class ReassignOut(BaseModel):
+    new_title_id: int
+    moved: dict[str, int]
+    merged: dict[str, int]
+    resolutions_updated: int
+
+
+class ReassignResponse(BaseModel):
+    result: ReassignOut
+    title: TitleCard
 
 
 class ReasonCode(BaseModel):
@@ -258,6 +279,8 @@ class SearchHitOut(BaseModel):
     year: int | None = None
     popularity: float
     vote_count: int
+    poster_path: str | None = None
+    overview: str | None = None
     title_id: int | None = None
 
 

@@ -16,6 +16,8 @@ from whattowatch.config import get_settings
 from whattowatch.db.engine import create_engine_from_settings, session_factory
 from whattowatch.db.models import ImportRow, MediaType, Title, TitleResolution
 from whattowatch.services.title_resolution import (
+    SameTitleError,
+    reassign_title,
     refresh_resolution,
     reject_resolution,
     set_manual_resolution,
@@ -159,3 +161,43 @@ def reject_cmd(resolution_id: int, user: UserOption = None) -> None:
             raise _missing(resolution_id) from None
         session.commit()
         typer.echo(f"#{row.id} elutasítva.")
+
+
+@resolve_app.command("reassign")
+def reassign_cmd(
+    old_title_id: int, media_type: MediaType, tmdb_id: int, user: UserOption = None
+) -> None:
+    """Move a profile's data from a wrongly resolved title to the right TMDB title."""
+    key = get_settings().tmdb_api_key
+    if not key:
+        typer.echo("Hiba: a TMDB_API_KEY nincs beállítva (.env).", err=True)
+        raise typer.Exit(code=2)
+    with _session() as session, TmdbClient(key) as tmdb:
+        uid = user_id_for(session, user)
+        if session.get(Title, old_title_id) is None:
+            typer.echo(f"Hiba: nincs ilyen cím: {old_title_id}", err=True)
+            raise typer.Exit(code=1)
+        try:
+            result = reassign_title(
+                session,
+                user_id=uid,
+                old_title_id=old_title_id,
+                media_type=media_type,
+                tmdb_id=tmdb_id,
+                tmdb=tmdb,
+            )
+        except SameTitleError:
+            typer.echo("Hiba: a cél ugyanaz a cím.", err=True)
+            raise typer.Exit(code=1) from None
+        except TmdbError as exc:
+            typer.echo(f"TMDB-hiba: {exc}", err=True)
+            raise typer.Exit(code=1) from None
+        session.commit()
+        title = session.get_one(Title, result.new_title_id)
+        name = title.title_hu or title.original_title
+        typer.echo(f"#{old_title_id} → #{title.id} {name} ({title.year or '?'}).")
+        for table in result.moved:
+            m, g = result.moved[table], result.merged.get(table, 0)
+            if m or g:
+                typer.echo(f"  {table}: {m} áthelyezve, {g} összevonva")
+        typer.echo(f"  feloldások frissítve: {result.resolutions_updated}")
