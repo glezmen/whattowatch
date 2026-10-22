@@ -17,7 +17,13 @@ from sqlalchemy.orm import Session
 
 from whattowatch.llm.base import AgentCapable, Message, ToolSpec
 from whattowatch.providers import SUBSCRIPTIONS, SubscriptionProvider
-from whattowatch.services.chat.tools import ChatTmdb, ToolContext, execute_tool, tool_specs
+from whattowatch.services.chat.tools import (
+    GENRE_LIST,
+    ChatTmdb,
+    ToolContext,
+    execute_tool,
+    tool_specs,
+)
 from whattowatch.services.recommend.config import RecommenderConfig
 
 if TYPE_CHECKING:
@@ -83,10 +89,18 @@ _RULES = (
     "rendezd át önkényesen. A mood_labels csak a lenti szótárból jöhet "
     "(kategória/kulcs alakban, pl. hangulat/feszult).",
     "Műfaj- vagy hangulatkérésnél (pl. „romantikus dráma”) először a get_recommendations "
-    "eszközt hívd a genres megadásával (TMDB magyar műfajnevek, pl. Romantikus, Dráma). "
+    "eszközt hívd a genres megadásával, a katalógus műfajneveivel: " + GENRE_LIST + ". "
+    "Ha az eredményben unknown_genres szerepel, a valid_genres listából válassz helyes "
+    "nevet, és hívd újra. "
     "Ha a total_candidates kicsi, vagy a felhasználó azt kérdezi, mi van egyáltalán "
     "(„mi van még”, „mutass többet”), használd a browse_catalog eszközt (lapozás: offset). "
-    "Soha ne állítsd, hogy nincs ilyen cím, amíg a browse_catalog eszközt ki nem próbáltad.",
+    "Soha ne állítsd, hogy nincs ilyen cím, amíg a helyes (valid_genres szerinti) "
+    "műfajnevekkel újra nem próbáltad, és a browse_catalog eszközt ki nem próbáltad.",
+    "A seen paraméter mindkét ajánló eszközön: exclude = csak még nem látott címek "
+    "(alap), include = a látottak is, only = csak a már látott címek. „Amit már láttam”, "
+    '„újranézném”, „nézzük újra” jellegű kérésnél seen="only" kell; a get_recommendations '
+    "ekkor saját értékelés, majd utolsó megnézés szerint rangsorol. Minden tételben "
+    "seen, stars és last_watched_at jelzi a saját állapotot.",
     "A record_feedback eszközt csak akkor hívd, ha a felhasználó kifejezetten kéri "
     "(pl. „ezt már láttam”, „5 csillag”, „tedd a watchlistre”).",
     "A magyar cím mellett add meg az eredeti címet is, ha eltér. Válaszolj tömören: "

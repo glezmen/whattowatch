@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import cast, get_args
 
@@ -19,7 +20,9 @@ from whattowatch.providers import BY_KEY
 from whattowatch.services.recommend.candidates import (
     Candidate,
     GenresMode,
+    SeenMode,
     WatchProviderSource,
+    last_watched_at,
     load_candidates,
     verify_candidates,
 )
@@ -171,6 +174,7 @@ def run_recommendations(
     genres_mode: GenresMode = "all",
     providers: Sequence[str] | None = None,
     persist: bool = True,
+    seen: SeenMode = "exclude",
 ) -> list[Recommendation]:
     """Generate, persist and print one recommendation batch of `user_id`; returns its rows
     by rank.
@@ -181,7 +185,11 @@ def run_recommendations(
     (``load_candidates``). The batch is stored (and becomes the home page's latest batch)
     only when ``persist`` is set and no genre/provider filter is given; otherwise the rows
     are returned unsaved (availability snapshots fetched while verifying are still saved).
+    ``seen="include"`` also ranks titles the user has seen (never stored as a batch); for
+    seen titles only use ``run_rewatch``.
     """
+    if seen == "only":
+        raise ValueError("seen='only' is ranked by run_rewatch")
     if media_type is not None and media_type not in get_args(MediaType):
         raise ValueError(f"media_type must be one of {get_args(MediaType)}, got {media_type!r}")
     cfg = config or load_config(get_settings())
@@ -198,6 +206,7 @@ def run_recommendations(
             genres=genres,
             genres_mode=genres_mode,
             providers=providers,
+            seen=seen,
         )
         if cands:
             label_fn = _label_fn()
@@ -258,9 +267,131 @@ def run_recommendations(
             row.title = x.cand.title
             subs_by_title[x.cand.title.id] = x.cand.verified_subscriptions
             rows.append(row)
-        if persist and not genres and not providers:
+        if persist and not genres and not providers and seen == "exclude":
             s.add_all(rows)
         s.commit()
         if echo:
             _print_table(rows, subs_by_title)
         return rows
+
+
+@dataclass(frozen=True)
+class RewatchRow:
+    """One title of a rewatch ranking (duck-types the `Recommendation` fields tools use)."""
+
+    rank: int
+    title: Title
+    verified_subscriptions: tuple[str, ...]
+    personal_rating: float | None  # normalized 0..1; the app's own rating wins
+    last_watched_at: datetime | None
+    reasons: list[str]
+
+    @property
+    def title_id(self) -> int:
+        return self.title.id
+
+
+def _personal_ratings(session: Session, ids: Sequence[int], user_id: int) -> dict[int, float]:
+    from whattowatch.services.feedback import APP_SOURCE
+
+    best: dict[int, tuple[bool, float]] = {}
+    for tid, source, norm in session.execute(
+        select(TitleRating.title_id, TitleRating.source, TitleRating.normalized).where(
+            TitleRating.user_id == user_id,
+            TitleRating.is_personal,
+            TitleRating.normalized.is_not(None),
+            TitleRating.title_id.in_(ids),
+        )
+    ):
+        if norm is None:
+            continue
+        key = (source == APP_SOURCE, float(norm))
+        if tid not in best or key > best[tid]:
+            best[tid] = key
+    return {tid: norm for tid, (_, norm) in best.items()}
+
+
+def run_rewatch(
+    *,
+    user_id: int,
+    session: Session,
+    tmdb: WatchProviderSource | None,
+    limit: int = 20,
+    media_type: MediaType | None = None,
+    config: RecommenderConfig | None = None,
+    now: datetime | None = None,
+    genres: Sequence[str] | None = None,
+    genres_mode: GenresMode = "all",
+    providers: Sequence[str] | None = None,
+) -> list[RewatchRow]:
+    """Seen titles with verified subscription availability, for rewatching: by personal
+    rating desc (the app rating over imported ones; unrated last), then most recently
+    watched first. Deterministic; nothing is stored. Estimated-only titles are verified
+    like in `run_recommendations` and dropped when that fails."""
+    cfg = config or load_config(get_settings())
+    now = now or datetime.now(UTC)
+    cands = load_candidates(
+        session,
+        user_id=user_id,
+        media_type=media_type,
+        pool=100_000,
+        now=now,
+        max_age_days=cfg.verified_max_age_days,
+        genres=genres,
+        genres_mode=genres_mode,
+        providers=providers,
+        seen="only",
+    )
+    ids = [c.title.id for c in cands]
+    rating = _personal_ratings(session, ids, user_id)
+    watched = last_watched_at(session, ids, user_id=user_id)
+
+    def key(c: Candidate) -> tuple[float, float, int, str]:
+        tid = c.title.id
+        when = watched.get(tid)
+        return (
+            -rating.get(tid, -1.0),
+            -(when.timestamp() if when else float("-inf")),
+            c.title.tmdb_id,
+            c.title.media_type,
+        )
+
+    ordered = sorted(cands, key=key)
+    to_verify = [c for c in ordered if c.estimated_only][: limit * 2]
+    confirmed: dict[int, Candidate] = {}
+    if to_verify:
+        checked = verify_candidates(
+            session,
+            to_verify,
+            tmdb,
+            user_id=user_id,
+            now=now,
+            max_age_days=cfg.verified_max_age_days,
+        )
+        confirmed = {c.title.id: c for c in checked}
+        session.commit()
+    rows: list[RewatchRow] = []
+    for c in ordered:
+        if c.estimated_only:
+            if c.title.id not in confirmed:
+                continue
+            c = confirmed[c.title.id]
+        tid = c.title.id
+        why: list[str] = []
+        if tid in rating:
+            why.append(f"Saját értékelésed: {round(rating[tid] * 100)}%")
+        if tid in watched:
+            why.append(f"Utoljára láttad: {watched[tid].date().isoformat()}")
+        rows.append(
+            RewatchRow(
+                rank=len(rows) + 1,
+                title=c.title,
+                verified_subscriptions=c.verified_subscriptions,
+                personal_rating=rating.get(tid),
+                last_watched_at=watched.get(tid),
+                reasons=why or ["Már láttad"],
+            )
+        )
+        if len(rows) >= limit:
+            break
+    return rows

@@ -33,6 +33,7 @@ from whattowatch.db.models import (
 from whattowatch.providers import BY_KEY, SUBSCRIPTIONS
 from whattowatch.services.deep_links import pick_provider_link
 from whattowatch.services.feedback import APP_SOURCE, MANUAL_WATCH_SOURCE
+from whattowatch.services.recommend.candidates import seen_title_ids as seen_title_ids
 from whattowatch.services.subscriptions import enabled_keys
 
 IMDB_COMMUNITY_SOURCE = "imdb_community"
@@ -236,6 +237,10 @@ def _user_states(session: Session, ids: list[int], user_id: int) -> dict[int, Us
     return out
 
 
+def user_states(session: Session, ids: Sequence[int], *, user_id: int) -> dict[int, UserState]:
+    return _user_states(session, list(ids), user_id)
+
+
 def user_state(session: Session, title_id: int, *, user_id: int) -> UserState:
     return _user_states(session, [title_id], user_id)[title_id]
 
@@ -305,40 +310,6 @@ def title_card(
     max_age_days: int = DEFAULT_MAX_AGE_DAYS,
 ) -> TitleCard:
     return title_cards(session, [title], user_id=user_id, now=now, max_age_days=max_age_days)[0]
-
-
-def seen_title_ids(session: Session, *, user_id: int) -> set[int]:
-    """Titles `UserState.seen` is true for (same rules as `_user_states`)."""
-    ids: set[int] = set()
-    ids.update(
-        session.scalars(
-            select(WatchEvent.title_id).where(
-                WatchEvent.user_id == user_id, WatchEvent.status == "watched"
-            )
-        )
-    )
-    ids.update(
-        session.scalars(
-            select(TitleRating.title_id).where(
-                TitleRating.user_id == user_id, TitleRating.is_personal
-            )
-        )
-    )
-    ids.update(
-        session.scalars(
-            select(WatchlistItem.title_id).where(
-                WatchlistItem.user_id == user_id, WatchlistItem.status == "watched"
-            )
-        )
-    )
-    overrides = session.execute(
-        select(TitleUserState.title_id, TitleUserState.seen_override).where(
-            TitleUserState.user_id == user_id, TitleUserState.seen_override.is_not(None)
-        )
-    ).all()
-    ids.update(tid for tid, flag in overrides if flag)
-    ids.difference_update(tid for tid, flag in overrides if not flag)
-    return ids
 
 
 def fresh_verified_title_ids(

@@ -28,6 +28,7 @@ from whattowatch.db.models import (
     WatchlistItem,
 )
 from whattowatch.providers import SUBSCRIPTIONS
+from whattowatch.services.genres import expand_genre, fold
 from whattowatch.services.subscriptions import enabled_keys
 
 VERIFIED_SOURCE = "tmdb/justwatch"
@@ -35,6 +36,8 @@ ESTIMATED_SOURCE = "tmdb/discover"
 REGION = "HU"
 _KEY_ORDER = {p.key: i for i, p in enumerate(SUBSCRIPTIONS)}
 GenresMode = Literal["all", "any"]
+# exclude = unseen only (default), include = seen ones too, only = seen ones only
+SeenMode = Literal["exclude", "include", "only"]
 
 
 @dataclass(frozen=True)
@@ -93,6 +96,72 @@ def excluded_title_ids(session: Session, *, user_id: int) -> set[int]:
     return ids
 
 
+def seen_title_ids(session: Session, *, user_id: int) -> set[int]:
+    """Titles the user has seen: a watched event (any source), a personal rating, a
+    watched watchlist item or `seen_override=True`; `seen_override=False` wins over all
+    (the rules of the cards' `UserState.seen`)."""
+    ids: set[int] = set()
+    ids.update(
+        session.scalars(
+            select(WatchEvent.title_id).where(
+                WatchEvent.user_id == user_id, WatchEvent.status == "watched"
+            )
+        )
+    )
+    ids.update(
+        session.scalars(
+            select(TitleRating.title_id).where(
+                TitleRating.user_id == user_id, TitleRating.is_personal
+            )
+        )
+    )
+    ids.update(
+        session.scalars(
+            select(WatchlistItem.title_id).where(
+                WatchlistItem.user_id == user_id, WatchlistItem.status == "watched"
+            )
+        )
+    )
+    overrides = session.execute(
+        select(TitleUserState.title_id, TitleUserState.seen_override).where(
+            TitleUserState.user_id == user_id, TitleUserState.seen_override.is_not(None)
+        )
+    ).all()
+    ids.update(tid for tid, flag in overrides if flag)
+    ids.difference_update(tid for tid, flag in overrides if not flag)
+    return ids
+
+
+def not_interested_ids(session: Session, *, user_id: int) -> set[int]:
+    return set(
+        session.scalars(
+            select(TitleUserState.title_id).where(
+                TitleUserState.user_id == user_id, TitleUserState.not_interested.is_(True)
+            )
+        )
+    )
+
+
+def last_watched_at(
+    session: Session, title_ids: Iterable[int], *, user_id: int
+) -> dict[int, datetime]:
+    """Latest `last_watched_at` of the user's watched events, per title (aware UTC)."""
+    ids = list(title_ids)
+    if not ids:
+        return {}
+    rows = session.execute(
+        select(WatchEvent.title_id, func.max(WatchEvent.last_watched_at))
+        .where(
+            WatchEvent.user_id == user_id,
+            WatchEvent.status == "watched",
+            WatchEvent.title_id.in_(ids),
+            WatchEvent.last_watched_at.is_not(None),
+        )
+        .group_by(WatchEvent.title_id)
+    ).all()
+    return {tid: _aware(dt) for tid, dt in rows if dt is not None}
+
+
 def active_watchlist_ids(session: Session, *, user_id: int) -> set[int]:
     return set(
         session.scalars(
@@ -146,17 +215,22 @@ def genre_clause(
 ) -> ColumnElement[bool]:
     """SQL condition on `Title.genres` (JSON list) for the requested genre names.
 
-    Names match case-insensitively (Unicode casefold, resolved against the catalog's
-    distinct genre values, since SQLite's `lower()` only folds ASCII). `mode="all"`
-    requires every requested genre (an unknown name matches nothing); `"any"` at least
-    one of them (unknown names are ignored).
+    Names are matched tolerantly (`services.genres`: accents, case, Hungarian suffixes,
+    English aliases, typos; tv compounds such as "Akció & Kaland" contain their parts)
+    and resolved against the catalog's distinct genre values; an exact case-insensitive
+    match of a catalog value always counts. `mode="all"` requires every requested genre
+    (an unknown name matches nothing); `"any"` at least one of them (unknown names are
+    ignored).
     """
-    wanted = {g.strip().casefold() for g in genres if g.strip()}
+    wanted = list(dict.fromkeys(g.strip() for g in genres if g.strip()))
     if not wanted:
         return true()
-    by_fold: dict[str, list[str]] = {}
-    for value in _genre_values(session):
-        by_fold.setdefault(value.casefold(), []).append(value)
+    catalog = _genre_values(session)
+
+    def values_for(name: str) -> list[str]:
+        expanded = expand_genre(name)
+        raw = name.casefold()
+        return [v for v in catalog if v.casefold() == raw or fold(v) in expanded]
 
     def has_any(values: Sequence[str]) -> ColumnElement[bool]:
         if not values:
@@ -165,8 +239,8 @@ def genre_clause(
         return exists(select(each.c.value).where(each.c.value.in_(values)))
 
     if mode == "any":
-        return has_any([v for g in wanted for v in by_fold.get(g, [])])
-    return and_(*(has_any(by_fold.get(g, [])) for g in sorted(wanted)))
+        return has_any(sorted({v for g in wanted for v in values_for(g)}))
+    return and_(*(has_any(values_for(g)) for g in wanted))
 
 
 def _eligible_query(
@@ -180,12 +254,16 @@ def _eligible_query(
     genres: Sequence[str] | None,
     genres_mode: GenresMode,
     providers: Sequence[str] | None,
+    seen: SeenMode = "exclude",
 ) -> tuple[Select[Title] | None, dict[int, tuple[str, ...]]]:
     """The candidate query (unordered, unlimited) plus verified subscriptions per title;
     `None` when nothing can be a candidate."""
     if not enabled_keys(session, user_id=user_id):
         return None, {}  # no subscription switched on: nothing may be recommended
-    excluded = excluded_title_ids(session, user_id=user_id)
+    if seen == "exclude":
+        excluded = excluded_title_ids(session, user_id=user_id)
+    else:
+        excluded = not_interested_ids(session, user_id=user_id)
     if exclude_watchlist:
         excluded |= active_watchlist_ids(session, user_id=user_id)
     verified = verified_subscriptions(
@@ -211,6 +289,8 @@ def _eligible_query(
             )
         )
     eligible = (set(verified) | estimated) - excluded
+    if seen == "only":
+        eligible &= seen_title_ids(session, user_id=user_id)
     if not eligible:
         return None, verified
     query = select(Title).where(Title.id.in_(eligible))
@@ -233,14 +313,18 @@ def load_candidates(
     genres: Sequence[str] | None = None,
     genres_mode: GenresMode = "all",
     providers: Sequence[str] | None = None,
+    seen: SeenMode = "exclude",
 ) -> list[Candidate]:
-    """Unseen, not-rejected titles with verified or estimated availability, by popularity.
+    """Not-rejected (by default unseen) titles with verified or estimated availability,
+    by popularity.
 
     ``exclude_watchlist`` also drops titles with an active watchlist item (any source).
     ``genres`` / ``genres_mode`` filter on the title's genres (see ``genre_clause``);
     ``providers`` keeps only titles with a fresh verified flatrate offer on one of these
     (enabled) subscriptions, so estimated-only titles are dropped. Filters apply before
-    the ``pool`` cut, i.e. before ranking.
+    the ``pool`` cut, i.e. before ranking. ``seen`` = "exclude" drops seen titles (hard
+    exclusions), "include" keeps them, "only" keeps nothing else (``seen_title_ids``);
+    not-interested titles are always dropped.
     """
     query, verified = _eligible_query(
         session,
@@ -252,6 +336,7 @@ def load_candidates(
         genres=genres,
         genres_mode=genres_mode,
         providers=providers,
+        seen=seen,
     )
     if query is None:
         return []
@@ -279,6 +364,7 @@ def count_candidates(
     genres: Sequence[str] | None = None,
     genres_mode: GenresMode = "all",
     providers: Sequence[str] | None = None,
+    seen: SeenMode = "exclude",
 ) -> int:
     """How many titles ``load_candidates`` would consider with these filters (no pool
     cut; estimated-only titles are counted before verification)."""
@@ -292,6 +378,7 @@ def count_candidates(
         genres=genres,
         genres_mode=genres_mode,
         providers=providers,
+        seen=seen,
     )
     if query is None:
         return 0

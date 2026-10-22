@@ -311,3 +311,104 @@ def test_system_prompt_mentions_browse_catalog() -> None:
         and "browse_catalog" in prompt
         and "get_recommendations" in prompt
     )
+
+
+def test_tools_map_genres_and_report_unknown(recommend_db: Env) -> None:
+    _, ids = recommend_db
+    inv = {v: k for k, v in ids.items()}
+    args = {"genres": ["vígjátékok", "xyzzy"]}
+    out = run(recommend_db, "get_recommendations", args, tmdb=StubTmdb())
+    assert [inv[i["title_id"]] for i in out["items"]] == [106]  # mapped one still applied
+    assert out["unknown_genres"] == ["xyzzy"] and out["genres_applied"] == ["Vígjáték"]
+    assert "Akció" in out["valid_genres"] and "Sci-Fi & Fantasy" in out["valid_genres"]
+
+    out = run(recommend_db, "browse_catalog", {"genres": ["Thriler", "qqq"], "limit": 30})
+    assert out["unknown_genres"] == ["qqq"] and out["items"]
+    assert all("Thriller" in i["genres"] for i in out["items"])
+    ok = run(recommend_db, "browse_catalog", {"genres": ["thrillerek"], "limit": 30})
+    assert "unknown_genres" not in ok and ok["total"] == out["total"]
+
+
+def test_tool_descriptions_and_prompt_list_genres() -> None:
+    from whattowatch.services.chat import agent
+
+    by_name = {t.name: t for t in TOOLS}
+    for name in ("get_recommendations", "browse_catalog"):
+        assert "Akció & Kaland" in by_name[name].description
+        assert "only" in by_name[name].description
+    prompt = agent.system_prompt(NOW)
+    assert "Sci-Fi & Fantasy" in prompt and 'seen="only"' in prompt
+    assert "unknown_genres" in prompt
+
+
+def test_seen_modes_counts(recommend_db: Env) -> None:
+    _, ids = recommend_db
+    inv = {v: k for k, v in ids.items()}
+    excl = run(recommend_db, "get_recommendations", {"limit": 20}, tmdb=StubTmdb())
+    incl = run(
+        recommend_db, "get_recommendations", {"limit": 20, "seen": "include"}, tmdb=StubTmdb()
+    )
+    # seen titles with availability: 112 (watched) and 201 (rated); 114 stays hidden
+    assert incl["total_candidates"] - excl["total_candidates"] == 2
+    got = {inv[i["title_id"]]: i for i in incl["items"]}
+    assert {112, 201} <= set(got) and 114 not in got
+    assert got[112]["seen"] is True and got[101]["seen"] is False
+    assert not {112, 201} & {inv[i["title_id"]] for i in excl["items"]}
+    assert all(i["seen"] is False for i in excl["items"])
+
+    legacy = run(
+        recommend_db, "get_recommendations", {"limit": 20, "include_seen": True}, tmdb=StubTmdb()
+    )
+    assert legacy["seen"] == "include" and legacy["total_candidates"] == incl["total_candidates"]
+
+    b_excl = run(recommend_db, "browse_catalog", {"limit": 30})
+    b_incl = run(recommend_db, "browse_catalog", {"limit": 30, "seen": "include"})
+    b_legacy = run(recommend_db, "browse_catalog", {"limit": 30, "include_seen": True})
+    b_only = run(recommend_db, "browse_catalog", {"limit": 30, "seen": "only"})
+    assert b_incl["total"] - b_excl["total"] == 2 == b_only["total"]
+    assert b_legacy["seen"] == "include" and b_legacy["total"] == b_incl["total"]
+    assert [inv[i["title_id"]] for i in b_only["items"]] == [201, 112]  # by popularity
+    assert all(i["seen"] is True for i in b_only["items"])
+    legacy_off = run(recommend_db, "browse_catalog", {"include_seen": False})
+    assert legacy_off["seen"] == "exclude"
+    assert "error" in run(recommend_db, "browse_catalog", {"include_seen": "yes"})
+
+
+def test_get_recommendations_seen_only_rewatch_ranking(recommend_db: Env) -> None:
+    from datetime import timedelta
+
+    from whattowatch.db.models import WatchEvent
+
+    session, ids = recommend_db
+    inv = {v: k for k, v in ids.items()}
+    uid = default_user_id(session)
+    for tmdb_id in (202, 203):  # rated 0.8 / 0.7, now available
+        _availability(session, session.get_one(Title, ids[tmdb_id]), "netflix")
+    session.add(
+        WatchEvent(
+            user_id=uid,
+            title_id=ids[101],
+            source="netflix_viewing",
+            status="watched",
+            last_watched_at=NOW - timedelta(days=3),
+        )
+    )
+    session.commit()
+    # the app's own rating (2 stars) wins over the imported 0.8 of 202
+    run(recommend_db, "record_feedback", {"title_id": ids[202], "stars": 2})
+
+    out = run(recommend_db, "get_recommendations", {"seen": "only"}, tmdb=StubTmdb())
+    items = out["items"]
+    # rating desc (201 .9, 203 .7, 202 2★), then unrated by last watched (101, then 112)
+    assert [inv[i["title_id"]] for i in items] == [201, 203, 202, 101, 112]
+    assert [i["rank"] for i in items] == [1, 2, 3, 4, 5]
+    assert out["total_candidates"] == 5 and out["seen"] == "only"
+    assert all(i["seen"] is True and i["on_subscriptions"] for i in items)
+    assert items[2]["stars"] == 2.0 and items[0]["stars"] is None
+    assert items[3]["last_watched_at"].startswith("2026-10-18")
+    assert items[4]["last_watched_at"] is None and items[0]["reasons"]
+
+    thr = run(
+        recommend_db, "get_recommendations", {"seen": "only", "genres": ["thriller"]}, tmdb=None
+    )
+    assert [inv[i["title_id"]] for i in thr["items"]] == [201, 202, 101, 112]

@@ -52,19 +52,38 @@ elérhetőséget a `get_availability` eredményével együtt mond.
 Eszközök (típusos pydantic sémák, backend hajtja végre, max 6 hívás/kör):
 - `search_titles(q, media_type?)` — helyi katalógus + TMDB-keresés
 - `get_recommendations(media_type?, providers?, genres?, genres_mode?, mood_labels?,
-  include_watchlist?, limit)` — a determinisztikus motor futtatása; a típus-,
-  szolgáltató- és műfajszűrők a rangsorolás előtt szűrik a jelölteket (műfajnév
-  kis-nagybetű független); `genres_mode="all"` kevés találatnál egyszer `"any"`-vel
-  újrapróbál (`genres_mode: "any"` az eredményben); `total_candidates` = a szűrőknek
-  megfelelő jelöltek száma; `mood_labels` a zárt szótárból, csak előre sorol. Nem ment
+  include_watchlist?, seen?, limit)` — a determinisztikus motor futtatása; a típus-,
+  szolgáltató- és műfajszűrők a rangsorolás előtt szűrik a jelölteket;
+  `genres_mode="all"` kevés találatnál egyszer `"any"`-vel újrapróbál
+  (`genres_mode: "any"` az eredményben); `total_candidates` = a szűrőknek megfelelő
+  jelöltek száma; `mood_labels` a zárt szótárból, csak előre sorol. Nem ment
   ajánlás-batch-et (`persist=False`), a főoldal batch-e változatlan.
-- `browse_catalog(genres?, genres_mode?, media_type?, providers?, sort?, include_seen?,
+- `browse_catalog(genres?, genres_mode?, media_type?, providers?, sort?, seen?,
   limit, offset)` — Felfedezés-szerű lista személyes rangsor nélkül: friss verified
-  flatrate a bekapcsolt előfizetéseken, „nem érdekel” nélkül, látottak csak
-  `include_seen`-nel; `sort` = popularity | rating | newest; `total` a lapozáshoz. A
-  rendszerprompt szerint műfaj-/hangulatkérésnél előbb `get_recommendations`, kis
-  `total_candidates` vagy „mi van még” kérdés esetén `browse_catalog`; „nincs ilyen”
-  csak `browse_catalog` után mondható.
+  flatrate a bekapcsolt előfizetéseken, „nem érdekel” nélkül; `sort` = popularity |
+  rating | newest; `total` a lapozáshoz. A régi `include_seen: bool` továbbra is
+  elfogadott (`true` → `seen="include"`). A rendszerprompt szerint
+  műfaj-/hangulatkérésnél előbb `get_recommendations`, kis `total_candidates` vagy
+  „mi van még” kérdés esetén `browse_catalog`; „nincs ilyen” csak helyes
+  műfajnevekkel való újrapróbálás és `browse_catalog` után mondható.
+- Műfajszűrés mindkét eszközön (és a `GET /api/titles?genre=` szűrőn) tűrő
+  (`services/genres.py`, `normalize_genre`): kis-nagybetű és ékezet független,
+  magyar ragok/többes szám (akciós, Akción, vígjátékok), angol nevek (comedy, crime,
+  science fiction), gyakori változatok (krimi → Bűnügyi, rajzfilm → Animációs, mese →
+  Animációs/Gyerek) és elírások (difflib, arány ≥ 0,8). A tv-s összetett műfajok
+  (Akció & Kaland, Sci-Fi & Fantasy, Háború & Politika) tartalmazzák a részeiket,
+  így „Akció” a sorozatok „Akció & Kaland” műfajára is illeszkedik. A fel nem
+  ismert nevek `unknown_genres`-ben jönnek vissza a `valid_genres` listával, a
+  felismertek (`genres_applied`) továbbra is szűrnek. A kanonikus műfajlista az
+  eszközleírásokban és a rendszerpromptban is szerepel.
+- `seen` mindkét eszközön: `exclude` (alap) = csak még nem látott, `include` = a
+  látottak is, `only` = csak a látottak (nézési esemény, saját értékelés,
+  `seen_override`). `get_recommendations` `seen="only"` esetén újranézési rangsort ad
+  (`engine.run_rewatch`: saját értékelés csökkenő — az alkalmazásbeli értékelés az
+  importáltak előtt —, majd utolsó megnézés csökkenő), csak ellenőrzötten elérhető
+  címekkel; `browse_catalog` a választott `sort` szerint rendez. Minden tétel hordozza
+  a `seen`, `stars` (alkalmazásbeli 0,5–5) és `last_watched_at` mezőt. „Amit már
+  láttam / újranézném” → `seen="only"`.
 - `filter_by_provider(title_ids, provider_key)`
 - `get_title_details(title_id)`
 - `get_availability(title_id)`

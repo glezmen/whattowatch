@@ -279,7 +279,9 @@ def test_titles_filters(api: ApiEnv) -> None:
         105,
     ]
     assert ids(genre="Thriller") == [201, 101, 102, 112, 103, 104, 113, 105]
-    assert ids(genre="Thrill") == []
+    assert ids(genre="Thrill") == ids(genre="thrillerek") == ids(genre="Thriller")  # tolerant
+    assert ids(genre="akciós", include_unverified=True) == [110]  # catalog genre "Akció"
+    assert ids(genre="xyzzy") == []
     assert ids(seen=True) == [201, 112]
     assert 112 not in ids(seen=False) and len(ids(seen=False)) == 9
     assert ids(limit=2, offset=1) == [101, 106]

@@ -357,3 +357,39 @@ def test_filtered_or_unpersisted_batches_are_not_stored(recommend_db: DB) -> Non
     assert run(persist=False) and stored() == 0
     rows = run()
     assert stored() == len(rows) > 0
+
+
+def test_load_candidates_tolerant_genres_and_tv_compounds(recommend_db: DB) -> None:
+    session, ids = recommend_db
+    uid = default_user_id(session)
+    t = session.get_one(Title, ids[102])
+    t.media_type, t.genres = "tv", ["Akció & Kaland"]
+    session.commit()
+    for name in ("akciós", "Akción", "action", "Akció & Kaland"):
+        got = load_candidates(session, user_id=uid, now=NOW, genres=[name])
+        assert [c.title.id for c in got] == [ids[102]], name
+    sf = load_candidates(session, user_id=uid, now=NOW, genres=["sci fi"])
+    assert [c.title.id for c in sf] == [ids[108]]
+
+
+def test_seen_modes_in_engine(recommend_db: DB) -> None:
+    session, ids = recommend_db
+    uid = default_user_id(session)
+    seen_only = load_candidates(session, user_id=uid, now=NOW, seen="only")
+    assert {c.title.id for c in seen_only} == {ids[112], ids[201]}  # 114: not interested
+    incl = load_candidates(session, user_id=uid, now=NOW, seen="include")
+    excl = load_candidates(session, user_id=uid, now=NOW)
+    assert {c.title.id for c in incl} - {c.title.id for c in excl} == {ids[112], ids[201]}
+    rows = run_recommendations(
+        user_id=uid, session=session, tmdb=StubTmdb(), now=NOW, echo=False, seen="include"
+    )
+    assert ids[201] in {r.title_id for r in rows}
+    assert not session.scalars(select(Recommendation.id)).all()  # never stored
+    with pytest.raises(ValueError):
+        run_recommendations(user_id=uid, session=session, now=NOW, echo=False, seen="only")
+
+    from whattowatch.services.recommend.engine import run_rewatch
+
+    rewatch = run_rewatch(user_id=uid, session=session, tmdb=StubTmdb(), now=NOW)
+    assert [(r.rank, r.title_id) for r in rewatch] == [(1, ids[201]), (2, ids[112])]
+    assert rewatch[0].personal_rating == pytest.approx(0.9)
