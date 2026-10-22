@@ -11,7 +11,7 @@ from sqlalchemy import or_, select
 from whattowatch.api.cards import title_cards
 from whattowatch.api.deps import CurrentUserDep, NowDep, RecommenderConfigDep, SessionDep
 from whattowatch.api.schemas import HistoryEntry, Page, WatchEventOut
-from whattowatch.db.models import Title, TitleRating, WatchEvent, WatchStatus
+from whattowatch.db.models import Title, TitleRating, TitleUserState, WatchEvent, WatchStatus
 from whattowatch.services.recommend.candidates import active_watchlist_ids
 
 router = APIRouter(prefix="/history", tags=["history"])
@@ -43,7 +43,8 @@ def get_history(
 
     `status` keeps titles with an event of that status; `source` keeps titles with an
     event or personal rating from that source. Each row lists all of the title's events.
-    `exclude_rated` drops titles with any personal rating. Titles without any date sort last.
+    `exclude_rated` drops titles with any personal rating or marked not interested.
+    Titles without any date sort last.
     Titles on an active watchlist are left out unless `include_watchlist`
     (`X-Filtered-Watchlist` = how many were hidden).
     """
@@ -71,8 +72,23 @@ def get_history(
             return any(e.source == source for e in evs) or source in rating_sources.get(tid, ())
         return True
 
+    not_interested: set[int] = set()
+    if exclude_rated:
+        # "Hide already rated" also hides titles the user marked "not interested":
+        # both are explicit verdicts the user does not want to revisit.
+        not_interested = set(
+            session.scalars(
+                select(TitleUserState.title_id).where(
+                    TitleUserState.user_id == user.id, TitleUserState.not_interested.is_(True)
+                )
+            )
+        )
     candidates = set(events) if exclude_rated else set(events) | set(rated_at)
-    ids = {tid for tid in candidates if matches(tid) and not (exclude_rated and tid in rated_at)}
+    ids = {
+        tid
+        for tid in candidates
+        if matches(tid) and not (exclude_rated and (tid in rated_at or tid in not_interested))
+    }
     if q and q.strip() and ids:
         needle = q.strip()
         ids = set(

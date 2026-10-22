@@ -316,6 +316,12 @@ def test_history(api: ApiEnv) -> None:
     api.client.put(f"/api/titles/{api.ids[112]}/rating", json={"stars": 3})
     page = api.client.get("/api/history", params={"exclude_rated": True}).json()
     assert {inv[i["title"]["id"]] for i in page["items"]} == {101, 104, 113}
+    # "Hide already rated" also hides titles marked "not interested"; without the flag they stay.
+    api.client.put(f"/api/titles/{api.ids[104]}/not-interested", json={"value": True})
+    page = api.client.get("/api/history", params={"exclude_rated": True}).json()
+    assert {inv[i["title"]["id"]] for i in page["items"]} == {101, 113}
+    page = api.client.get("/api/history").json()
+    assert 104 in {inv[i["title"]["id"]] for i in page["items"]}
 
 
 def test_history_watchlist_filter(api: ApiEnv) -> None:

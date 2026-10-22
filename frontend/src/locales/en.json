@@ -258,7 +258,7 @@
   "history": {
     "title": "History and ratings",
     "status": "Status",
-    "hideRated": "Hide already rated",
+    "hideRated": "Hide rated and \"not interested\"",
     "allStatuses": "All statuses",
     "statuses": {
       "watched": "watched",
