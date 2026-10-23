@@ -3,12 +3,15 @@ import { onMounted, ref, watch } from 'vue'
 import { api, type UserState, type WatchlistEntry } from '../api/client'
 import Pagination from '../components/Pagination.vue'
 import TitleCard from '../components/TitleCard.vue'
+import SortSelect from '../components/SortSelect.vue'
 import ToggleSwitch from '../components/ToggleSwitch.vue'
+import { useSortOrder } from '../sortOrder'
 
 const LIMIT = 48
 const items = ref<WatchlistEntry[]>([])
 const total = ref(0)
 const offset = ref(0)
+const sort = useSortOrder('watchlist')
 const loading = ref(false)
 const available = ref(false)
 const source = ref('')
@@ -39,6 +42,7 @@ async function load() {
       source: source.value,
       available: available.value || undefined,
       hide_watched: hideWatched.value || undefined,
+      sort: sort.value,
       limit: LIMIT,
       offset: offset.value,
     })
@@ -66,7 +70,7 @@ watch(hideWatched, (v) => {
     // storage unavailable
   }
 })
-watch([available, source, hideWatched], () => {
+watch([available, source, hideWatched, sort], () => {
   offset.value = 0
   load()
 })
@@ -96,6 +100,7 @@ function goto(o: number) {
     <select v-model="source" :aria-label="$t('watchlist.source')">
       <option v-for="s in sources" :key="s.value" :value="s.value">{{ s.value ? s.label : $t('watchlist.allSources') }}</option>
     </select>
+    <SortSelect v-model="sort" :default-label="$t('sort.defaults.watchlist')" />
   </div>
   <p class="small muted">
     {{ $t('watchlist.hint') }}

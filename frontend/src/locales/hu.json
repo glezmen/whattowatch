@@ -703,5 +703,18 @@
   "bellSection": {
     "leaving": "Távozók",
     "updates": "Újdonságok"
+  },
+  "sort": {
+    "label": "Rendezés",
+    "leaving": "Legkorábbi távozás",
+    "rating": "Értékelés szerint csökkenő",
+    "defaults": {
+      "home": "Ajánlási sorrend",
+      "discover": "Népszerűség",
+      "watchlist": "Legutóbb hozzáadott",
+      "history": "Legutóbb nézett",
+      "updates": "Dátum szerint",
+      "leaving": "Dátum szerint"
+    }
   }
 }

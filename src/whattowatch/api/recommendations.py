@@ -26,6 +26,7 @@ from whattowatch.api.schemas import (
 from whattowatch.db.models import MediaType, Recommendation, Title
 from whattowatch.services.recommend import engine as recommend_engine
 from whattowatch.services.recommend.candidates import active_watchlist_ids
+from whattowatch.services.sorting import SortOrder, order_ids
 
 router = APIRouter(prefix="/recommendations", tags=["recommendations"])
 
@@ -46,11 +47,13 @@ def get_recommendations(
     media_type: MediaType | None = None,
     refresh: bool = False,
     include_watchlist: bool = False,
+    sort: SortOrder = "default",
 ) -> list[RecommendationItem]:
     """The latest batch (by `generated_at`); `refresh=true` generates a new one first.
 
     Watchlisted titles are left out unless `include_watchlist`; for a stored batch this is a
-    post-hoc filter and `X-Filtered-Watchlist` carries the number removed.
+    post-hoc filter and `X-Filtered-Watchlist` carries the number removed. `sort` re-orders
+    the returned items (`rank` keeps the stored value).
     """
     if refresh:
         if tmdb is None:
@@ -101,6 +104,11 @@ def get_recommendations(
             response.headers["X-Filtered-Watchlist"] = str(session.scalar(hidden) or 0)
             query = query.where(Recommendation.title_id.not_in(on_list))
     recs = list(session.scalars(query))
+    if sort != "default":
+        tids = list(dict.fromkeys(r.title_id for r in recs))
+        ordered = order_ids(tids, sort, session, user_id=user.id, now=now)
+        position = {tid: i for i, tid in enumerate(ordered)}
+        recs = sorted(recs, key=lambda r: position[r.title_id])
     cards = title_cards(
         session,
         [r.title for r in recs],

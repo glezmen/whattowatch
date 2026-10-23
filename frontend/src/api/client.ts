@@ -1,6 +1,7 @@
 // Typed wrappers for the backend contract in docs/api.md (prefix /api).
 import { t, te } from '../i18n'
 import { pushError } from '../toast'
+import type { SortOrder } from '../sortOrder'
 
 export type MediaType = 'movie' | 'tv'
 export type Confidence = 'verified' | 'stale' | 'estimated' | 'conflicting' | 'user_denied'
@@ -680,10 +681,10 @@ async function getWithFilteredWatchlist<T extends object>(path: string): Promise
 const enc = encodeURIComponent
 
 export const api = {
-  getRecommendations: (p: { limit?: number; media_type?: MediaType | ''; include_watchlist?: boolean }) =>
+  getRecommendations: (p: { limit?: number; media_type?: MediaType | ''; include_watchlist?: boolean; sort?: SortOrder }) =>
     fetchRecommendations({ ...p, refresh: undefined }),
   /** refresh=true: generates a new batch (slow). */
-  refreshRecommendations: (p: { limit?: number; media_type?: MediaType | ''; include_watchlist?: boolean }) =>
+  refreshRecommendations: (p: { limit?: number; media_type?: MediaType | ''; include_watchlist?: boolean; sort?: SortOrder }) =>
     fetchRecommendations({ ...p, refresh: true }),
   recommendationFeedback: (batchId: string, titleId: number, feedback: 'clicked' | 'dismissed' | 'watched') =>
     request<unknown>('POST', `/recommendations/${enc(batchId)}/${titleId}/feedback`, { feedback }),
@@ -696,6 +697,7 @@ export const api = {
     genre?: string
     seen?: boolean | null
     include_watchlist?: boolean
+    sort?: SortOrder
     limit?: number
     offset?: number
   }) => getWithFilteredWatchlist<Page<TitleCard>>(`/titles${qs(p)}`),
@@ -716,6 +718,7 @@ export const api = {
     source?: string
     available?: boolean
     hide_watched?: boolean
+    sort?: SortOrder
     limit?: number
     offset?: number
   }): Promise<Page<WatchlistEntry> & { filteredWatched: number }> => {
@@ -728,6 +731,7 @@ export const api = {
     source?: string
     exclude_rated?: boolean
     include_watchlist?: boolean
+    sort?: SortOrder
     limit?: number
     offset?: number
   }) => getWithFilteredWatchlist<Page<HistoryItem>>(`/history${qs(p)}`),
@@ -751,9 +755,9 @@ export const api = {
   postChat: (messages: ChatMessage[], provider?: LlmProviderName | string) =>
     request<ChatResult>('POST', '/chat', { messages, provider: provider || undefined }),
 
-  getUpdates: (section: UpdateSection, days = 31, limit = 50, includeWatchlist = false) =>
+  getUpdates: (section: UpdateSection, days = 31, limit = 50, includeWatchlist = false, sort?: SortOrder) =>
     getWithFilteredWatchlist<UpdatesResponse>(
-      `/updates${qs({ section, days, limit, include_watchlist: includeWatchlist })}`,
+      `/updates${qs({ section, days, limit, include_watchlist: includeWatchlist, sort })}`,
     ),
   getNotifications: (unread = true, limit = 50) =>
     request<NotificationItem[]>('GET', `/notifications${qs({ unread, limit })}`),

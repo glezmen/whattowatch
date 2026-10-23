@@ -33,6 +33,7 @@ from whattowatch.providers import BY_KEY
 from whattowatch.services import updates as updates_service
 from whattowatch.services.recommend.candidates import active_watchlist_ids
 from whattowatch.services.scheduler import REFRESH_LOCK
+from whattowatch.services.sorting import SortOrder, order_ids
 from whattowatch.services.updates import Section
 
 router = APIRouter(tags=["updates"])
@@ -84,10 +85,11 @@ def get_updates(
     days: Annotated[int, Query(ge=1, le=365)] = updates_service.WINDOW_DAYS,
     limit: Annotated[int, Query(ge=1, le=500)] = 50,
     include_watchlist: bool = False,
+    sort: SortOrder = "default",
 ) -> UpdatesOut:
     """Titles on an active watchlist are left out unless `include_watchlist`, except in the
     `watchlist_available` section (which is about them); `X-Filtered-Watchlist` = number of
-    distinct titles hidden."""
+    distinct titles hidden. `sort` re-orders the events by their title (stable)."""
     events = updates_service.list_events(
         session, user_id=user.id, section=section, days=days, now=now
     )
@@ -97,6 +99,12 @@ def get_updates(
         hidden = {e.title_id for e in events if e.title_id in on_list}
         response.headers["X-Filtered-Watchlist"] = str(len(hidden))
         events = [e for e in events if e.title_id not in hidden]
+    if sort != "default":
+        tids = list(dict.fromkeys(e.title_id for e in events))
+        position = {
+            tid: i for i, tid in enumerate(order_ids(tids, sort, session, user_id=user.id, now=now))
+        }
+        events = sorted(events, key=lambda e: position[e.title_id])
     events = events[:limit]
     cards = title_cards(session, [e.title for e in events], user_id=user.id, now=now)
     keys = _provider_keys(session)

@@ -6,8 +6,10 @@ import { appSettings, enabledCount, includeWatchlist, loadSubscriptions, subscri
 import ChatPanel from '../components/ChatPanel.vue'
 import OnboardingPanel from '../components/OnboardingPanel.vue'
 import TitleCard from '../components/TitleCard.vue'
+import SortSelect from '../components/SortSelect.vue'
 import WatchlistToggle from '../components/WatchlistToggle.vue'
 import { fmtDateTime } from '../format'
+import { useSortOrder } from '../sortOrder'
 
 const { t } = useI18n()
 const items = ref<RecommendationItem[]>([])
@@ -16,6 +18,7 @@ const refreshing = ref(false)
 const loaded = ref(false)
 const mediaType = ref<MediaType | ''>('')
 const filteredWatchlist = ref(0)
+const sort = useSortOrder('home')
 
 watch(includeWatchlist, () => void load())
 
@@ -23,7 +26,7 @@ async function load(refresh = false) {
   if (refresh) refreshing.value = true
   else loading.value = true
   try {
-    const p = { limit: 20, media_type: mediaType.value, include_watchlist: includeWatchlist.value }
+    const p = { limit: 20, media_type: mediaType.value, include_watchlist: includeWatchlist.value, sort: sort.value }
     const res = refresh ? await api.refreshRecommendations(p) : await api.getRecommendations(p)
     items.value = res.items
     filteredWatchlist.value = res.filteredWatchlist
@@ -37,6 +40,7 @@ async function load(refresh = false) {
 }
 
 watch(mediaType, () => load())
+watch(sort, () => void load(false))
 onMounted(() => {
   void load()
   void loadSubscriptions()
@@ -69,6 +73,7 @@ const types = computed<{ value: MediaType | ''; label: string }[]>(() => [
       </button>
     </div>
     <WatchlistToggle :hidden="filteredWatchlist" />
+    <SortSelect v-model="sort" :default-label="t('sort.defaults.home')" />
     <button type="button" class="primary" :disabled="refreshing" @click="load(true)">
       <span v-if="refreshing" class="spinner" aria-hidden="true"></span>
       {{ t('home.refresh') }}

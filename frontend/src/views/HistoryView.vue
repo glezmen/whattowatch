@@ -7,9 +7,11 @@ import DescriptionToggle from '../components/DescriptionToggle.vue'
 import FeedbackPanel from '../components/FeedbackPanel.vue'
 import Pagination from '../components/Pagination.vue'
 import PosterWithOverview from '../components/PosterWithOverview.vue'
+import SortSelect from '../components/SortSelect.vue'
 import ToggleSwitch from '../components/ToggleSwitch.vue'
 import WatchlistToggle from '../components/WatchlistToggle.vue'
 import { fmtDateTime, fmtRaw, fmtStars, mediaTypeLabel, sourceLabel } from '../format'
+import { useSortOrder } from '../sortOrder'
 import { displayTitle, secondaryTitle } from '../titles'
 
 const LIMIT = 50
@@ -18,6 +20,7 @@ const status = ref('')
 const items = ref<HistoryItem[]>([])
 const total = ref(0)
 const offset = ref(0)
+const sort = useSortOrder('history')
 const loading = ref(false)
 const filteredWatchlist = ref(0)
 const expanded = ref<number | null>(null)
@@ -49,6 +52,7 @@ async function load() {
       status: status.value,
       exclude_rated: hideRated.value,
       include_watchlist: includeWatchlist.value,
+      sort: sort.value,
       limit: LIMIT,
       offset: offset.value,
     })
@@ -77,7 +81,7 @@ watch(hideRated, (v) => {
   offset.value = 0
   load()
 })
-watch(includeWatchlist, () => {
+watch([includeWatchlist, sort], () => {
   clearTimeout(timer)
   offset.value = 0
   load()
@@ -118,6 +122,7 @@ function statusOf(it: HistoryItem): string {
       <option value="">{{ t('history.allStatuses') }}</option>
       <option v-for="s in STATUSES" :key="s" :value="s">{{ statusLabel(s) }}</option>
     </select>
+    <SortSelect v-model="sort" :default-label="t('sort.defaults.history')" />
   </div>
   <p v-if="loading && !items.length" class="empty"><span class="spinner"></span> {{ t('common.loading') }}</p>
   <p v-else-if="!items.length" class="empty">{{ t('history.empty') }}</p>

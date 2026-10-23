@@ -5,9 +5,11 @@ import { includeWatchlist } from '../appSettings'
 import Pagination from '../components/Pagination.vue'
 import TitleCard from '../components/TitleCard.vue'
 import WatchlistToggle from '../components/WatchlistToggle.vue'
+import SortSelect from '../components/SortSelect.vue'
 import ToggleSwitch from '../components/ToggleSwitch.vue'
 import { intlLocale } from '../i18n'
 import { PROVIDERS } from '../providers'
+import { useSortOrder } from '../sortOrder'
 
 const LIMIT = 24
 const SHOW_SEEN_KEY = 'discover_show_seen'
@@ -20,6 +22,7 @@ function loadShowSeen(): boolean {
 }
 const f = reactive({ q: '', media_type: '' as MediaType | '', provider: '', genre: '', showSeen: loadShowSeen() })
 const offset = ref(0)
+const sort = useSortOrder('discover')
 const items = ref<Card[]>([])
 const total = ref(0)
 const loading = ref(false)
@@ -48,6 +51,7 @@ async function load() {
       genre: f.genre.trim(),
       seen: f.showSeen ? null : false,
       include_watchlist: includeWatchlist.value,
+      sort: sort.value,
       limit: LIMIT,
       offset: offset.value,
     })
@@ -73,7 +77,7 @@ watch(
     }, 300)
   },
 )
-watch(includeWatchlist, () => {
+watch([includeWatchlist, sort], () => {
   clearTimeout(timer)
   offset.value = 0
   load()
@@ -101,6 +105,7 @@ function goto(o: number) {
     <datalist id="genre-list">
       <option v-for="g in genreList" :key="g" :value="g" />
     </datalist>
+    <SortSelect v-model="sort" :default-label="$t('sort.defaults.discover')" />
   </div>
   <div class="toggle-stack">
     <ToggleSwitch v-model="f.showSeen" class="small" :label="$t('discover.showSeen')" />

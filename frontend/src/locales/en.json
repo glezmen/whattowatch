@@ -703,5 +703,18 @@
   "bellSection": {
     "leaving": "Leaving",
     "updates": "What's new"
+  },
+  "sort": {
+    "label": "Sort",
+    "leaving": "Leaving soonest",
+    "rating": "Rating, highest first",
+    "defaults": {
+      "home": "Recommendation order",
+      "discover": "Popularity",
+      "watchlist": "Recently added",
+      "history": "Recently watched",
+      "updates": "By date",
+      "leaving": "By date"
+    }
   }
 }

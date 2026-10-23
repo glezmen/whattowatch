@@ -13,6 +13,7 @@ from whattowatch.api.deps import CurrentUserDep, NowDep, RecommenderConfigDep, S
 from whattowatch.api.schemas import HistoryEntry, Page, WatchEventOut
 from whattowatch.db.models import Title, TitleRating, TitleUserState, WatchEvent, WatchStatus
 from whattowatch.services.recommend.candidates import active_watchlist_ids
+from whattowatch.services.sorting import SortOrder, order_ids
 
 router = APIRouter(prefix="/history", tags=["history"])
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
@@ -38,6 +39,7 @@ def get_history(
     include_watchlist: bool = False,
     limit: Annotated[int, Query(ge=1, le=500)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
+    sort: SortOrder = "default",
 ) -> Page[HistoryEntry]:
     """Titles with a watch event or a personal rating, by `last_watched_at` desc.
 
@@ -118,7 +120,7 @@ def get_history(
         when = last_watched(tid) or rated_at.get(tid)
         return (when is None, -(when or _EPOCH).timestamp(), tid)
 
-    order = sorted(ids, key=sort_key)
+    order = order_ids(sorted(ids, key=sort_key), sort, session, user_id=user.id, now=now)
     page_ids = order[offset : offset + limit]
     titles = {t.id: t for t in session.scalars(select(Title).where(Title.id.in_(page_ids)))}
     cards = title_cards(

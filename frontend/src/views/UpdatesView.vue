@@ -3,9 +3,12 @@ import { computed, reactive, ref } from 'vue'
 import type { UpdatesResponse, UpdateSection } from '../api/client'
 import UpdateSectionList from '../components/UpdateSectionList.vue'
 import DaysSelector from '../components/DaysSelector.vue'
+import SortSelect from '../components/SortSelect.vue'
+import { useSortOrder } from '../sortOrder'
 import WatchlistToggle from '../components/WatchlistToggle.vue'
 
 const days = ref(31)
+const sort = useSortOrder('updates')
 const saMissing = ref(false)
 const filtered = reactive<Partial<Record<UpdateSection, number>>>({})
 const filteredTotal = computed(() => Object.values(filtered).reduce((a, b) => a + (b ?? 0), 0))
@@ -24,6 +27,7 @@ const sections: UpdateSection[] = ['new', 'upcoming', 'new_season', 'watchlist_a
   </div>
   <div class="toolbar">
     <DaysSelector v-model="days" />
+    <SortSelect v-model="sort" :default-label="$t('sort.defaults.updates')" />
     <WatchlistToggle :hidden="filteredTotal" />
     <span class="small muted">
       {{ $t('updates.hint') }}
@@ -36,6 +40,7 @@ const sections: UpdateSection[] = ['new', 'upcoming', 'new_season', 'watchlist_a
     :heading="$t(`updates.sections.${s}`)"
     :empty-text="$t(`updates.empty.${s}`)"
     :days="days"
+    :sort="sort"
     @status="onStatus"
     @filtered="(n: number) => (filtered[s] = n)"
   />

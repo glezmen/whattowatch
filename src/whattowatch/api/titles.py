@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Response
-from sqlalchemy import Select, func, or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -62,6 +62,7 @@ from whattowatch.services import deep_links
 from whattowatch.services import feedback as fb
 from whattowatch.services.catalog import ensure_title
 from whattowatch.services.recommend.candidates import active_watchlist_ids, genre_clause
+from whattowatch.services.sorting import SortOrder, order_ids
 from whattowatch.services.title_resolution import SameTitleError, reassign_title
 
 router = APIRouter(tags=["titles"])
@@ -94,14 +95,6 @@ def _signals(session: Session, title_id: int, user_id: int) -> list[Signal]:
     ]
 
 
-def page_titles(
-    query: Select[Title], session: Session, limit: int, offset: int
-) -> tuple[list[Title], int]:
-    total = session.scalar(select(func.count()).select_from(query.subquery())) or 0
-    items = list(session.scalars(query.limit(limit).offset(offset)))
-    return items, total
-
-
 @router.get("/titles", response_model=Page[TitleCard])
 def list_titles(
     response: Response,
@@ -118,6 +111,7 @@ def list_titles(
     include_watchlist: bool = False,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
+    sort: SortOrder = "default",
 ) -> Page[TitleCard]:
     """Local catalog; by default only titles with a fresh verified flatrate on the six.
 
@@ -167,13 +161,21 @@ def list_titles(
             hidden = select(func.count()).select_from(query.where(Title.id.in_(on_list)).subquery())
             response.headers["X-Filtered-Watchlist"] = str(session.scalar(hidden) or 0)
             query = query.where(Title.id.not_in(on_list))
-    query = query.order_by(Title.popularity.desc().nulls_last(), Title.id)
-    items, total = page_titles(query, session, limit, offset)
+    id_query = query.with_only_columns(Title.id).order_by(
+        Title.popularity.desc().nulls_last(), Title.id
+    )
+    ordered = order_ids(list(session.scalars(id_query)), sort, session, user_id=user.id, now=now)
+    page_ids = ordered[offset : offset + limit]
+    titles = {t.id: t for t in session.scalars(select(Title).where(Title.id.in_(page_ids)))}
     return Page[TitleCard](
         items=title_cards(
-            session, items, user_id=user.id, now=now, max_age_days=cfg.verified_max_age_days
+            session,
+            [titles[tid] for tid in page_ids],
+            user_id=user.id,
+            now=now,
+            max_age_days=cfg.verified_max_age_days,
         ),
-        total=total,
+        total=len(ordered),
         limit=limit,
         offset=offset,
     )

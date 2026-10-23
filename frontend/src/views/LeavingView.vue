@@ -3,9 +3,12 @@ import { ref } from 'vue'
 import type { UpdatesResponse } from '../api/client'
 import UpdateSectionList from '../components/UpdateSectionList.vue'
 import DaysSelector from '../components/DaysSelector.vue'
+import SortSelect from '../components/SortSelect.vue'
+import { useSortOrder } from '../sortOrder'
 import WatchlistToggle from '../components/WatchlistToggle.vue'
 
 const days = ref(31)
+const sort = useSortOrder('leaving')
 const saMissing = ref(false)
 const filteredWatchlist = ref(0)
 
@@ -21,13 +24,14 @@ function onStatus(s: UpdatesResponse['source_status']) {
   </div>
   <div class="toolbar">
     <DaysSelector v-model="days" />
+    <SortSelect v-model="sort" :default-label="$t('sort.defaults.leaving')" />
     <WatchlistToggle :hidden="filteredWatchlist" />
     <span class="small muted">{{ $t('leaving.hint') }}</span>
   </div>
   <UpdateSectionList
     section="leaving"
     :days="days"
-    sort-by-date
+    :sort="sort"
     :empty-text="$t('leaving.empty')"
     @status="onStatus"
     @filtered="(n: number) => (filteredWatchlist = n)"

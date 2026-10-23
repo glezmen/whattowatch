@@ -12,6 +12,7 @@ from whattowatch.api.cards import fresh_verified_title_ids, seen_title_ids, titl
 from whattowatch.api.deps import CurrentUserDep, NowDep, RecommenderConfigDep, SessionDep
 from whattowatch.api.schemas import Page, WatchlistEntry, WatchlistSourceEntry
 from whattowatch.db.models import Title, WatchlistItem
+from whattowatch.services.sorting import SortOrder, order_ids
 
 router = APIRouter(prefix="/watchlist", tags=["watchlist"])
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
@@ -35,6 +36,7 @@ def get_watchlist(
     hide_watched: bool = False,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
+    sort: SortOrder = "default",
 ) -> Page[WatchlistEntry]:
     """Active items, newest first; `available` = fresh verified flatrate on the six.
 
@@ -66,6 +68,7 @@ def get_watchlist(
         return max(dates) if dates else None
 
     order = sorted(grouped, key=lambda tid: (-(newest(grouped[tid]) or _EPOCH).timestamp(), tid))
+    order = order_ids(order, sort, session, user_id=user.id, now=now)
     page_ids = order[offset : offset + limit]
     titles = {t.id: t for t in session.scalars(select(Title).where(Title.id.in_(page_ids)))}
     cards = title_cards(
