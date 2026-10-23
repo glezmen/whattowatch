@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
 import { api, type UserState, type WatchlistEntry } from '../api/client'
+import GenreFilterPill from '../components/GenreFilterPill.vue'
+import { activeGenre } from '../genreFilter'
 import Pagination from '../components/Pagination.vue'
 import TitleCard from '../components/TitleCard.vue'
 import SortSelect from '../components/SortSelect.vue'
@@ -42,6 +44,7 @@ async function load() {
       source: source.value,
       available: available.value || undefined,
       hide_watched: hideWatched.value || undefined,
+      genre: activeGenre.value || undefined,
       sort: sort.value,
       limit: LIMIT,
       offset: offset.value,
@@ -70,7 +73,7 @@ watch(hideWatched, (v) => {
     // storage unavailable
   }
 })
-watch([available, source, hideWatched, sort], () => {
+watch([available, source, hideWatched, sort, activeGenre], () => {
   offset.value = 0
   load()
 })
@@ -101,6 +104,7 @@ function goto(o: number) {
       <option v-for="s in sources" :key="s.value" :value="s.value">{{ s.value ? s.label : $t('watchlist.allSources') }}</option>
     </select>
     <SortSelect v-model="sort" :default-label="$t('sort.defaults.watchlist')" />
+    <GenreFilterPill />
   </div>
   <p class="small muted">
     {{ $t('watchlist.hint') }}

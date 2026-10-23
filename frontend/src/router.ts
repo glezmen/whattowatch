@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { activeGenre } from './genreFilter'
 import { t } from './i18n'
 import HomeView from './views/HomeView.vue'
 
@@ -15,18 +16,18 @@ export const router = createRouter({
       component: () => import('./views/ProfileView.vue'),
       meta: { titleKey: 'profile.pickerTitle', bare: true },
     },
-    { path: '/', component: HomeView, meta: { titleKey: 'nav.home' } },
+    { path: '/', component: HomeView, meta: { titleKey: 'nav.home', genreList: true } },
     { path: '/cim/:id(\\d+)', component: () => import('./views/TitleView.vue'), meta: { titleKey: 'titlePage.fallbackTitle' } },
-    { path: '/felfedezes', component: () => import('./views/DiscoverView.vue'), meta: { titleKey: 'nav.discover' } },
+    { path: '/felfedezes', component: () => import('./views/DiscoverView.vue'), meta: { titleKey: 'nav.discover', genreList: true } },
     { path: '/beszelgetes', component: () => import('./views/ChatView.vue'), meta: { titleKey: 'nav.chat' } },
-    { path: '/watchlist', component: () => import('./views/WatchlistView.vue'), meta: { titleKey: 'nav.watchlist' } },
-    { path: '/elozmenyek', component: () => import('./views/HistoryView.vue'), meta: { titleKey: 'nav.history' } },
+    { path: '/watchlist', component: () => import('./views/WatchlistView.vue'), meta: { titleKey: 'nav.watchlist', genreList: true } },
+    { path: '/elozmenyek', component: () => import('./views/HistoryView.vue'), meta: { titleKey: 'nav.history', genreList: true } },
     { path: '/feloldas', component: () => import('./views/ResolutionView.vue'), meta: { titleKey: 'nav.resolution' } },
     { path: '/import', component: () => import('./views/ImportView.vue'), meta: { titleKey: 'nav.import' } },
     { path: '/sync', redirect: '/beallitasok' },
     { path: '/beallitasok', component: () => import('./views/SettingsView.vue'), meta: { titleKey: 'nav.settings' } },
-    { path: '/ujdonsagok', component: () => import('./views/UpdatesView.vue'), meta: { titleKey: 'nav.updates' } },
-    { path: '/tavozik', component: () => import('./views/LeavingView.vue'), meta: { titleKey: 'nav.leaving' } },
+    { path: '/ujdonsagok', component: () => import('./views/UpdatesView.vue'), meta: { titleKey: 'nav.updates', genreList: true } },
+    { path: '/tavozik', component: () => import('./views/LeavingView.vue'), meta: { titleKey: 'nav.leaving', genreList: true } },
     {
       path: '/:rest(.*)*',
       component: () => import('./views/PlaceholderView.vue'),
@@ -48,3 +49,7 @@ export function updateDocumentTitle(): void {
 }
 
 router.afterEach(() => updateDocumentTitle())
+
+router.afterEach(() => {
+  activeGenre.value = ''
+})

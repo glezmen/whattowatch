@@ -9,6 +9,7 @@ import PosterWithOverview from '../components/PosterWithOverview.vue'
 import ProviderLink from '../components/ProviderLink.vue'
 import { pushToast } from '../toast'
 import { confidenceLabel, fmtDate, fmtDateTime, fmtInt, fmtRaw, mediaTypeLabel, sourceLabel } from '../format'
+import { activeGenre, selectGenre } from '../genreFilter'
 import { updateDocumentTitle } from '../router'
 import { displayTitle, secondaryTitle } from '../titles'
 
@@ -228,7 +229,7 @@ function back() {
           <template v-if="title.media_type === 'movie' && title.runtime"> · {{ tr('card.minutes', { n: title.runtime }) }}</template>
         </p>
         <div v-if="title.genres.length" class="chips">
-          <span v-for="g in title.genres" :key="g" class="chip">{{ g }}</span>
+          <button v-for="g in title.genres" :key="g" type="button" class="chip chip-button" :class="{ active: activeGenre === g }" :title="$t('genreFilter.clickHint')" @click="selectGenre(g, router, route)">{{ g }}</button>
         </div>
 
         <div v-if="c" class="scores" :title="c.fetched_at ? tr('card.fetchedAt', { date: fmtDateTime(c.fetched_at) }) : undefined">

@@ -5,6 +5,8 @@ import UpdateSectionList from '../components/UpdateSectionList.vue'
 import DaysSelector from '../components/DaysSelector.vue'
 import SortSelect from '../components/SortSelect.vue'
 import { useSortOrder } from '../sortOrder'
+import GenreFilterPill from '../components/GenreFilterPill.vue'
+import { activeGenre } from '../genreFilter'
 import WatchlistToggle from '../components/WatchlistToggle.vue'
 
 const days = ref(31)
@@ -26,12 +28,14 @@ function onStatus(s: UpdatesResponse['source_status']) {
     <DaysSelector v-model="days" />
     <SortSelect v-model="sort" :default-label="$t('sort.defaults.leaving')" />
     <WatchlistToggle :hidden="filteredWatchlist" />
+    <GenreFilterPill />
     <span class="small muted">{{ $t('leaving.hint') }}</span>
   </div>
   <UpdateSectionList
     section="leaving"
     :days="days"
     :sort="sort"
+    :genre="activeGenre || undefined"
     :empty-text="$t('leaving.empty')"
     @status="onStatus"
     @filtered="(n: number) => (filteredWatchlist = n)"

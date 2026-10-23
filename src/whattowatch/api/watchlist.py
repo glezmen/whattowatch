@@ -12,6 +12,7 @@ from whattowatch.api.cards import fresh_verified_title_ids, seen_title_ids, titl
 from whattowatch.api.deps import CurrentUserDep, NowDep, RecommenderConfigDep, SessionDep
 from whattowatch.api.schemas import Page, WatchlistEntry, WatchlistSourceEntry
 from whattowatch.db.models import Title, WatchlistItem
+from whattowatch.services.recommend.candidates import ids_with_genre
 from whattowatch.services.sorting import SortOrder, order_ids
 
 router = APIRouter(prefix="/watchlist", tags=["watchlist"])
@@ -37,10 +38,12 @@ def get_watchlist(
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
     sort: SortOrder = "default",
+    genre: str | None = None,
 ) -> Page[WatchlistEntry]:
     """Active items, newest first; `available` = fresh verified flatrate on the six.
 
     `hide_watched` drops titles the card marks seen (count in `X-Filtered-Watched`).
+    `genre` keeps titles of that genre (tolerant matching, see `genre_clause`).
     """
     query = select(WatchlistItem).where(
         WatchlistItem.user_id == user.id, WatchlistItem.status == "active"
@@ -55,6 +58,9 @@ def get_watchlist(
             session, user_id=user.id, now=now, max_age_days=cfg.verified_max_age_days
         )
         grouped = {tid: v for tid, v in grouped.items() if (tid in fresh) == available}
+    if genre and genre.strip():
+        keep = ids_with_genre(session, grouped, genre)
+        grouped = {tid: v for tid, v in grouped.items() if tid in keep}
 
     filtered = 0
     if hide_watched:

@@ -367,3 +367,42 @@ def test_watchlist_hide_watched(api: ApiEnv) -> None:
     api.client.put(f"/api/titles/{api.ids[112]}/seen", json={"seen": False})
     r = api.client.get("/api/watchlist", params={"hide_watched": True})
     assert r.headers["X-Filtered-Watched"] == "1" and r.json()["total"] == 3
+
+
+def test_watchlist_genre_filter(api: ApiEnv) -> None:
+    inv = {v: k for k, v in api.ids.items()}
+
+    def ids(**params: object) -> list[int]:
+        r = api.client.get("/api/watchlist", params=params)
+        assert r.status_code == 200, r.text
+        return sorted(inv[i["title"]["id"]] for i in r.json()["items"])
+
+    assert ids(genre="Dráma") == [107]
+    assert ids(genre="drama") == [107] and ids(genre="DRÁMA") == [107]
+    assert ids(genre="sci fi") == [108]
+    assert ids(genre="nincs ilyen műfaj") == []
+    for tmdb_id in (112, 103):
+        api.client.post(f"/api/titles/{api.ids[tmdb_id]}/watchlist")
+    r = api.client.get("/api/watchlist", params={"hide_watched": True, "genre": "thriller"})
+    assert r.headers["X-Filtered-Watched"] == "1" and r.json()["total"] == 1
+    assert [inv[i["title"]["id"]] for i in r.json()["items"]] == [103]
+
+
+def test_history_genre_filter(api: ApiEnv) -> None:
+    inv = {v: k for k, v in api.ids.items()}
+
+    def ids(**params: object) -> set[int]:
+        r = api.client.get("/api/history", params=params)
+        assert r.status_code == 200, r.text
+        return {inv[i["title"]["id"]] for i in r.json()["items"]}
+
+    assert ids(genre="Vígjáték") == {204, 205}
+    assert ids(genre="vigjatek") == {204, 205} and ids(genre="comedy") == {204, 205}
+    assert ids(genre="rejtély") == {113, 201, 203}
+    assert ids(genre="nincs ilyen műfaj") == set()
+    assert ids(genre="Rejtély", exclude_rated=True) == {113}
+    api.client.put(f"/api/titles/{api.ids[108]}/rating", json={"stars": 4})  # stays on list
+    r = api.client.get("/api/history", params={"genre": "Sci-Fi"})
+    assert r.headers["X-Filtered-Watchlist"] == "1" and r.json()["total"] == 0
+    r = api.client.get("/api/history", params={"genre": "Dráma"})
+    assert r.headers["X-Filtered-Watchlist"] == "0" and r.json()["total"] == 2

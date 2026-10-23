@@ -4,11 +4,13 @@ import { useI18n } from 'vue-i18n'
 import { api, type MediaType, type RecommendationItem } from '../api/client'
 import { appSettings, enabledCount, includeWatchlist, loadSubscriptions, subscriptions, ui } from '../appSettings'
 import ChatPanel from '../components/ChatPanel.vue'
+import GenreFilterPill from '../components/GenreFilterPill.vue'
 import OnboardingPanel from '../components/OnboardingPanel.vue'
 import TitleCard from '../components/TitleCard.vue'
 import SortSelect from '../components/SortSelect.vue'
 import WatchlistToggle from '../components/WatchlistToggle.vue'
 import { fmtDateTime } from '../format'
+import { activeGenre } from '../genreFilter'
 import { useSortOrder } from '../sortOrder'
 
 const { t } = useI18n()
@@ -26,7 +28,10 @@ async function load(refresh = false) {
   if (refresh) refreshing.value = true
   else loading.value = true
   try {
-    const p = { limit: 20, media_type: mediaType.value, include_watchlist: includeWatchlist.value, sort: sort.value }
+    const p = {
+      limit: 20, media_type: mediaType.value, include_watchlist: includeWatchlist.value, sort: sort.value,
+      genre: activeGenre.value || undefined,
+    }
     const res = refresh ? await api.refreshRecommendations(p) : await api.getRecommendations(p)
     items.value = res.items
     filteredWatchlist.value = res.filteredWatchlist
@@ -41,6 +46,7 @@ async function load(refresh = false) {
 
 watch(mediaType, () => load())
 watch(sort, () => void load(false))
+watch(activeGenre, () => void load(false))
 onMounted(() => {
   void load()
   void loadSubscriptions()
@@ -73,6 +79,7 @@ const types = computed<{ value: MediaType | ''; label: string }[]>(() => [
       </button>
     </div>
     <WatchlistToggle :hidden="filteredWatchlist" />
+    <GenreFilterPill />
     <SortSelect v-model="sort" :default-label="t('sort.defaults.home')" />
     <button type="button" class="primary" :disabled="refreshing" @click="load(true)">
       <span v-if="refreshing" class="spinner" aria-hidden="true"></span>
@@ -91,7 +98,7 @@ const types = computed<{ value: MediaType | ''; label: string }[]>(() => [
       :title="it.title"
       :reasons="it.reasons"
       :reason-codes="it.reason_codes"
-      :batch-id="it.batch_id"
+      :batch-id="it.stored !== false ? it.batch_id : undefined"
     />
   </div>
 </template>

@@ -146,6 +146,8 @@ class RecommendationItem(BaseModel):
     batch_id: str
     generated_at: datetime
     feedback: str | None = None
+    # False for rows generated on the fly (genre filter) and not stored: no feedback.
+    stored: bool = True
 
 
 class Page[T](BaseModel):

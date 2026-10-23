@@ -154,3 +154,73 @@ def test_refresh_passes_include_watchlist(
     api_tmdb.client.get("/api/recommendations", params={"refresh": True})
     api_tmdb.client.get("/api/recommendations", params={"refresh": True, "include_watchlist": True})
     assert [c["include_watchlist"] for c in calls] == [False, True]
+
+
+def _spy_engine(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+    calls: list[dict[str, Any]] = []
+
+    def fake_run(**kw: Any) -> list[Recommendation]:
+        calls.append(dict(kw))
+        kw["tmdb"] = StubTmdb()
+        kw["config"] = RecommenderConfig()
+        return run_recommendations(**kw)
+
+    monkeypatch.setattr("whattowatch.services.recommend.engine.run_recommendations", fake_run)
+    return calls
+
+
+def test_genre_filters_stored_batch(api_tmdb: ApiEnv, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = _spy_engine(monkeypatch)
+    _batch(api_tmdb, "b1", [101, 106, 102, 103], at_offset_h=0)
+    inv = {v: k for k, v in api_tmdb.ids.items()}
+    r = api_tmdb.client.get("/api/recommendations", params={"genre": "thriller", "limit": 3})
+    assert r.status_code == 200, r.text
+    items = r.json()
+    assert [inv[i["title"]["id"]] for i in items] == [101, 102, 103]
+    assert all(i["stored"] and i["batch_id"] == "b1" for i in items)
+    assert calls == []
+    r = api_tmdb.client.get("/api/recommendations", params={"genre": "Krimi", "limit": 1})
+    assert [inv[i["title"]["id"]] for i in r.json()] == [103] and calls == []
+
+
+def test_genre_short_batch_runs_engine_unsaved(
+    api_tmdb: ApiEnv, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = _spy_engine(monkeypatch)
+    _batch(api_tmdb, "b1", [101, 102], at_offset_h=0)
+    r = api_tmdb.client.get("/api/recommendations", params={"genre": "vígjáték", "limit": 5})
+    assert r.status_code == 200, r.text
+    assert len(calls) == 1
+    kw = calls[0]
+    assert kw["genres"] == ["vígjáték"] and kw["persist"] is False
+    assert kw["limit"] == 5 and kw["media_type"] is None and kw["include_watchlist"] is False
+    items = r.json()
+    inv = {v: k for k, v in api_tmdb.ids.items()}
+    assert [inv[i["title"]["id"]] for i in items] == [106]
+    assert items[0]["stored"] is False and items[0]["batch_id"] != "b1"
+    batches = set(api_tmdb.session.scalars(select(Recommendation.batch_id)))
+    assert batches == {"b1"}
+
+
+def test_genre_without_tmdb_returns_filtered_batch(api: ApiEnv) -> None:
+    _batch(api, "b1", [101, 106, 102], at_offset_h=0)
+    inv = {v: k for k, v in api.ids.items()}
+    items = api.client.get("/api/recommendations", params={"genre": "comedy"}).json()
+    assert [inv[i["title"]["id"]] for i in items] == [106] and items[0]["stored"] is True
+    r = api.client.get("/api/recommendations", params={"genre": "nincs ilyen műfaj"})
+    assert r.status_code == 200 and r.json() == []
+
+
+def test_refresh_with_genre_leaves_batch(api_tmdb: ApiEnv, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = _spy_engine(monkeypatch)
+    _batch(api_tmdb, "b1", [101, 106], at_offset_h=0)
+    params: dict[str, Any] = {"refresh": True, "genre": "Thriller", "limit": 2}
+    r = api_tmdb.client.get("/api/recommendations", params=params)
+    assert r.status_code == 200, r.text
+    assert len(calls) == 1 and calls[0]["genres"] == ["Thriller"]
+    assert calls[0]["persist"] is False
+    items = r.json()
+    assert len(items) == 2 and not any(i["stored"] for i in items)
+    assert set(api_tmdb.session.scalars(select(Recommendation.batch_id))) == {"b1"}
+    latest = api_tmdb.client.get("/api/recommendations", params={"limit": 5}).json()
+    assert [i["batch_id"] for i in latest] == ["b1", "b1"] and len(calls) == 1

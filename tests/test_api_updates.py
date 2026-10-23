@@ -219,3 +219,22 @@ def test_refresh_runs(api_tmdb: ApiEnv, monkeypatch: pytest.MonkeyPatch) -> None
     assert r.status_code == 200
     assert r.json() == {"catalog": 3, "sa": "no_key", "notifications": 1}
     assert calls and calls[0]["session"] is api_tmdb.session
+
+
+def test_updates_genre_filter(api: ApiEnv, seeded: dict[str, int]) -> None:
+    def ids(**params: object) -> list[int]:
+        r = api.client.get("/api/updates", params=params)
+        assert r.status_code == 200, r.text
+        return [i["title"]["id"] for i in r.json()["items"]]
+
+    assert set(ids(section="leaving")) == {api.ids[101], api.ids[103]}
+    assert ids(section="leaving", genre="krimi") == [api.ids[103]]
+    assert ids(section="leaving", genre="bűnügyi") == [api.ids[103]]
+    assert ids(section="leaving", genre="nincs ilyen műfaj") == []
+    _event(api.session, api.ids[108], "netflix", "new", TODAY - timedelta(days=2))
+    api.session.commit()
+    r = api.client.get("/api/updates", params={"section": "new", "genre": "Sci-Fi"})
+    assert r.headers["X-Filtered-Watchlist"] == "1" and r.json()["items"] == []
+    r = api.client.get("/api/updates", params={"section": "new", "genre": "vígjáték"})
+    assert r.headers["X-Filtered-Watchlist"] == "0"
+    assert [i["title"]["id"] for i in r.json()["items"]] == [api.ids[106]]

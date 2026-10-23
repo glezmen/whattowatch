@@ -31,7 +31,7 @@ from whattowatch.config import Settings
 from whattowatch.db.models import CatalogEvent, Notification, Provider, SyncRun
 from whattowatch.providers import BY_KEY
 from whattowatch.services import updates as updates_service
-from whattowatch.services.recommend.candidates import active_watchlist_ids
+from whattowatch.services.recommend.candidates import active_watchlist_ids, ids_with_genre
 from whattowatch.services.scheduler import REFRESH_LOCK
 from whattowatch.services.sorting import SortOrder, order_ids
 from whattowatch.services.updates import Section
@@ -86,13 +86,18 @@ def get_updates(
     limit: Annotated[int, Query(ge=1, le=500)] = 50,
     include_watchlist: bool = False,
     sort: SortOrder = "default",
+    genre: str | None = None,
 ) -> UpdatesOut:
     """Titles on an active watchlist are left out unless `include_watchlist`, except in the
     `watchlist_available` section (which is about them); `X-Filtered-Watchlist` = number of
-    distinct titles hidden. `sort` re-orders the events by their title (stable)."""
+    distinct titles hidden. `sort` re-orders the events by their title (stable). `genre`
+    keeps events of titles of that genre (tolerant matching, see `genre_clause`)."""
     events = updates_service.list_events(
         session, user_id=user.id, section=section, days=days, now=now
     )
+    if genre and genre.strip() and events:
+        keep = ids_with_genre(session, (e.title_id for e in events), genre)
+        events = [e for e in events if e.title_id in keep]
     response.headers["X-Filtered-Watchlist"] = "0"
     if not include_watchlist and section != "watchlist_available":
         on_list = active_watchlist_ids(session, user_id=user.id)

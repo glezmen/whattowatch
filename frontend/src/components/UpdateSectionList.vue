@@ -11,6 +11,7 @@ const props = defineProps<{
   days: number
   emptyText?: string
   sort?: SortOrder
+  genre?: string
 }>()
 const emit = defineEmits<{
   status: [status: UpdatesResponse['source_status']]
@@ -26,7 +27,10 @@ async function load() {
   loading.value = true
   failed.value = false
   try {
-    const res = await api.getUpdates(props.section, props.days, 50, includeWatchlist.value, props.sort)
+    const res = await api.getUpdates(props.section, props.days, 50, includeWatchlist.value, {
+      sort: props.sort,
+      genre: props.genre || undefined,
+    })
     items.value = res.items
     emit('status', res.source_status)
     emit('filtered', res.filteredWatchlist)
@@ -38,7 +42,7 @@ async function load() {
   }
 }
 
-watch([() => props.days, () => props.sort, includeWatchlist], load)
+watch([() => props.days, () => props.sort, () => props.genre, includeWatchlist], load)
 onMounted(load)
 </script>
 

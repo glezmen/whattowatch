@@ -716,5 +716,10 @@
       "updates": "By date",
       "leaving": "By date"
     }
+  },
+  "genreFilter": {
+    "label": "Genre",
+    "clear": "Clear genre filter",
+    "clickHint": "Only this genre"
   }
 }

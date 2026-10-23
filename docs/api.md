@@ -41,7 +41,8 @@ UpdateEvent { id, event_type: "new"|"removed"|"expiring"|"upcoming"|"new_season"
               leaving_at?: "YYYY-MM-DD", arriving_at?: "YYYY-MM-DD" }
   // estimated (dátum nélküli SA-esemény): event_date = észlelés napja, leaving_at/arriving_at null
 Notification { id, event_id, event_type, title: TitleCard, event_date, dedupe_key, created_at, read_at? }
-RecommendationItem { rank, score, reasons: string[], components: {..}, title: TitleCard, batch_id, generated_at, feedback? }
+RecommendationItem { rank, score, reasons: string[], components: {..}, title: TitleCard, batch_id, generated_at, feedback?,
+                     stored: bool }  // stored=false: menet közben generált, nem mentett sor (műfajszűrő), nincs rá feedback
 Page<T> { items: T[], total, limit, offset }
 
 TitleDetail = TitleCard + { resolutions: { id, source, lookup_key, status, method?, confidence?, resolved_at? }[] }
@@ -71,6 +72,30 @@ SyncRun { id, source, started_at, finished_at?, status, processed, created, upda
 Settings { tmdb_api_key_set: bool, netflix_profile_name?, lm_studio_base_url, recommender: {weights, cold_start, ...} }
 ```
 
+### Műfajszűrés (`genre`)
+
+A `/recommendations`, `/watchlist`, `/history` és `/updates` opcionális `genre`
+paramétere egy műfajnév (a kártyák műfajchipjéből). Az illesztés ugyanaz, mint a
+`/titles?genre=` és az ajánlómotor jelöltszűrője (`genre_clause`: ékezet- és
+kis-nagybetű-független, magyar toldalékok, angol nevek, elírások; a tv-s összetett
+műfajok, pl. „Akció & Kaland”, tartalmazzák a részeiket). Ismeretlen műfajnév üres
+listát ad (nem hiba). A szűrés a `sort` átrendezés, a lapozás/`limit` és a rejtett-szám
+fejlécek (`X-Filtered-Watched`, `X-Filtered-Watchlist`) előtt történik, így a `total` és
+a fejlécek a műfajra szűrt listát írják le.
+
+`/recommendations` + `genre`: a tárolt batch soha nem cserélődik le.
+- `refresh=false`: a legutóbbi tárolt batch a műfajra szűrve (a `media_type` és a
+  watchlist-szűrés után; `X-Filtered-Watchlist` a műfajba eső kihagyottakat számolja).
+  Ha ez kevesebb mint `limit` sort ad **és** van TMDB-kulcs, a motor menet közben
+  rangsorol a műfaj jelöltjeiből (`genres=[genre]`, `persist=False`, a `media_type` és
+  `include_watchlist` átadva), és ezeket a nem mentett sorokat adja vissza
+  (`stored=false`, `X-Filtered-Watchlist: 0`, mert a motor eleve kihagyja a watchlistes
+  címeket). TMDB-kulcs nélkül a szűrt tárolt sorok jönnek vissza.
+- `refresh=true`: a motor ugyanígy, mentés nélkül fut (`stored=false`); TMDB-kulcs
+  nélkül `409`.
+A nem mentett sorok `batch_id`-je és `generated_at`-je a motor által adott érték, a
+`feedback` végpont nem találja őket (404), ezért a felület nem küld rájuk visszajelzést.
+
 ### Rendezés (`sort`)
 
 A listavégpontok (`/recommendations`, `/titles`, `/watchlist`, `/history`, `/updates`)
@@ -97,7 +122,7 @@ rendezett listán történik (`/recommendations`: a szűrt batch-en belül; a `r
 
 | Metódus, út | Leírás |
 |---|---|
-| `GET /recommendations?limit=20&media_type=&refresh=false&sort=default` | `RecommendationItem[]` a legutóbbi batch-ből (`generated_at` szerint); `refresh=true` új batch-et generál (lassú lehet: TMDB-ellenőrzés; TMDB-kulcs nélkül 409); `include_watchlist=false` (alap) kihagyja az aktív watchlistes címeket (stored batch: utószűrés, `X-Filtered-Watchlist: <n>` fejléc a kihagyottak számával; a batch-flag a `components._include_watchlist` kulcsban, az API nem adja vissza), `true` bennehagyja; `sort` (lásd Rendezés) a visszaadott tételeket rendezi át |
+| `GET /recommendations?limit=20&media_type=&refresh=false&sort=default&genre=` | `RecommendationItem[]` a legutóbbi batch-ből (`generated_at` szerint); `refresh=true` új batch-et generál (lassú lehet: TMDB-ellenőrzés; TMDB-kulcs nélkül 409); `include_watchlist=false` (alap) kihagyja az aktív watchlistes címeket (stored batch: utószűrés, `X-Filtered-Watchlist: <n>` fejléc a kihagyottak számával; a batch-flag a `components._include_watchlist` kulcsban, az API nem adja vissza), `true` bennehagyja; `sort` (lásd Rendezés) a visszaadott tételeket rendezi át; `genre`: lásd Műfajszűrés (szűrt tárolt batch vagy nem mentett motorfuttatás, `stored` mező) |
 | `POST /recommendations/{batch_id}/{title_id}/feedback` `{feedback: "clicked"|"dismissed"|"watched"}` | ajánlás-visszajelzés; válasz `{batch_id, title_id, feedback, feedback_at}` |
 | `GET /titles/{id}` | `TitleDetail` (`TitleCard` + `resolutions`: honnan jött + `import_texts: [{source, title_text, rows}]`: az aktuális profil importsorai, amelyek ide oldódtak fel) |
 | `POST /titles/{id}/reassign` `{media_type, tmdb_id}` | rossz feloldás javítása: a profil előzménye, saját értékelései (a közösségi pontszám marad), véleménye + jelzései, watchlistje és címállapota átkerül a megadott TMDB-címre (azonos forrásnál összevonás: előzmény min/max dátum + összeg, értékelésnél az újabb `rated_at` marad, véleménynél mezőnként az új cím szövege, üresnél a régi; watchlist legkorábbi `added_at`, aktív ha bármelyik). Az ajánlások/értesítések maradnak. A profil importsorai által használt feloldások `manual`-ra állnak az új címre; a feloldás-cache közös, így más profil azonos kulcsú sorai a következő importnál követik (már importált adatuk nem változik). Válasz `{result: {new_title_id, moved, merged, resolutions_updated}, title: TitleCard}`; 409 `no_tmdb_key`, 422 `same_title`, 404 ismeretlen cím. CLI: `wtw resolve reassign <old_title_id> <movie|tv> <tmdb_id> --user <név>` |
@@ -109,8 +134,8 @@ rendezett listán történik (`/recommendations`: a szűrt batch-en belül; a `r
 | `PUT /titles/{id}/seen` `{seen: bool}` | kézi „láttam” |
 | `PUT /titles/{id}/not-interested` `{value: bool}` | |
 | `POST /titles/{id}/watchlist` / `DELETE` | app-watchlist (a DELETE csak az `app` forrású tételt veszi le) |
-| `GET /watchlist?source=&available=&hide_watched=false&sort=default&limit=100&offset=0` | `Page<WatchlistEntry>`, legutóbb hozzáadott elöl (`sort`: lásd Rendezés); `source` pl. `app`, `netflix_mylist`, `imdb_watchlist` (ismeretlen = üres); `available` = van friss verified flatrate; `hide_watched=true` kihagyja a látott címeket (a `total` is ezt tükrözi), `X-Filtered-Watched: <n>` = kihagyottak száma |
-| `GET /history?q=&status=&source=&exclude_rated=false&include_watchlist=false&sort=default&limit=50&offset=0` | `Page<HistoryEntry>`: címek nézési eseménnyel vagy személyes értékeléssel, `last_watched_at` (különben `rated_at`) desc, dátum nélküliek a végén (`sort`: lásd Rendezés); `status` (watched/in_progress/abandoned) és `source` a címeket szűri, a sor a cím összes eseményét adja; `exclude_rated=true` kihagyja a személyesen értékelt címeket (a `total` is ezt tükrözi); `include_watchlist=false` (alap) kihagyja az aktív watchlistes címeket, `X-Filtered-Watchlist: <n>` a kihagyottak száma |
+| `GET /watchlist?source=&available=&hide_watched=false&genre=&sort=default&limit=100&offset=0` | `Page<WatchlistEntry>`, legutóbb hozzáadott elöl (`sort`: lásd Rendezés); `source` pl. `app`, `netflix_mylist`, `imdb_watchlist` (ismeretlen = üres); `available` = van friss verified flatrate; `hide_watched=true` kihagyja a látott címeket (a `total` is ezt tükrözi), `X-Filtered-Watched: <n>` = kihagyottak száma; `genre`: lásd Műfajszűrés |
+| `GET /history?q=&status=&source=&exclude_rated=false&include_watchlist=false&genre=&sort=default&limit=50&offset=0` | `Page<HistoryEntry>`: címek nézési eseménnyel vagy személyes értékeléssel, `last_watched_at` (különben `rated_at`) desc, dátum nélküliek a végén (`sort`: lásd Rendezés); `status` (watched/in_progress/abandoned) és `source` a címeket szűri, a sor a cím összes eseményét adja; `exclude_rated=true` kihagyja a személyesen értékelt címeket (a `total` is ezt tükrözi); `include_watchlist=false` (alap) kihagyja az aktív watchlistes címeket, `X-Filtered-Watchlist: <n>` a kihagyottak száma; `genre`: lásd Műfajszűrés |
 | `GET /search/tmdb?q=&media_type=` | `SearchHit[]` (TMDB, hu-HU; `poster_path`, `overview` is) |
 | `POST /titles/ensure` `{media_type, tmdb_id}` | cím beemelése TMDB-ből (details), válasz `TitleCard` |
 | `GET /resolutions?status=ambiguous|unresolved&source=&limit=50&offset=0` | `Page<ResolutionItem>`; status nélkül mindkettő |
@@ -119,7 +144,7 @@ rendezett listán történik (`/recommendations`: a szűrt batch-en belül; a `r
 | `POST /resolutions/{id}/set` `{media_type, tmdb_id}` / `POST /resolutions/{id}/reject` | kézi feloldás; válasz `{resolution: ResolutionItem, reimport_needed}`; `set` után a kapcsolódó import újraépítése nem automatikus (`reimport_needed: true`), `reject`-nél `false` |
 | `GET /sync/runs?limit=50` | `SyncRun[]`, legújabb elöl |
 | `POST /chat` `{messages: [{role: "user"\|"assistant", content}], provider?: "lmstudio"\|"anthropic"\|"openai"}` | beszélgetős ajánló (docs/llm.md 2.2); válasz `ChatResult {reply, tool_trace: [{name, arguments, result_summary, error, title_ids}], provider, model, usage, rounds_exhausted, recommended_title_ids, recommended_title_ids_source}`; az utolsó üzenet `user`; a modell csak a nyolc típusos eszközt hívhatja (max. 6 kör, utána eszköz nélküli zárás); a `title_ids` a `get_recommendations`/`browse_catalog`/`search_titles` helyi találatai; a kártyák a `recommended_title_ids`-ből készülnek: a modell a válasz végén `[[ajanlott: id, …]]` (angol prompttal `[[recommended: …]]`) jelölősort ad, amelyet a backend levág, és csak a trace-ben szereplő id-ket tartja meg (`source: "marker"`); jelölő hiányában a válaszszövegben (magyar/angol/eredeti címmel) említett trace-címek, előfordulási sorrendben (`"text"`), egyezés nélkül üres lista (`"none"`). `409` ha a provider nincs beállítva, `502` ha a provider hívása hibázik. A `get_recommendations` eszköz nem ment ajánlás-batch-et (a főoldal legutóbbi batch-e változatlan marad); a típus-/szolgáltató-/műfajszűrők a rangsorolás előtt, a jelöltgenerálásban szűrnek (`total_candidates` = a szűrőknek megfelelő jelöltek száma); ha `genres` „all” módban kevesebb mint `limit` találatot ad, egyszer „any” módban újrapróbál (`genres_mode: "any"`, a több műfajegyezés elöl); a `mood_labels` csak előre sorol (a cím műfajaiból képzett szótárcímkék egyezése szerint), nem szűr. A `browse_catalog` eszköz a Felfedezéshez hasonló listát ad (friss verified flatrate a bekapcsolt előfizetéseken, „nem érdekel” nélkül, látottak csak `include_seen`-nel; `sort`: popularity/rating/newest; `limit`/`offset`, `total`) |
-| `GET /updates?section=new\|upcoming\|leaving\|new_season\|watchlist_available&days=31&limit=50&include_watchlist=false&sort=default` | `{section, items: UpdateItem[], source_status: {tmdb: bool, streaming_availability: bool}}`; címenként+szolgáltatónként egy esemény, látott/„nem érdekel” címek nélkül (`new_season`: csak a „nem érdekel” esik ki); `new`/`watchlist_available` visszafelé néz, legújabb elöl, `upcoming`/`leaving` előre (dátum nélküli `estimated` események is), `new_season` mindkét irányba. `source_status.streaming_availability` = van SA-kulcs **és** volt már `sa_changes` szinkron; `leaving`/`upcoming` enélkül üres lehet; `include_watchlist=false` (alap) kihagyja az aktív watchlistes címeket (kivéve a `watchlist_available` szekciót), `X-Filtered-Watchlist: <n>` = kihagyott (különböző) címek száma; `sort` (lásd Rendezés) a watchlist-szűrés után, a `limit` előtt rendez |
+| `GET /updates?section=new\|upcoming\|leaving\|new_season\|watchlist_available&days=31&limit=50&include_watchlist=false&genre=&sort=default` | `{section, items: UpdateItem[], source_status: {tmdb: bool, streaming_availability: bool}}`; címenként+szolgáltatónként egy esemény, látott/„nem érdekel” címek nélkül (`new_season`: csak a „nem érdekel” esik ki); `new`/`watchlist_available` visszafelé néz, legújabb elöl, `upcoming`/`leaving` előre (dátum nélküli `estimated` események is), `new_season` mindkét irányba. `source_status.streaming_availability` = van SA-kulcs **és** volt már `sa_changes` szinkron; `leaving`/`upcoming` enélkül üres lehet; `include_watchlist=false` (alap) kihagyja az aktív watchlistes címeket (kivéve a `watchlist_available` szekciót), `X-Filtered-Watchlist: <n>` = kihagyott (különböző) címek száma; `sort` (lásd Rendezés) a watchlist-szűrés után, a `limit` előtt rendez; `genre` (lásd Műfajszűrés) a watchlist-szűrés előtt szűri az eseményeket |
 | `GET /notifications?unread=true&limit=50` | `Notification[]`, legújabb elöl; `unread=false` az olvasottakat is adja |
 | `GET /notifications/count` | `{unread: n}` |
 | `POST /notifications/{id}/read` | olvasottnak jelöl (idempotens), válasz a frissített `Notification`; ismeretlen id `404` |

@@ -243,6 +243,23 @@ def genre_clause(
     return and_(*(has_any(values_for(g)) for g in wanted))
 
 
+_ID_CHUNK = 5000  # keeps `IN (...)` below SQLite's bound-parameter limit
+
+
+def ids_with_genre(session: Session, ids: Iterable[int], genre: str) -> set[int]:
+    """The subset of title `ids` whose genres match `genre` (`genre_clause`, tolerant;
+    an unknown name matches nothing)."""
+    unique = list(dict.fromkeys(ids))
+    if not unique:
+        return set()
+    clause = genre_clause(session, [genre])
+    out: set[int] = set()
+    for i in range(0, len(unique), _ID_CHUNK):
+        chunk = unique[i : i + _ID_CHUNK]
+        out.update(session.scalars(select(Title.id).where(Title.id.in_(chunk), clause)))
+    return out
+
+
 def _eligible_query(
     session: Session,
     *,

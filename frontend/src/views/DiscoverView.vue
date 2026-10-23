@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { api, type MediaType, type TitleCard as Card } from '../api/client'
 import { includeWatchlist } from '../appSettings'
 import Pagination from '../components/Pagination.vue'
@@ -7,6 +8,7 @@ import TitleCard from '../components/TitleCard.vue'
 import WatchlistToggle from '../components/WatchlistToggle.vue'
 import SortSelect from '../components/SortSelect.vue'
 import ToggleSwitch from '../components/ToggleSwitch.vue'
+import { activeGenre } from '../genreFilter'
 import { intlLocale } from '../i18n'
 import { PROVIDERS } from '../providers'
 import { useSortOrder } from '../sortOrder'
@@ -21,6 +23,8 @@ function loadShowSeen(): boolean {
   }
 }
 const f = reactive({ q: '', media_type: '' as MediaType | '', provider: '', genre: '', showSeen: loadShowSeen() })
+const route = useRoute()
+if (typeof route.query.genre === 'string') f.genre = route.query.genre
 const offset = ref(0)
 const sort = useSortOrder('discover')
 const items = ref<Card[]>([])
@@ -81,6 +85,12 @@ watch([includeWatchlist, sort], () => {
   clearTimeout(timer)
   offset.value = 0
   load()
+})
+// A genre chip click on this page fills the text filter, which stays the source of truth here.
+watch(activeGenre, (g) => {
+  if (!g) return
+  f.genre = g
+  activeGenre.value = ''
 })
 onMounted(load)
 

@@ -100,6 +100,8 @@ export interface RecommendationItem {
   title: TitleCard
   batch_id: string
   generated_at: string
+  /** False for an unsaved ranking regenerated for a genre filter (no feedback). */
+  stored: boolean
 }
 
 export interface Page<T> {
@@ -681,10 +683,10 @@ async function getWithFilteredWatchlist<T extends object>(path: string): Promise
 const enc = encodeURIComponent
 
 export const api = {
-  getRecommendations: (p: { limit?: number; media_type?: MediaType | ''; include_watchlist?: boolean; sort?: SortOrder }) =>
+  getRecommendations: (p: { limit?: number; media_type?: MediaType | ''; include_watchlist?: boolean; sort?: SortOrder; genre?: string }) =>
     fetchRecommendations({ ...p, refresh: undefined }),
   /** refresh=true: generates a new batch (slow). */
-  refreshRecommendations: (p: { limit?: number; media_type?: MediaType | ''; include_watchlist?: boolean; sort?: SortOrder }) =>
+  refreshRecommendations: (p: { limit?: number; media_type?: MediaType | ''; include_watchlist?: boolean; sort?: SortOrder; genre?: string }) =>
     fetchRecommendations({ ...p, refresh: true }),
   recommendationFeedback: (batchId: string, titleId: number, feedback: 'clicked' | 'dismissed' | 'watched') =>
     request<unknown>('POST', `/recommendations/${enc(batchId)}/${titleId}/feedback`, { feedback }),
@@ -718,6 +720,7 @@ export const api = {
     source?: string
     available?: boolean
     hide_watched?: boolean
+    genre?: string
     sort?: SortOrder
     limit?: number
     offset?: number
@@ -730,6 +733,7 @@ export const api = {
     status?: string
     source?: string
     exclude_rated?: boolean
+    genre?: string
     include_watchlist?: boolean
     sort?: SortOrder
     limit?: number
@@ -755,9 +759,9 @@ export const api = {
   postChat: (messages: ChatMessage[], provider?: LlmProviderName | string) =>
     request<ChatResult>('POST', '/chat', { messages, provider: provider || undefined }),
 
-  getUpdates: (section: UpdateSection, days = 31, limit = 50, includeWatchlist = false, sort?: SortOrder) =>
+  getUpdates: (section: UpdateSection, days = 31, limit = 50, includeWatchlist = false, opts: { sort?: SortOrder; genre?: string } = {}) =>
     getWithFilteredWatchlist<UpdatesResponse>(
-      `/updates${qs({ section, days, limit, include_watchlist: includeWatchlist, sort })}`,
+      `/updates${qs({ section, days, limit, include_watchlist: includeWatchlist, sort: opts.sort, genre: opts.genre })}`,
     ),
   getNotifications: (unread = true, limit = 50) =>
     request<NotificationItem[]>('GET', `/notifications${qs({ unread, limit })}`),

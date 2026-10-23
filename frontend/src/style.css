@@ -168,6 +168,21 @@ textarea {
   font-size: 0.75rem;
   background: var(--surface-2);
 }
+.chip-button {
+  font: inherit;
+  font-size: 0.75rem;
+  color: inherit;
+  cursor: pointer;
+}
+.chip-button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.chip-button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
 .tag {
   display: inline-block;
   padding: 0 6px;

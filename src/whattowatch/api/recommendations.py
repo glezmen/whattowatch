@@ -25,7 +25,7 @@ from whattowatch.api.schemas import (
 )
 from whattowatch.db.models import MediaType, Recommendation, Title
 from whattowatch.services.recommend import engine as recommend_engine
-from whattowatch.services.recommend.candidates import active_watchlist_ids
+from whattowatch.services.recommend.candidates import active_watchlist_ids, genre_clause
 from whattowatch.services.sorting import SortOrder, order_ids
 
 router = APIRouter(prefix="/recommendations", tags=["recommendations"])
@@ -48,17 +48,25 @@ def get_recommendations(
     refresh: bool = False,
     include_watchlist: bool = False,
     sort: SortOrder = "default",
+    genre: str | None = None,
 ) -> list[RecommendationItem]:
     """The latest batch (by `generated_at`); `refresh=true` generates a new one first.
 
     Watchlisted titles are left out unless `include_watchlist`; for a stored batch this is a
     post-hoc filter and `X-Filtered-Watchlist` carries the number removed. `sort` re-orders
     the returned items (`rank` keeps the stored value).
+
+    `genre` (tolerant matching, see `genre_clause`) never replaces the stored batch: with
+    `refresh` the engine ranks that genre's candidates unsaved; otherwise the stored batch is
+    filtered to the genre and, when fewer than `limit` rows match and TMDB is configured,
+    replaced in the response by an unsaved engine run. Unsaved rows have `stored=false`.
     """
-    if refresh:
-        if tmdb is None:
-            raise no_tmdb_key()
-        rows = recommend_engine.run_recommendations(
+    wanted = genre.strip() if genre and genre.strip() else None
+    response.headers["X-Filtered-Watchlist"] = "0"
+
+    def run_unsaved(genre_name: str) -> list[Recommendation]:
+        assert tmdb is not None
+        return recommend_engine.run_recommendations(
             user_id=user.id,
             limit=limit,
             media_type=media_type,
@@ -68,8 +76,62 @@ def get_recommendations(
             now=now,
             echo=False,
             include_watchlist=include_watchlist,
+            genres=[genre_name],
+            persist=False,
         )
-        batch_id = rows[0].batch_id if rows else None
+
+    def stored_rows(batch_id: str) -> list[Recommendation]:
+        query = (
+            select(Recommendation)
+            .join(Title, Title.id == Recommendation.title_id)
+            .where(Recommendation.user_id == user.id, Recommendation.batch_id == batch_id)
+            .order_by(Recommendation.rank)
+            .limit(limit)
+        )
+        if media_type is not None:
+            query = query.where(Title.media_type == media_type)
+        if wanted is not None:
+            query = query.where(genre_clause(session, [wanted]))
+        if not include_watchlist:
+            on_list = active_watchlist_ids(session, user_id=user.id)
+            if on_list:
+                hidden = (
+                    select(func.count())
+                    .select_from(Recommendation)
+                    .where(
+                        Recommendation.user_id == user.id,
+                        Recommendation.batch_id == batch_id,
+                        Recommendation.title_id.in_(on_list),
+                    )
+                )
+                if wanted is not None:
+                    hidden = hidden.join(Title, Title.id == Recommendation.title_id).where(
+                        genre_clause(session, [wanted])
+                    )
+                response.headers["X-Filtered-Watchlist"] = str(session.scalar(hidden) or 0)
+                query = query.where(Recommendation.title_id.not_in(on_list))
+        return list(session.scalars(query))
+
+    stored = True
+    recs: list[Recommendation]
+    if refresh:
+        if tmdb is None:
+            raise no_tmdb_key()
+        if wanted is not None:
+            recs, stored = run_unsaved(wanted), False
+        else:
+            rows = recommend_engine.run_recommendations(
+                user_id=user.id,
+                limit=limit,
+                media_type=media_type,
+                session=session,
+                tmdb=tmdb,
+                config=cfg,
+                now=now,
+                echo=False,
+                include_watchlist=include_watchlist,
+            )
+            recs = stored_rows(rows[0].batch_id) if rows else []
     else:
         batch_id = session.scalar(
             select(Recommendation.batch_id)
@@ -77,33 +139,10 @@ def get_recommendations(
             .order_by(Recommendation.generated_at.desc(), Recommendation.batch_id.desc())
             .limit(1)
         )
-    response.headers["X-Filtered-Watchlist"] = "0"
-    if batch_id is None:
-        return []
-    query = (
-        select(Recommendation)
-        .join(Title, Title.id == Recommendation.title_id)
-        .where(Recommendation.user_id == user.id, Recommendation.batch_id == batch_id)
-        .order_by(Recommendation.rank)
-        .limit(limit)
-    )
-    if media_type is not None:
-        query = query.where(Title.media_type == media_type)
-    if not include_watchlist:
-        on_list = active_watchlist_ids(session, user_id=user.id)
-        if on_list:
-            hidden = (
-                select(func.count())
-                .select_from(Recommendation)
-                .where(
-                    Recommendation.user_id == user.id,
-                    Recommendation.batch_id == batch_id,
-                    Recommendation.title_id.in_(on_list),
-                )
-            )
-            response.headers["X-Filtered-Watchlist"] = str(session.scalar(hidden) or 0)
-            query = query.where(Recommendation.title_id.not_in(on_list))
-    recs = list(session.scalars(query))
+        recs = stored_rows(batch_id) if batch_id is not None else []
+        if wanted is not None and len(recs) < limit and tmdb is not None:
+            response.headers["X-Filtered-Watchlist"] = "0"
+            recs, stored = run_unsaved(wanted), False
     if sort != "default":
         tids = list(dict.fromkeys(r.title_id for r in recs))
         ordered = order_ids(tids, sort, session, user_id=user.id, now=now)
@@ -127,6 +166,7 @@ def get_recommendations(
             batch_id=r.batch_id,
             generated_at=_aware(r.generated_at),
             feedback=r.feedback,
+            stored=stored,
         )
         for r, card in zip(recs, cards, strict=True)
     ]

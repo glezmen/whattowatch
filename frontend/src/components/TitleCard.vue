@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute, useRouter } from 'vue-router'
+import { activeGenre, selectGenre } from '../genreFilter'
 import { api, type ReasonCode, type TitleCard, type UserState } from '../api/client'
 import { fmtDateTime, fmtInt, fmtRaw, mediaTypeLabel, sourceLabel } from '../format'
 import { reasonTexts } from '../reasons'
@@ -20,6 +22,8 @@ const props = defineProps<{
 const emit = defineEmits<{ 'user-change': [user: UserState] }>()
 
 const { t: tr } = useI18n()
+const route = useRoute()
+const router = useRouter()
 const user = ref<UserState>(props.title.user)
 watch(
   () => props.title.user,
@@ -59,7 +63,7 @@ const c = computed(() => t.value.community)
           <template v-if="t.media_type === 'movie' && t.runtime"> · {{ tr('card.minutes', { n: t.runtime }) }}</template>
         </p>
         <div v-if="t.genres.length" class="chips">
-          <span v-for="g in t.genres" :key="g" class="chip">{{ g }}</span>
+          <button v-for="g in t.genres" :key="g" type="button" class="chip chip-button" :class="{ active: activeGenre === g }" :title="$t('genreFilter.clickHint')" @click="selectGenre(g, router, route)">{{ g }}</button>
         </div>
       </div>
     </div>

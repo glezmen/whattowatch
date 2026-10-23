@@ -5,6 +5,8 @@ import { api, type HistoryItem, type UserState } from '../api/client'
 import { includeWatchlist } from '../appSettings'
 import DescriptionToggle from '../components/DescriptionToggle.vue'
 import FeedbackPanel from '../components/FeedbackPanel.vue'
+import GenreFilterPill from '../components/GenreFilterPill.vue'
+import { activeGenre } from '../genreFilter'
 import Pagination from '../components/Pagination.vue'
 import PosterWithOverview from '../components/PosterWithOverview.vue'
 import SortSelect from '../components/SortSelect.vue'
@@ -52,6 +54,7 @@ async function load() {
       status: status.value,
       exclude_rated: hideRated.value,
       include_watchlist: includeWatchlist.value,
+      genre: activeGenre.value || undefined,
       sort: sort.value,
       limit: LIMIT,
       offset: offset.value,
@@ -81,7 +84,7 @@ watch(hideRated, (v) => {
   offset.value = 0
   load()
 })
-watch([includeWatchlist, sort], () => {
+watch([includeWatchlist, sort, activeGenre], () => {
   clearTimeout(timer)
   offset.value = 0
   load()
@@ -123,6 +126,7 @@ function statusOf(it: HistoryItem): string {
       <option v-for="s in STATUSES" :key="s" :value="s">{{ statusLabel(s) }}</option>
     </select>
     <SortSelect v-model="sort" :default-label="t('sort.defaults.history')" />
+    <GenreFilterPill />
   </div>
   <p v-if="loading && !items.length" class="empty"><span class="spinner"></span> {{ t('common.loading') }}</p>
   <p v-else-if="!items.length" class="empty">{{ t('history.empty') }}</p>
