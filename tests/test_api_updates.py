@@ -238,3 +238,22 @@ def test_updates_genre_filter(api: ApiEnv, seeded: dict[str, int]) -> None:
     r = api.client.get("/api/updates", params={"section": "new", "genre": "vígjáték"})
     assert r.headers["X-Filtered-Watchlist"] == "0"
     assert [i["title"]["id"] for i in r.json()["items"]] == [api.ids[106]]
+
+
+def test_updates_exclude_genre(api: ApiEnv, seeded: dict[str, int]) -> None:
+    def ids(**params: object) -> list[int]:
+        r = api.client.get("/api/updates", params=params)
+        assert r.status_code == 200, r.text
+        return [i["title"]["id"] for i in r.json()["items"]]
+
+    assert ids(section="leaving", exclude_genre="krimi") == [api.ids[101]]
+    assert ids(section="leaving", exclude_genre=["krimi", "rejtely"]) == []
+    unknown = ids(section="leaving", exclude_genre="nincs ilyen műfaj")
+    assert set(unknown) == {api.ids[101], api.ids[103]}
+    combined = ids(section="leaving", genre="thriller", exclude_genre="Bűnügyi")
+    assert combined == [api.ids[101]]
+    _event(api.session, api.ids[108], "netflix", "new", TODAY - timedelta(days=2))
+    api.session.commit()
+    r = api.client.get("/api/updates", params={"section": "new", "exclude_genre": "Sci-Fi"})
+    assert r.headers["X-Filtered-Watchlist"] == "0"
+    assert api.ids[108] not in [i["title"]["id"] for i in r.json()["items"]]

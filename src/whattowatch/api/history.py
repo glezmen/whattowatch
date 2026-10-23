@@ -12,7 +12,12 @@ from whattowatch.api.cards import title_cards
 from whattowatch.api.deps import CurrentUserDep, NowDep, RecommenderConfigDep, SessionDep
 from whattowatch.api.schemas import HistoryEntry, Page, WatchEventOut
 from whattowatch.db.models import Title, TitleRating, TitleUserState, WatchEvent, WatchStatus
-from whattowatch.services.recommend.candidates import active_watchlist_ids, ids_with_genre
+from whattowatch.services.recommend.candidates import (
+    active_watchlist_ids,
+    genre_names,
+    ids_with_genre,
+    ids_without_genres,
+)
 from whattowatch.services.sorting import SortOrder, order_ids
 
 router = APIRouter(prefix="/history", tags=["history"])
@@ -41,13 +46,15 @@ def get_history(
     offset: Annotated[int, Query(ge=0)] = 0,
     sort: SortOrder = "default",
     genre: str | None = None,
+    exclude_genre: Annotated[list[str] | None, Query()] = None,
 ) -> Page[HistoryEntry]:
     """Titles with a watch event or a personal rating, by `last_watched_at` desc.
 
     `status` keeps titles with an event of that status; `source` keeps titles with an
     event or personal rating from that source. Each row lists all of the title's events.
     `exclude_rated` drops titles with any personal rating or marked not interested.
-    `genre` keeps titles of that genre (tolerant matching, see `genre_clause`).
+    `genre` keeps titles of that genre (tolerant matching, see `genre_clause`);
+    `exclude_genre` (repeatable) drops titles of any of those genres.
     Titles without any date sort last.
     Titles on an active watchlist are left out unless `include_watchlist`
     (`X-Filtered-Watchlist` = how many were hidden).
@@ -110,6 +117,9 @@ def get_history(
 
     if genre and genre.strip() and ids:
         ids = ids_with_genre(session, ids, genre)
+    excluded = genre_names(exclude_genre)
+    if excluded and ids:
+        ids = ids_without_genres(session, ids, excluded)
 
     response.headers["X-Filtered-Watchlist"] = "0"
     if not include_watchlist and ids:

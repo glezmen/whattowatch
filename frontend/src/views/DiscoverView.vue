@@ -3,12 +3,13 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { api, type MediaType, type TitleCard as Card } from '../api/client'
 import { includeWatchlist } from '../appSettings'
+import GenreFilterPill from '../components/GenreFilterPill.vue'
 import Pagination from '../components/Pagination.vue'
 import TitleCard from '../components/TitleCard.vue'
 import WatchlistToggle from '../components/WatchlistToggle.vue'
 import SortSelect from '../components/SortSelect.vue'
 import ToggleSwitch from '../components/ToggleSwitch.vue'
-import { activeGenre } from '../genreFilter'
+import { activeGenre, excludeParam, excludedGenres, excludedKey } from '../genreFilter'
 import { intlLocale } from '../i18n'
 import { PROVIDERS } from '../providers'
 import { useSortOrder } from '../sortOrder'
@@ -53,6 +54,7 @@ async function load() {
       media_type: f.media_type,
       provider: f.provider,
       genre: f.genre.trim(),
+      exclude_genre: excludeParam(),
       seen: f.showSeen ? null : false,
       include_watchlist: includeWatchlist.value,
       sort: sort.value,
@@ -81,17 +83,23 @@ watch(
     }, 300)
   },
 )
-watch([includeWatchlist, sort], () => {
+watch([includeWatchlist, sort, excludedKey], () => {
   clearTimeout(timer)
   offset.value = 0
   load()
 })
 // A genre chip click on this page fills the text filter, which stays the source of truth here.
-watch(activeGenre, (g) => {
-  if (!g) return
-  f.genre = g
-  activeGenre.value = ''
+// activeGenre stays set so the chip cycle (included -> excluded) works; typing in the box detaches it.
+watch(activeGenre, (g, old) => {
+  if (g) f.genre = g
+  else if (old && f.genre === old) f.genre = ''
 })
+watch(
+  () => f.genre,
+  (v) => {
+    if (activeGenre.value && v !== activeGenre.value) activeGenre.value = ''
+  },
+)
 onMounted(load)
 
 function goto(o: number) {
@@ -104,6 +112,7 @@ function goto(o: number) {
 <template>
   <h1>{{ $t('discover.title') }}</h1>
   <p class="small muted">{{ $t('discover.hint') }}</p>
+  <div v-if="excludedGenres.length" class="toolbar"><GenreFilterPill hide-included /></div>
   <div class="toolbar">
     <input v-model="f.q" type="search" :placeholder="$t('common.searchPlaceholder')" :aria-label="$t('common.search')" />
     <select v-model="f.media_type" :aria-label="$t('common.type')">

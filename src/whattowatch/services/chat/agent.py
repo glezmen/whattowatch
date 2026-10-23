@@ -92,6 +92,8 @@ _RULES = (
     "eszközt hívd a genres megadásával, a katalógus műfajneveivel: " + GENRE_LIST + ". "
     "Ha az eredményben unknown_genres szerepel, a valid_genres listából válassz helyes "
     "nevet, és hívd újra. "
+    "Kizáró kérésnél („ne legyen animáció”, „horror nélkül”) az exclude_genres "
+    "paramétert add meg (a genres helyett vagy mellett). "
     "Ha a total_candidates kicsi, vagy a felhasználó azt kérdezi, mi van egyáltalán "
     "(„mi van még”, „mutass többet”), használd a browse_catalog eszközt (lapozás: offset). "
     "Soha ne állítsd, hogy nincs ilyen cím, amíg a helyes (valid_genres szerinti) "

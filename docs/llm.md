@@ -51,15 +51,15 @@ elérhetőséget a `get_availability` eredményével együtt mond.
 
 Eszközök (típusos pydantic sémák, backend hajtja végre, max 6 hívás/kör):
 - `search_titles(q, media_type?)` — helyi katalógus + TMDB-keresés
-- `get_recommendations(media_type?, providers?, genres?, genres_mode?, mood_labels?,
-  include_watchlist?, seen?, limit)` — a determinisztikus motor futtatása; a típus-,
+- `get_recommendations(media_type?, providers?, genres?, genres_mode?, exclude_genres?,
+  mood_labels?, include_watchlist?, seen?, limit)` — a determinisztikus motor futtatása; a típus-,
   szolgáltató- és műfajszűrők a rangsorolás előtt szűrik a jelölteket;
   `genres_mode="all"` kevés találatnál egyszer `"any"`-vel újrapróbál
   (`genres_mode: "any"` az eredményben); `total_candidates` = a szűrőknek megfelelő
   jelöltek száma; `mood_labels` a zárt szótárból, csak előre sorol. Nem ment
   ajánlás-batch-et (`persist=False`), a főoldal batch-e változatlan.
-- `browse_catalog(genres?, genres_mode?, media_type?, providers?, sort?, seen?,
-  limit, offset)` — Felfedezés-szerű lista személyes rangsor nélkül: friss verified
+- `browse_catalog(genres?, genres_mode?, exclude_genres?, media_type?, providers?, sort?,
+  seen?, limit, offset)` — Felfedezés-szerű lista személyes rangsor nélkül: friss verified
   flatrate a bekapcsolt előfizetéseken, „nem érdekel” nélkül; `sort` = popularity |
   rating | newest; `total` a lapozáshoz. A régi `include_seen: bool` továbbra is
   elfogadott (`true` → `seen="include"`). A rendszerprompt szerint
@@ -76,6 +76,12 @@ Eszközök (típusos pydantic sémák, backend hajtja végre, max 6 hívás/kör
   ismert nevek `unknown_genres`-ben jönnek vissza a `valid_genres` listával, a
   felismertek (`genres_applied`) továbbra is szűrnek. A kanonikus műfajlista az
   eszközleírásokban és a rendszerpromptban is szerepel.
+- `exclude_genres` mindkét eszközön (max. 10): kizárt műfajok — a cím egyiket sem
+  tartalmazhatja (`not genre_clause(..., mode="any")`, ugyanaz a tűrő egyeztetés).
+  A fel nem ismert nevek nem zárnak ki semmit, és `unknown_exclude_genres`-ben jönnek
+  vissza; a felismertek `exclude_genres_applied`-ban. A rendszerprompt szerint
+  „ne legyen animáció”-típusú kérésnél ezt kell használni. A
+  `genres_mode="all"` → `"any"` újrapróbálás a kizárást megtartja.
 - `seen` mindkét eszközön: `exclude` (alap) = csak még nem látott, `include` = a
   látottak is, `only` = csak a látottak (nézési esemény, saját értékelés,
   `seen_override`). `get_recommendations` `seen="only"` esetén újranézési rangsort ad

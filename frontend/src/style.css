@@ -183,6 +183,16 @@ textarea {
   border-color: var(--accent);
   color: var(--accent-text);
 }
+.chip-button.excluded {
+  border-color: var(--danger);
+  color: var(--danger);
+  text-decoration: line-through;
+}
+.chip-button.excluded::before {
+  content: '\2212\00a0';
+  text-decoration: none;
+  display: inline-block;
+}
 .tag {
   display: inline-block;
   padding: 0 6px;

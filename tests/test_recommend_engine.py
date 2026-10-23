@@ -17,7 +17,12 @@ from whattowatch.db.models import (
     TitleRating,
     TitleUserState,
 )
-from whattowatch.services.recommend.candidates import Candidate, load_candidates
+from whattowatch.services.recommend.candidates import (
+    Candidate,
+    count_candidates,
+    ids_without_genres,
+    load_candidates,
+)
 from whattowatch.services.recommend.config import RecommenderConfig, Weights
 from whattowatch.services.recommend.engine import run_recommendations
 from whattowatch.services.users import default_user_id
@@ -353,6 +358,8 @@ def test_filtered_or_unpersisted_batches_are_not_stored(recommend_db: DB) -> Non
 
     rows = run(genres=["Thriller"])
     assert rows and all("Thriller" in r.title.genres for r in rows) and stored() == 0
+    rows = run(exclude_genres=["thrillerek"])
+    assert rows and not any("Thriller" in r.title.genres for r in rows) and stored() == 0
     assert run(providers=["hbo_max"]) and stored() == 0
     assert run(persist=False) and stored() == 0
     rows = run()
@@ -393,3 +400,32 @@ def test_seen_modes_in_engine(recommend_db: DB) -> None:
     rewatch = run_rewatch(user_id=uid, session=session, tmdb=StubTmdb(), now=NOW)
     assert [(r.rank, r.title_id) for r in rewatch] == [(1, ids[201]), (2, ids[112])]
     assert rewatch[0].personal_rating == pytest.approx(0.9)
+
+
+def test_load_candidates_exclude_genres(recommend_db: DB) -> None:
+    session, ids = recommend_db
+    uid = default_user_id(session)
+    session.get_one(Title, ids[106]).genres = ["Animációs", "Vígjáték"]
+    session.commit()
+    everything = {c.title.id for c in load_candidates(session, user_id=uid, now=NOW)}
+    assert ids[106] in everything
+
+    def got(**kw: Any) -> set[int]:
+        return {c.title.id for c in load_candidates(session, user_id=uid, now=NOW, **kw)}
+
+    assert got(exclude_genres=["animacio"]) == everything - {ids[106]}
+    no_thriller = got(exclude_genres=["Thriller", "Rejtély"])
+    assert no_thriller == {
+        tid
+        for tid in everything
+        if not {"Thriller", "Rejtély"} & set(session.get_one(Title, tid).genres or [])
+    }
+    assert got(exclude_genres=["nincs ilyen", " "]) == everything
+    assert got(genres=["Thriller"], exclude_genres=["Rejtély"]) == {
+        tid for tid in got(genres=["Thriller"]) if tid not in {ids[101], ids[113]}
+    }
+    assert count_candidates(session, user_id=uid, now=NOW, exclude_genres=["animacio"]) == (
+        count_candidates(session, user_id=uid, now=NOW) - 1
+    )
+    assert ids_without_genres(session, [ids[106], ids[107]], ["rajzfilm"]) == {ids[107]}
+    assert ids_without_genres(session, [ids[106]], []) == {ids[106]}

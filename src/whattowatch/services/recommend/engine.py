@@ -175,13 +175,14 @@ def run_recommendations(
     providers: Sequence[str] | None = None,
     persist: bool = True,
     seen: SeenMode = "exclude",
+    exclude_genres: Sequence[str] | None = None,
 ) -> list[Recommendation]:
     """Generate, persist and print one recommendation batch of `user_id`; returns its rows
     by rank.
 
     Titles on an active watchlist are excluded unless ``include_watchlist``; the flag is
     stored in each row's ``components`` under ``_include_watchlist``. ``genres`` /
-    ``genres_mode`` / ``providers`` filter the candidates before ranking
+    ``genres_mode`` / ``exclude_genres`` / ``providers`` filter the candidates before ranking
     (``load_candidates``). The batch is stored (and becomes the home page's latest batch)
     only when ``persist`` is set and no genre/provider filter is given; otherwise the rows
     are returned unsaved (availability snapshots fetched while verifying are still saved).
@@ -207,6 +208,7 @@ def run_recommendations(
             genres_mode=genres_mode,
             providers=providers,
             seen=seen,
+            exclude_genres=exclude_genres,
         )
         if cands:
             label_fn = _label_fn()
@@ -267,7 +269,8 @@ def run_recommendations(
             row.title = x.cand.title
             subs_by_title[x.cand.title.id] = x.cand.verified_subscriptions
             rows.append(row)
-        if persist and not genres and not providers and seen == "exclude":
+        filtered = bool(genres or exclude_genres or providers)
+        if persist and not filtered and seen == "exclude":
             s.add_all(rows)
         s.commit()
         if echo:
@@ -323,6 +326,7 @@ def run_rewatch(
     genres: Sequence[str] | None = None,
     genres_mode: GenresMode = "all",
     providers: Sequence[str] | None = None,
+    exclude_genres: Sequence[str] | None = None,
 ) -> list[RewatchRow]:
     """Seen titles with verified subscription availability, for rewatching: by personal
     rating desc (the app rating over imported ones; unrated last), then most recently
@@ -341,6 +345,7 @@ def run_rewatch(
         genres_mode=genres_mode,
         providers=providers,
         seen="only",
+        exclude_genres=exclude_genres,
     )
     ids = [c.title.id for c in cands]
     rating = _personal_ratings(session, ids, user_id)

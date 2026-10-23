@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal, Protocol
 
 import httpx
-from sqlalchemy import ColumnElement, Select, and_, exists, false, func, or_, select, true
+from sqlalchemy import ColumnElement, Select, and_, exists, false, func, not_, or_, select, true
 from sqlalchemy.orm import Session
 
 from whattowatch.adapters.tmdb import AvailabilitySnapshot, MediaType, TmdbError
@@ -260,6 +260,34 @@ def ids_with_genre(session: Session, ids: Iterable[int], genre: str) -> set[int]
     return out
 
 
+def genre_names(values: Iterable[str] | None) -> list[str]:
+    """Stripped, non-empty, de-duplicated genre names (query-parameter cleanup)."""
+    return list(dict.fromkeys(v.strip() for v in values or () if v.strip()))
+
+
+def exclude_genres_clause(session: Session, genres: Sequence[str]) -> ColumnElement[bool]:
+    """SQL condition dropping titles that match **any** of `genres` (`genre_clause` with
+    `mode="any"`, tolerant; unknown or blank names exclude nothing)."""
+    if not any(g.strip() for g in genres):
+        return true()
+    return not_(genre_clause(session, genres, mode="any"))
+
+
+def ids_without_genres(session: Session, ids: Iterable[int], genres: Sequence[str]) -> set[int]:
+    """The subset of title `ids` matching none of `genres` (see `exclude_genres_clause`)."""
+    unique = list(dict.fromkeys(ids))
+    if not unique:
+        return set()
+    if not any(g.strip() for g in genres):
+        return set(unique)
+    clause = exclude_genres_clause(session, genres)
+    out: set[int] = set()
+    for i in range(0, len(unique), _ID_CHUNK):
+        chunk = unique[i : i + _ID_CHUNK]
+        out.update(session.scalars(select(Title.id).where(Title.id.in_(chunk), clause)))
+    return out
+
+
 def _eligible_query(
     session: Session,
     *,
@@ -272,6 +300,7 @@ def _eligible_query(
     genres_mode: GenresMode,
     providers: Sequence[str] | None,
     seen: SeenMode = "exclude",
+    exclude_genres: Sequence[str] | None = None,
 ) -> tuple[Select[Title] | None, dict[int, tuple[str, ...]]]:
     """The candidate query (unordered, unlimited) plus verified subscriptions per title;
     `None` when nothing can be a candidate."""
@@ -315,6 +344,8 @@ def _eligible_query(
         query = query.where(Title.media_type == media_type)
     if genres:
         query = query.where(genre_clause(session, genres, genres_mode))
+    if exclude_genres:
+        query = query.where(exclude_genres_clause(session, exclude_genres))
     return query, verified
 
 
@@ -331,12 +362,14 @@ def load_candidates(
     genres_mode: GenresMode = "all",
     providers: Sequence[str] | None = None,
     seen: SeenMode = "exclude",
+    exclude_genres: Sequence[str] | None = None,
 ) -> list[Candidate]:
     """Not-rejected (by default unseen) titles with verified or estimated availability,
     by popularity.
 
     ``exclude_watchlist`` also drops titles with an active watchlist item (any source).
     ``genres`` / ``genres_mode`` filter on the title's genres (see ``genre_clause``);
+    ``exclude_genres`` drops titles matching any of these (``exclude_genres_clause``);
     ``providers`` keeps only titles with a fresh verified flatrate offer on one of these
     (enabled) subscriptions, so estimated-only titles are dropped. Filters apply before
     the ``pool`` cut, i.e. before ranking. ``seen`` = "exclude" drops seen titles (hard
@@ -354,6 +387,7 @@ def load_candidates(
         genres_mode=genres_mode,
         providers=providers,
         seen=seen,
+        exclude_genres=exclude_genres,
     )
     if query is None:
         return []
@@ -382,6 +416,7 @@ def count_candidates(
     genres_mode: GenresMode = "all",
     providers: Sequence[str] | None = None,
     seen: SeenMode = "exclude",
+    exclude_genres: Sequence[str] | None = None,
 ) -> int:
     """How many titles ``load_candidates`` would consider with these filters (no pool
     cut; estimated-only titles are counted before verification)."""
@@ -396,6 +431,7 @@ def count_candidates(
         genres_mode=genres_mode,
         providers=providers,
         seen=seen,
+        exclude_genres=exclude_genres,
     )
     if query is None:
         return 0

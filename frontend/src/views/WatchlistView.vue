@@ -2,7 +2,7 @@
 import { onMounted, ref, watch } from 'vue'
 import { api, type UserState, type WatchlistEntry } from '../api/client'
 import GenreFilterPill from '../components/GenreFilterPill.vue'
-import { activeGenre } from '../genreFilter'
+import { activeGenre, excludeParam, excludedKey } from '../genreFilter'
 import Pagination from '../components/Pagination.vue'
 import TitleCard from '../components/TitleCard.vue'
 import SortSelect from '../components/SortSelect.vue'
@@ -45,6 +45,7 @@ async function load() {
       available: available.value || undefined,
       hide_watched: hideWatched.value || undefined,
       genre: activeGenre.value || undefined,
+      exclude_genre: excludeParam(),
       sort: sort.value,
       limit: LIMIT,
       offset: offset.value,
@@ -73,7 +74,7 @@ watch(hideWatched, (v) => {
     // storage unavailable
   }
 })
-watch([available, source, hideWatched, sort, activeGenre], () => {
+watch([available, source, hideWatched, sort, activeGenre, excludedKey], () => {
   offset.value = 0
   load()
 })

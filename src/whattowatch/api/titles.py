@@ -61,7 +61,12 @@ from whattowatch.providers import BY_KEY
 from whattowatch.services import deep_links
 from whattowatch.services import feedback as fb
 from whattowatch.services.catalog import ensure_title
-from whattowatch.services.recommend.candidates import active_watchlist_ids, genre_clause
+from whattowatch.services.recommend.candidates import (
+    active_watchlist_ids,
+    exclude_genres_clause,
+    genre_clause,
+    genre_names,
+)
 from whattowatch.services.sorting import SortOrder, order_ids
 from whattowatch.services.title_resolution import SameTitleError, reassign_title
 
@@ -106,6 +111,7 @@ def list_titles(
     media_type: MediaType | None = None,
     provider: str | None = None,
     genre: str | None = None,
+    exclude_genre: Annotated[list[str] | None, Query()] = None,
     seen: bool | None = None,
     include_unverified: bool = False,
     include_watchlist: bool = False,
@@ -117,6 +123,8 @@ def list_titles(
 
     Titles on an active watchlist are left out unless `include_watchlist`;
     `X-Filtered-Watchlist` carries how many matched the other filters but were hidden.
+    `exclude_genre` (repeatable) drops titles of any of those genres (tolerant matching;
+    unknown names exclude nothing).
     """
     if provider is not None and provider not in BY_KEY:
         raise HTTPException(status_code=422, detail=f"Ismeretlen szolgáltató: {provider}")
@@ -151,6 +159,9 @@ def list_titles(
         )
     if genre:
         query = query.where(genre_clause(session, [genre]))
+    excluded = genre_names(exclude_genre)
+    if excluded:
+        query = query.where(exclude_genres_clause(session, excluded))
     if seen is not None:
         seen_ids = seen_title_ids(session, user_id=user.id)
         query = query.where(Title.id.in_(seen_ids) if seen else Title.id.not_in(seen_ids))

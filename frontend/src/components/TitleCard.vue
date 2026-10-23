@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import { activeGenre, selectGenre } from '../genreFilter'
+import { chipHintKey, chipState, selectGenre } from '../genreFilter'
 import { api, type ReasonCode, type TitleCard, type UserState } from '../api/client'
 import { fmtDateTime, fmtInt, fmtRaw, mediaTypeLabel, sourceLabel } from '../format'
 import { reasonTexts } from '../reasons'
@@ -63,7 +63,7 @@ const c = computed(() => t.value.community)
           <template v-if="t.media_type === 'movie' && t.runtime"> · {{ tr('card.minutes', { n: t.runtime }) }}</template>
         </p>
         <div v-if="t.genres.length" class="chips">
-          <button v-for="g in t.genres" :key="g" type="button" class="chip chip-button" :class="{ active: activeGenre === g }" :title="$t('genreFilter.clickHint')" @click="selectGenre(g, router, route)">{{ g }}</button>
+          <button v-for="g in t.genres" :key="g" type="button" class="chip chip-button" :class="{ active: chipState(g) === 'included', excluded: chipState(g) === 'excluded' }" :title="$t(chipHintKey(g, route))" @click="selectGenre(g, router, route)">{{ g }}</button>
         </div>
       </div>
     </div>

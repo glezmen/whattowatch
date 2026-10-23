@@ -85,6 +85,11 @@ _GENRES_DESC = (
     f"Műfajnevek a katalógusból: {GENRE_LIST}. Elírást, ragozott alakot (akciós) és angol "
     "nevet (comedy) is felismer; a fel nem ismerteket unknown_genres listázza."
 )
+_EXCLUDE_GENRES_DESC = (
+    "Kizárt műfajok: ezek egyikét sem tartalmazhatja a cím (pl. „ne legyen animáció” → "
+    '["Animáció"]). Ugyanaz a tűrő egyeztetés, mint a genres-nél; a fel nem ismerteket '
+    "unknown_exclude_genres listázza, azok nem zárnak ki semmit."
+)
 _SEEN_DESC = (
     "exclude = csak még nem látott címek (alap), include = a látottak is, "
     "only = csak a már látott címek (újranézés)."
@@ -127,6 +132,9 @@ class GetRecommendationsIn(_SeenIn):
         description="all = minden műfaj egyezzen (alap; kevés találatnál automatikusan any), "
         "any = legalább egy.",
     )
+    exclude_genres: list[str] | None = Field(
+        default=None, max_length=10, description=_EXCLUDE_GENRES_DESC
+    )
     mood_labels: list[str] | None = Field(
         default=None,
         max_length=10,
@@ -147,6 +155,9 @@ class GetRecommendationsIn(_SeenIn):
 class BrowseCatalogIn(_SeenIn):
     genres: list[str] | None = Field(default=None, max_length=10, description=_GENRES_DESC)
     genres_mode: GenresMode = Field(default="all", description="all = mind, any = legalább egy.")
+    exclude_genres: list[str] | None = Field(
+        default=None, max_length=10, description=_EXCLUDE_GENRES_DESC
+    )
     media_type: MediaType | None = Field(default=None, description="movie = film, tv = sorozat.")
     providers: list[str] | None = Field(
         default=None, max_length=6, description="Szolgáltatókulcsok; legalább egyiken legyen."
@@ -376,6 +387,19 @@ def _genre_filter(requested: list[str] | None) -> tuple[list[str], dict[str, Any
     return mapped, out
 
 
+def _exclude_filter(requested: list[str] | None) -> tuple[list[str], dict[str, Any]]:
+    """Mappable genres to exclude plus `exclude_genres_applied` / `unknown_exclude_genres`
+    (unknown names exclude nothing)."""
+    mapped, unknown = resolve_genres(requested or [])
+    out: dict[str, Any] = {}
+    if mapped:
+        out["exclude_genres_applied"] = [display(g) for g in mapped]
+    if unknown:
+        out["unknown_exclude_genres"] = unknown
+        out["valid_genres"] = list(CANONICAL_GENRES)
+    return mapped, out
+
+
 def _personal(session: Session, ids: Sequence[int], ctx: ToolContext) -> dict[int, dict[str, Any]]:
     """`seen`, `stars` (the app's own 0.5-5 rating) and `last_watched_at` per title."""
     from whattowatch.api.cards import user_states
@@ -398,6 +422,7 @@ def get_recommendations(
 ) -> dict[str, Any]:
     """Run the deterministic engine with the genre/provider filters applied to the
     candidates before ranking (the batch is not stored as the home page's batch).
+    `exclude_genres` drops titles of any of those genres (unknown names exclude nothing).
 
     Genre names are matched tolerantly (`services.genres`); unmappable ones are reported
     in `unknown_genres` and dropped, the rest still filter. `genres` with mode "all"
@@ -416,6 +441,7 @@ def get_recommendations(
     moods = [m for m in (args.mood_labels or []) if m in known_labels]
     ignored = [m for m in (args.mood_labels or []) if m not in known_labels]
     genres, genre_out = _genre_filter(args.genres)
+    excluded, exclude_out = _exclude_filter(args.exclude_genres)
     rewatch = args.seen == "only"
     source = tmdb if tmdb is not None else _OfflineTmdb()
 
@@ -427,6 +453,7 @@ def get_recommendations(
             "genres": genres or None,
             "genres_mode": mode,
             "providers": args.providers or None,
+            "exclude_genres": excluded or None,
         }
         total = count_candidates(
             session,
@@ -499,6 +526,7 @@ def get_recommendations(
     ]
     out: dict[str, Any] = {"items": items, "total_candidates": total, "seen": args.seen}
     out.update(genre_out)
+    out.update(exclude_out)
     if genres:
         out["genres_mode"] = mode
     if strict_total is not None:
@@ -527,12 +555,14 @@ def browse_catalog(
     from whattowatch.api.cards import fresh_verified_title_ids
     from whattowatch.services.recommend.candidates import (
         active_watchlist_ids,
+        exclude_genres_clause,
         genre_clause,
         not_interested_ids,
         seen_title_ids,
     )
 
     genres, genre_out = _genre_filter(args.genres)
+    excluded, exclude_out = _exclude_filter(args.exclude_genres)
     eligible = fresh_verified_title_ids(
         session,
         user_id=ctx.user_id,
@@ -549,6 +579,8 @@ def browse_catalog(
         query = query.where(Title.media_type == args.media_type)
     if genres:
         query = query.where(genre_clause(session, genres, args.genres_mode))
+    if excluded:
+        query = query.where(exclude_genres_clause(session, excluded))
     order = {
         "popularity": (Title.popularity.desc().nulls_last(),),
         "rating": (Title.vote_average.desc().nulls_last(), Title.vote_count.desc().nulls_last()),
@@ -579,6 +611,7 @@ def browse_catalog(
         "seen": args.seen,
     }
     out.update(genre_out)
+    out.update(exclude_out)
     if not items:
         out["note"] = "Nincs a feltételeknek megfelelő, ellenőrzötten elérhető cím."
     return out
@@ -754,12 +787,13 @@ TOOLS: tuple[Tool, ...] = (
         "ha minden műfajra kevés a találat, automatikusan legalább egy műfaj egyezésével "
         "keres (genres_mode=any). Műfajok: " + GENRE_LIST + " (elírást, ragozást, angol "
         "nevet is felismer; a fel nem ismerteket unknown_genres + valid_genres jelzi, a "
-        "többivel szűr). seen: exclude = csak még nem látott (alap), include = a látottak "
-        "is, only = csak a már látott címek, saját értékelés, majd utolsó megnézés szerint "
-        "(újranézés). Minden tételben seen, stars, last_watched_at. total_candidates = a "
-        "szűrőknek megfelelő jelöltek száma. A mood_labels csak előnyt ad, nem szűr. A "
-        "watchlisten lévő címek alapból kimaradnak; include_watchlist=true esetén "
-        "szerepelhetnek.",
+        "többivel szűr). exclude_genres: kizárt műfajok, egyiküket sem tartalmazhatja a cím "
+        "(„ne legyen animáció”, „horror nélkül”). seen: exclude = csak még nem látott "
+        "(alap), include = a látottak is, only = csak a már látott címek, saját értékelés, "
+        "majd utolsó megnézés szerint (újranézés). Minden tételben seen, stars, "
+        "last_watched_at. total_candidates = a szűrőknek megfelelő jelöltek száma. "
+        "A mood_labels csak előnyt ad, nem szűr. A watchlisten lévő címek alapból "
+        "kimaradnak; include_watchlist=true esetén szerepelhetnek.",
         GetRecommendationsIn,
         get_recommendations,
     ),
@@ -770,6 +804,7 @@ TOOLS: tuple[Tool, ...] = (
         "népszerűség/pontszám/újdonság szerint, lapozással (limit, offset). Műfajok: "
         + GENRE_LIST
         + " (tűrő egyeztetés; unknown_genres + valid_genres jelzi a fel nem ismerteket). "
+        "exclude_genres = kizárt műfajok („ne legyen animáció”). "
         "A 'nem érdekel' címek kimaradnak; seen: exclude = látottak nélkül (alap), "
         "include = a látottak is, only = csak a látottak. total = az összes találat száma.",
         BrowseCatalogIn,

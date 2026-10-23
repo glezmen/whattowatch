@@ -224,3 +224,64 @@ def test_refresh_with_genre_leaves_batch(api_tmdb: ApiEnv, monkeypatch: pytest.M
     assert set(api_tmdb.session.scalars(select(Recommendation.batch_id))) == {"b1"}
     latest = api_tmdb.client.get("/api/recommendations", params={"limit": 5}).json()
     assert [i["batch_id"] for i in latest] == ["b1", "b1"] and len(calls) == 1
+
+
+def test_exclude_genre_filters_stored_batch(
+    api_tmdb: ApiEnv, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = _spy_engine(monkeypatch)
+    _batch(api_tmdb, "b1", [101, 106, 102, 103], at_offset_h=0)
+    inv = {v: k for k, v in api_tmdb.ids.items()}
+
+    def get(**params: Any) -> list[dict[str, Any]]:
+        r = api_tmdb.client.get("/api/recommendations", params=params)
+        assert r.status_code == 200, r.text
+        items: list[dict[str, Any]] = r.json()
+        return items
+
+    items = get(exclude_genre="thrillerek", limit=1)
+    assert [inv[i["title"]["id"]] for i in items] == [106] and items[0]["stored"]
+    items = get(genre="Thriller", exclude_genre=["rejtély", "krimi"], limit=1)
+    assert [inv[i["title"]["id"]] for i in items] == [102] and items[0]["stored"]
+    items = get(exclude_genre=["nincs ilyen műfaj", " "], limit=4)
+    assert [inv[i["title"]["id"]] for i in items] == [101, 106, 102, 103]
+    assert calls == []
+
+
+def test_exclude_genre_short_batch_runs_engine_unsaved(
+    api_tmdb: ApiEnv, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = _spy_engine(monkeypatch)
+    _batch(api_tmdb, "b1", [101, 106, 102], at_offset_h=0)
+    params: dict[str, Any] = {"exclude_genre": ["thriller", ""], "genre": "comedy", "limit": 5}
+    r = api_tmdb.client.get("/api/recommendations", params=params)
+    assert r.status_code == 200, r.text
+    assert len(calls) == 1
+    kw = calls[0]
+    assert kw["exclude_genres"] == ["thriller"] and kw["genres"] == ["comedy"]
+    assert kw["persist"] is False
+    items = r.json()
+    inv = {v: k for k, v in api_tmdb.ids.items()}
+    assert [inv[i["title"]["id"]] for i in items] == [106] and items[0]["stored"] is False
+    assert set(api_tmdb.session.scalars(select(Recommendation.batch_id))) == {"b1"}
+
+    calls.clear()
+    r = api_tmdb.client.get("/api/recommendations", params={"exclude_genre": "Vígjáték"})
+    assert len(calls) == 1 and calls[0]["genres"] is None
+    assert calls[0]["exclude_genres"] == ["Vígjáték"]
+    assert r.json() and all("Vígjáték" not in i["title"]["genres"] for i in r.json())
+    assert not any(i["stored"] for i in r.json())
+
+
+def test_refresh_with_exclude_genre_leaves_batch(
+    api_tmdb: ApiEnv, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = _spy_engine(monkeypatch)
+    _batch(api_tmdb, "b1", [101, 106], at_offset_h=0)
+    params: dict[str, Any] = {"refresh": True, "exclude_genre": "Thriller", "limit": 2}
+    r = api_tmdb.client.get("/api/recommendations", params=params)
+    assert r.status_code == 200, r.text
+    assert len(calls) == 1 and calls[0]["exclude_genres"] == ["Thriller"]
+    assert calls[0]["persist"] is False
+    assert not any(i["stored"] for i in r.json())
+    assert set(api_tmdb.session.scalars(select(Recommendation.batch_id))) == {"b1"}

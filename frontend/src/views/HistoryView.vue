@@ -6,7 +6,7 @@ import { includeWatchlist } from '../appSettings'
 import DescriptionToggle from '../components/DescriptionToggle.vue'
 import FeedbackPanel from '../components/FeedbackPanel.vue'
 import GenreFilterPill from '../components/GenreFilterPill.vue'
-import { activeGenre } from '../genreFilter'
+import { activeGenre, excludeParam, excludedKey } from '../genreFilter'
 import Pagination from '../components/Pagination.vue'
 import PosterWithOverview from '../components/PosterWithOverview.vue'
 import SortSelect from '../components/SortSelect.vue'
@@ -55,6 +55,7 @@ async function load() {
       exclude_rated: hideRated.value,
       include_watchlist: includeWatchlist.value,
       genre: activeGenre.value || undefined,
+      exclude_genre: excludeParam(),
       sort: sort.value,
       limit: LIMIT,
       offset: offset.value,
@@ -84,7 +85,7 @@ watch(hideRated, (v) => {
   offset.value = 0
   load()
 })
-watch([includeWatchlist, sort, activeGenre], () => {
+watch([includeWatchlist, sort, activeGenre, excludedKey], () => {
   clearTimeout(timer)
   offset.value = 0
   load()

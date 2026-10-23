@@ -7,7 +7,7 @@ from datetime import timedelta
 from conftest import NOW, ApiEnv
 from sqlalchemy import select
 
-from whattowatch.db.models import Availability, Provider, TitleRating, WatchEvent
+from whattowatch.db.models import Availability, Provider, Title, TitleRating, WatchEvent
 from whattowatch.services.users import default_user_id
 
 POPULAR_VERIFIED = [201, 101, 106, 102, 112, 103, 104, 113, 105, 107, 114]
@@ -406,3 +406,56 @@ def test_history_genre_filter(api: ApiEnv) -> None:
     assert r.headers["X-Filtered-Watchlist"] == "1" and r.json()["total"] == 0
     r = api.client.get("/api/history", params={"genre": "Dráma"})
     assert r.headers["X-Filtered-Watchlist"] == "0" and r.json()["total"] == 2
+
+
+def test_titles_exclude_genre(api: ApiEnv) -> None:
+    api.session.get_one(Title, api.ids[106]).genres = ["Animációs", "Vígjáték"]
+    api.session.commit()
+    inv = {v: k for k, v in api.ids.items()}
+
+    def ids(**params: object) -> list[int]:
+        r = api.client.get("/api/titles", params=params)
+        assert r.status_code == 200, r.text
+        assert r.json()["total"] == len(r.json()["items"])
+        return [inv[i["id"]] for i in r.json()["items"]]
+
+    base = ids()
+    thrillers = {201, 101, 102, 112, 103, 104, 113, 105}
+    assert 106 in base
+    assert ids(exclude_genre="animacio") == [i for i in base if i != 106]  # tolerant
+    both = ids(exclude_genre=["Animáció", "thrillerek"])
+    assert both == [i for i in base if i != 106 and i not in thrillers]
+    assert ids(exclude_genre="nincs ilyen műfaj") == base  # unknown excludes nothing
+    assert ids(exclude_genre=["", "  "]) == base
+    assert ids(genre="Thriller", exclude_genre="rejtély") == [102, 112, 103, 104, 105]
+
+
+def test_watchlist_and_history_exclude_genre(api: ApiEnv) -> None:
+    inv = {v: k for k, v in api.ids.items()}
+
+    def wl(**params: object) -> list[int]:
+        r = api.client.get("/api/watchlist", params=params)
+        assert r.status_code == 200, r.text
+        return sorted(inv[i["title"]["id"]] for i in r.json()["items"])
+
+    assert wl() == [107, 108]
+    assert wl(exclude_genre="drama") == [108]
+    assert wl(exclude_genre=["dráma", "sci fi"]) == []
+    assert wl(exclude_genre="nincs ilyen műfaj") == [107, 108]
+    assert wl(genre="Dráma", exclude_genre="sci-fi") == [107]
+
+    def hist(**params: object) -> set[int]:
+        r = api.client.get("/api/history", params=params)
+        assert r.status_code == 200, r.text
+        return {inv[i["title"]["id"]] for i in r.json()["items"]}
+
+    base = hist()
+    assert {204, 205} <= base
+    assert hist(exclude_genre="comedy") == base - {204, 205}
+    assert hist(exclude_genre="xyzzy") == base
+    assert hist(genre="rejtély", exclude_genre="Dráma") == {113, 201}
+    api.client.put(f"/api/titles/{api.ids[108]}/rating", json={"stars": 4})  # stays on list
+    r = api.client.get("/api/history", params={"exclude_genre": "Sci-Fi"})
+    assert r.headers["X-Filtered-Watchlist"] == "0"  # excluded before the watchlist count
+    r = api.client.get("/api/history", params={"exclude_genre": "Dráma"})
+    assert r.headers["X-Filtered-Watchlist"] == "1"

@@ -720,6 +720,10 @@
   "genreFilter": {
     "label": "Műfaj",
     "clear": "Műfajszűrő törlése",
-    "clickHint": "Csak ez a műfaj"
+    "clickHint": "Csak ez a műfaj",
+    "excludedLabel": "Kizárva",
+    "removeExcluded": "{genre} kizárásának törlése",
+    "clickExclude": "Kattints a kizáráshoz",
+    "clickClear": "Kattints a szűrő törléséhez"
   }
 }

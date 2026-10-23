@@ -6,7 +6,7 @@ import DaysSelector from '../components/DaysSelector.vue'
 import SortSelect from '../components/SortSelect.vue'
 import { useSortOrder } from '../sortOrder'
 import GenreFilterPill from '../components/GenreFilterPill.vue'
-import { activeGenre } from '../genreFilter'
+import { activeGenre, excludedGenres } from '../genreFilter'
 import WatchlistToggle from '../components/WatchlistToggle.vue'
 
 const days = ref(31)
@@ -45,6 +45,7 @@ const sections: UpdateSection[] = ['new', 'upcoming', 'new_season', 'watchlist_a
     :days="days"
     :sort="sort"
     :genre="activeGenre || undefined"
+    :exclude-genres="excludedGenres"
     @status="onStatus"
     @filtered="(n: number) => (filtered[s] = n)"
   />

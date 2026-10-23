@@ -10,7 +10,7 @@ import TitleCard from '../components/TitleCard.vue'
 import SortSelect from '../components/SortSelect.vue'
 import WatchlistToggle from '../components/WatchlistToggle.vue'
 import { fmtDateTime } from '../format'
-import { activeGenre } from '../genreFilter'
+import { activeGenre, excludeParam, excludedKey } from '../genreFilter'
 import { useSortOrder } from '../sortOrder'
 
 const { t } = useI18n()
@@ -30,7 +30,7 @@ async function load(refresh = false) {
   try {
     const p = {
       limit: 20, media_type: mediaType.value, include_watchlist: includeWatchlist.value, sort: sort.value,
-      genre: activeGenre.value || undefined,
+      genre: activeGenre.value || undefined, exclude_genre: excludeParam(),
     }
     const res = refresh ? await api.refreshRecommendations(p) : await api.getRecommendations(p)
     items.value = res.items
@@ -46,7 +46,7 @@ async function load(refresh = false) {
 
 watch(mediaType, () => load())
 watch(sort, () => void load(false))
-watch(activeGenre, () => void load(false))
+watch([activeGenre, excludedKey], () => void load(false))
 onMounted(() => {
   void load()
   void loadSubscriptions()

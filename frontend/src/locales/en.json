@@ -720,6 +720,10 @@
   "genreFilter": {
     "label": "Genre",
     "clear": "Clear genre filter",
-    "clickHint": "Only this genre"
+    "clickHint": "Only this genre",
+    "excludedLabel": "Excluded",
+    "removeExcluded": "Stop excluding {genre}",
+    "clickExclude": "Click to exclude",
+    "clickClear": "Click to clear"
   }
 }

@@ -568,12 +568,14 @@ export interface RestoreResult {
   note?: string | null
 }
 
-type Query = Record<string, string | number | boolean | null | undefined>
+type Query = Record<string, string | number | boolean | string[] | null | undefined>
 
 function qs(params: Query): string {
   const sp = new URLSearchParams()
   for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined && v !== null && v !== '') sp.set(k, String(v))
+    if (Array.isArray(v)) {
+      for (const x of v) if (x !== '') sp.append(k, x)
+    } else if (v !== undefined && v !== null && v !== '') sp.set(k, String(v))
   }
   const s = sp.toString()
   return s ? `?${s}` : ''
@@ -683,10 +685,10 @@ async function getWithFilteredWatchlist<T extends object>(path: string): Promise
 const enc = encodeURIComponent
 
 export const api = {
-  getRecommendations: (p: { limit?: number; media_type?: MediaType | ''; include_watchlist?: boolean; sort?: SortOrder; genre?: string }) =>
+  getRecommendations: (p: { limit?: number; media_type?: MediaType | ''; include_watchlist?: boolean; sort?: SortOrder; genre?: string; exclude_genre?: string[] }) =>
     fetchRecommendations({ ...p, refresh: undefined }),
   /** refresh=true: generates a new batch (slow). */
-  refreshRecommendations: (p: { limit?: number; media_type?: MediaType | ''; include_watchlist?: boolean; sort?: SortOrder; genre?: string }) =>
+  refreshRecommendations: (p: { limit?: number; media_type?: MediaType | ''; include_watchlist?: boolean; sort?: SortOrder; genre?: string; exclude_genre?: string[] }) =>
     fetchRecommendations({ ...p, refresh: true }),
   recommendationFeedback: (batchId: string, titleId: number, feedback: 'clicked' | 'dismissed' | 'watched') =>
     request<unknown>('POST', `/recommendations/${enc(batchId)}/${titleId}/feedback`, { feedback }),
@@ -697,6 +699,7 @@ export const api = {
     media_type?: MediaType | ''
     provider?: string
     genre?: string
+    exclude_genre?: string[]
     seen?: boolean | null
     include_watchlist?: boolean
     sort?: SortOrder
@@ -721,6 +724,7 @@ export const api = {
     available?: boolean
     hide_watched?: boolean
     genre?: string
+    exclude_genre?: string[]
     sort?: SortOrder
     limit?: number
     offset?: number
@@ -734,6 +738,7 @@ export const api = {
     source?: string
     exclude_rated?: boolean
     genre?: string
+    exclude_genre?: string[]
     include_watchlist?: boolean
     sort?: SortOrder
     limit?: number
@@ -759,9 +764,9 @@ export const api = {
   postChat: (messages: ChatMessage[], provider?: LlmProviderName | string) =>
     request<ChatResult>('POST', '/chat', { messages, provider: provider || undefined }),
 
-  getUpdates: (section: UpdateSection, days = 31, limit = 50, includeWatchlist = false, opts: { sort?: SortOrder; genre?: string } = {}) =>
+  getUpdates: (section: UpdateSection, days = 31, limit = 50, includeWatchlist = false, opts: { sort?: SortOrder; genre?: string; exclude_genre?: string[] } = {}) =>
     getWithFilteredWatchlist<UpdatesResponse>(
-      `/updates${qs({ section, days, limit, include_watchlist: includeWatchlist, sort: opts.sort, genre: opts.genre })}`,
+      `/updates${qs({ section, days, limit, include_watchlist: includeWatchlist, sort: opts.sort, genre: opts.genre, exclude_genre: opts.exclude_genre })}`,
     ),
   getNotifications: (unread = true, limit = 50) =>
     request<NotificationItem[]>('GET', `/notifications${qs({ unread, limit })}`),

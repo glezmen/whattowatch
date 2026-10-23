@@ -412,3 +412,56 @@ def test_get_recommendations_seen_only_rewatch_ranking(recommend_db: Env) -> Non
         recommend_db, "get_recommendations", {"seen": "only", "genres": ["thriller"]}, tmdb=None
     )
     assert [inv[i["title_id"]] for i in thr["items"]] == [201, 202, 101, 112]
+
+
+def test_tools_exclude_genres(recommend_db: Env, monkeypatch: pytest.MonkeyPatch) -> None:
+    session, ids = recommend_db
+    session.get_one(Title, ids[106]).genres = ["Animációs", "Vígjáték"]
+    session.commit()
+    inv = {v: k for k, v in ids.items()}
+    from whattowatch.services.recommend import engine
+
+    calls: list[dict[str, Any]] = []
+    real = engine.run_recommendations
+
+    def spy(**kw: Any) -> Any:
+        calls.append(dict(kw))
+        return real(**kw)
+
+    monkeypatch.setattr(engine, "run_recommendations", spy)
+    args = {"exclude_genres": ["animacio", "xyzzy"], "limit": 20}
+    out = run(recommend_db, "get_recommendations", args, tmdb=StubTmdb())
+    assert calls and calls[0]["exclude_genres"] == ["animacio"]
+    assert calls[0]["persist"] is False
+    shown = {inv[i["title_id"]] for i in out["items"]}
+    assert shown and 106 not in shown
+    assert out["exclude_genres_applied"] == ["Animációs"]
+    assert out["unknown_exclude_genres"] == ["xyzzy"]
+    assert not session.scalars(select(Recommendation.id)).all()
+
+    full = run(recommend_db, "browse_catalog", {"limit": 30})
+    out = run(recommend_db, "browse_catalog", {"exclude_genres": ["rajzfilm"], "limit": 30})
+    assert 106 in {inv[i["title_id"]] for i in full["items"]}
+    assert 106 not in {inv[i["title_id"]] for i in out["items"]}
+    assert out["total"] == full["total"] - 1
+    both = run(
+        recommend_db,
+        "browse_catalog",
+        {"genres": ["Thriller"], "exclude_genres": ["Rejtély"], "limit": 30},
+    )
+    assert both["items"] and all(
+        "Thriller" in i["genres"] and "Rejtély" not in i["genres"] for i in both["items"]
+    )
+    too_many = {"exclude_genres": [f"g{i}" for i in range(11)]}
+    assert "error" in run(recommend_db, "browse_catalog", too_many)
+
+
+def test_exclude_genres_in_descriptions_and_prompt() -> None:
+    from whattowatch.services.chat import agent
+    from whattowatch.services.chat.tools import tool_specs
+
+    specs = {s.name: s for s in tool_specs()}
+    for name in ("get_recommendations", "browse_catalog"):
+        assert "exclude_genres" in specs[name].parameters["properties"]
+        assert "exclude_genres" in specs[name].description
+    assert "exclude_genres" in agent.system_prompt(NOW)

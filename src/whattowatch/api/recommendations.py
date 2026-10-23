@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Response
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, select
 
 from whattowatch.api.cards import title_cards
 from whattowatch.api.deps import (
@@ -25,7 +25,12 @@ from whattowatch.api.schemas import (
 )
 from whattowatch.db.models import MediaType, Recommendation, Title
 from whattowatch.services.recommend import engine as recommend_engine
-from whattowatch.services.recommend.candidates import active_watchlist_ids, genre_clause
+from whattowatch.services.recommend.candidates import (
+    active_watchlist_ids,
+    exclude_genres_clause,
+    genre_clause,
+    genre_names,
+)
 from whattowatch.services.sorting import SortOrder, order_ids
 
 router = APIRouter(prefix="/recommendations", tags=["recommendations"])
@@ -49,6 +54,7 @@ def get_recommendations(
     include_watchlist: bool = False,
     sort: SortOrder = "default",
     genre: str | None = None,
+    exclude_genre: Annotated[list[str] | None, Query()] = None,
 ) -> list[RecommendationItem]:
     """The latest batch (by `generated_at`); `refresh=true` generates a new one first.
 
@@ -60,11 +66,23 @@ def get_recommendations(
     `refresh` the engine ranks that genre's candidates unsaved; otherwise the stored batch is
     filtered to the genre and, when fewer than `limit` rows match and TMDB is configured,
     replaced in the response by an unsaved engine run. Unsaved rows have `stored=false`.
+    `exclude_genre` (repeatable; drops titles of any of those genres, unknown names
+    exclude nothing) is handled the same way, alone or together with `genre`.
     """
     wanted = genre.strip() if genre and genre.strip() else None
+    excluded = genre_names(exclude_genre)
+    filtered = wanted is not None or bool(excluded)
     response.headers["X-Filtered-Watchlist"] = "0"
 
-    def run_unsaved(genre_name: str) -> list[Recommendation]:
+    def genre_filter() -> list[ColumnElement[bool]]:
+        clauses: list[ColumnElement[bool]] = []
+        if wanted is not None:
+            clauses.append(genre_clause(session, [wanted]))
+        if excluded:
+            clauses.append(exclude_genres_clause(session, excluded))
+        return clauses
+
+    def run_unsaved() -> list[Recommendation]:
         assert tmdb is not None
         return recommend_engine.run_recommendations(
             user_id=user.id,
@@ -76,7 +94,8 @@ def get_recommendations(
             now=now,
             echo=False,
             include_watchlist=include_watchlist,
-            genres=[genre_name],
+            genres=[wanted] if wanted is not None else None,
+            exclude_genres=excluded or None,
             persist=False,
         )
 
@@ -90,8 +109,7 @@ def get_recommendations(
         )
         if media_type is not None:
             query = query.where(Title.media_type == media_type)
-        if wanted is not None:
-            query = query.where(genre_clause(session, [wanted]))
+        query = query.where(*genre_filter())
         if not include_watchlist:
             on_list = active_watchlist_ids(session, user_id=user.id)
             if on_list:
@@ -104,9 +122,9 @@ def get_recommendations(
                         Recommendation.title_id.in_(on_list),
                     )
                 )
-                if wanted is not None:
+                if filtered:
                     hidden = hidden.join(Title, Title.id == Recommendation.title_id).where(
-                        genre_clause(session, [wanted])
+                        *genre_filter()
                     )
                 response.headers["X-Filtered-Watchlist"] = str(session.scalar(hidden) or 0)
                 query = query.where(Recommendation.title_id.not_in(on_list))
@@ -117,8 +135,8 @@ def get_recommendations(
     if refresh:
         if tmdb is None:
             raise no_tmdb_key()
-        if wanted is not None:
-            recs, stored = run_unsaved(wanted), False
+        if filtered:
+            recs, stored = run_unsaved(), False
         else:
             rows = recommend_engine.run_recommendations(
                 user_id=user.id,
@@ -140,9 +158,9 @@ def get_recommendations(
             .limit(1)
         )
         recs = stored_rows(batch_id) if batch_id is not None else []
-        if wanted is not None and len(recs) < limit and tmdb is not None:
+        if filtered and len(recs) < limit and tmdb is not None:
             response.headers["X-Filtered-Watchlist"] = "0"
-            recs, stored = run_unsaved(wanted), False
+            recs, stored = run_unsaved(), False
     if sort != "default":
         tids = list(dict.fromkeys(r.title_id for r in recs))
         ordered = order_ids(tids, sort, session, user_id=user.id, now=now)
