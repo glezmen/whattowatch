@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { logout, me } from '../auth'
+import { accountsMode, logout, me } from '../auth'
 import ProfileAvatar from './ProfileAvatar.vue'
 
 const open = ref(false)
@@ -47,7 +47,9 @@ function switchProfile() {
         {{ $t('profile.signedInAs', { name: me.name }) }}
         <span v-if="me.is_admin" class="tag">{{ $t('profile.admin') }}</span>
       </p>
-      <button type="button" role="menuitem" class="pm-item" @click="switchProfile">{{ $t('profile.switch') }}</button>
+      <button type="button" role="menuitem" class="pm-item" @click="switchProfile">
+        {{ accountsMode ? $t('auth.signOut') : $t('profile.switch') }}
+      </button>
       <RouterLink
         role="menuitem"
         class="pm-item"

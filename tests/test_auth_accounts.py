@@ -388,7 +388,8 @@ def test_cli_recovery(migrated_session: Session) -> None:
     runner = CliRunner()
     get_settings.cache_clear()
     try:
-        admin = list_users(migrated_session)[0]
+        admin = create_user(migrated_session, "Profil 1", is_admin=True)
+        migrated_session.commit()
         name = admin.name
         refused = runner.invoke(app, ["users", "set-mode", "accounts"])
         assert refused.exit_code == 1  # no admin has a password yet

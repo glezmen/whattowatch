@@ -1,6 +1,6 @@
 # Többfelhasználós működés — terv (M8/A és M9/B)
 
-Állapot: **A (M8) kész, 2026-10-21** — profilválasztó, opcionális jelszó, admin-jogok, elkülönítési és route-guard tesztek (433 teszt). **B (M9) backendje részben kész, 2026-10-23** — fiókos mód önregisztrációval (az első fiók a családi admin), név + jelszó bejelentkezés, IP- és profilonkénti korlát, munkamenet-érvénytelenítés jelszócserekor, admin- és CLI-eszközök (561 teszt); a felület, az OAuth, a CSRF-token és a profilonkénti export még hátravan.
+Állapot: **A (M8) kész, 2026-10-21** — profilválasztó, opcionális jelszó, admin-jogok, elkülönítési és route-guard tesztek (433 teszt). **B (M9) kész, 2026-10-23** — fiókos mód önregisztrációval (az első fiók a családi admin), név + jelszó bejelentkezés és regisztrációs oldal, IP- és profilonkénti korlát, munkamenet-érvénytelenítés jelszócserekor, admin „Család” szekció (regisztráció nyitása/zárása, meghívás, ideiglenes jelszó), CLI-eszközök (570 teszt); friss adatbázis nem kap alapértelmezett profilt. Az OAuth, a CSRF-token és a profilonkénti export még hátravan.
 (profilválasztó induláskor, opcionális jelszó), majd **B) valódi fiókok
 hálózaton**. Az A szakasz úgy épül, hogy a B ne igényeljen újabb sémamódosítást.
 

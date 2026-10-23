@@ -96,7 +96,14 @@
       "no_profile": "No profile selected.",
       "wrong_password": "Wrong password.",
       "too_many_attempts": "Too many attempts, wait 30 s.",
-      "admin_required": "This needs an admin profile."
+      "admin_required": "This needs an admin profile.",
+      "password_required": "A password is required for this.",
+      "invalid_credentials": "Wrong name or password.",
+      "registration_closed": "Registration is closed.",
+      "name_taken": "This name is already taken.",
+      "invalid_password": "The password is too short (at least 8 characters).",
+      "invalid_name": "Invalid name.",
+      "wrong_auth_mode": "This is not available in the current sign-in mode."
     }
   },
   "pagination": {
@@ -725,5 +732,64 @@
     "removeExcluded": "Stop excluding {genre}",
     "clickExclude": "Click to exclude",
     "clickClear": "Click to clear"
+  },
+  "auth": {
+    "name": "Name",
+    "password": "Password",
+    "signOut": "Sign out",
+    "tooMany": "Too many attempts, wait {n} s.",
+    "passwordTooShort": "At least {n} characters.",
+    "wrongMode": "The app has switched sign-in mode. Reload the page.",
+    "login": {
+      "title": "Sign in",
+      "submit": "Sign in",
+      "invalidCredentials": "Wrong name or password.",
+      "noAccount": "No account yet?",
+      "registerLink": "Register",
+      "welcome": "Welcome!",
+      "firstNote": "There are no accounts yet. The first account to register becomes the family admin: it manages API keys, backups and the other members.",
+      "registerFirst": "Create the first account"
+    },
+    "register": {
+      "title": "Register",
+      "submit": "Register and sign in",
+      "firstAdmin": "You will be the family admin.",
+      "adminCreates": "You are signed in as admin: this creates a new member and you stay signed in. The new member signs in with this password.",
+      "closed": "Registration is closed. Ask the family admin to create an account for you or to open registration.",
+      "toLogin": "Back to sign in",
+      "haveAccount": "Already have an account?",
+      "loginLink": "Sign in",
+      "errors": {
+        "name_taken": "This name is already taken.",
+        "invalid_password": "The password must be at least {n} characters.",
+        "invalid_name": "Invalid name.",
+        "registration_closed": "Registration is closed."
+      }
+    }
+  },
+  "family": {
+    "title": "Family",
+    "you": "(you)",
+    "lastActive": "Last active: {when}",
+    "neverActive": "Never signed in",
+    "noPassword": "No password",
+    "tempPassword": "Temporary password",
+    "tempPasswordFor": "Temporary password for {name}",
+    "tempPasswordHint": "At least {n} characters. Hand it over and ask them to change it in Settings.",
+    "setTemp": "Set",
+    "tempPasswordSet": "Temporary password set for {name}.",
+    "newMember": "New member",
+    "create": "Create member",
+    "memberCreated": "“{name}” created.",
+    "registrationOpen": "Registration open",
+    "registrationOpenHint": "When on, anyone can create an account from the sign-in page. Close it once everyone is in.",
+    "modeTitle": "Sign-in mode",
+    "accountsMode": "Accounts mode (registration + sign-in)",
+    "accountsModeHint": "Instead of the profile picker, people sign in with their name and a required password; new members can register while registration is open.",
+    "modeNeedsPassword": "Set a password for your own profile first (Password, above) to switch to accounts mode.",
+    "passwordRequired": "A password is required in accounts mode.",
+    "ownPasswordMissing": "A password is required in accounts mode, but your profile has none yet. Set one.",
+    "setPassword": "Set password",
+    "passwordSavedOtherSessions": "Password saved. Other devices need to sign in again."
   }
 }

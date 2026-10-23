@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { api, type UserProfile } from '../api/client'
-import { AVATAR_COLORS, isApiError, me, safeNext, selectProfile } from '../auth'
+import { accountsMode, AVATAR_COLORS, isApiError, LOGIN_PATH, me, safeNext, selectProfile } from '../auth'
 import ColorPalette from '../components/ColorPalette.vue'
 import LanguageSwitch from '../components/LanguageSwitch.vue'
 import ProfileAvatar from '../components/ProfileAvatar.vue'
@@ -12,6 +12,7 @@ const LOCK_SECONDS = 30
 
 const { t } = useI18n()
 const route = useRoute()
+const router = useRouter()
 const next = computed(() => safeNext(route.query.next))
 
 const users = ref<UserProfile[]>([])
@@ -134,6 +135,11 @@ async function create() {
 }
 
 onMounted(async () => {
+  // Accounts mode has no picker (the router guard normally redirects already).
+  if (accountsMode.value) {
+    void router.replace({ path: LOGIN_PATH, query: route.query })
+    return
+  }
   ticker = setInterval(() => (now.value = Date.now()), 1000)
   await load()
   if (firstProfile.value) openCreate()

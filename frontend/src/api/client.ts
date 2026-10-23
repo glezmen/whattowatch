@@ -427,9 +427,25 @@ export interface AppSettings {
   netflix_profile_name?: string | null
   netflix_profiles: string[]
   onboarding_done: boolean
+  /** Global, admin-only (writable by the admin only). */
+  auth_mode?: AuthMode
+  /** Global, admin-only: accounts mode lets new people register while true. */
+  registration_open?: boolean
 }
 
-export type AppSettingsPatch = Partial<Pick<AppSettings, 'ui_language' | 'netflix_profile_name' | 'onboarding_done'>>
+export type AppSettingsPatch = Partial<
+  Pick<AppSettings, 'ui_language' | 'netflix_profile_name' | 'onboarding_done' | 'auth_mode' | 'registration_open'>
+>
+
+/** household = profile picker with optional passwords; accounts = sign-in + self-registration. */
+export type AuthMode = 'household' | 'accounts'
+
+/** GET /auth/status (public). */
+export interface AuthStatus {
+  mode: AuthMode
+  registration_open: boolean
+  has_users: boolean
+}
 
 export type ImportSourceKey = 'imdb_ratings' | 'imdb_watchlist' | 'netflix_export' | 'prime_video_export' | string
 
@@ -512,10 +528,13 @@ export class ApiError extends Error {
   status: number
   /** `detail_code` from the response body, when the backend sends one. */
   code: string | null
-  constructor(status: number, message: string, code: string | null = null) {
+  /** `retry_after` (seconds) from the body of a 429 `too_many_attempts`, when sent. */
+  retryAfter: number | null
+  constructor(status: number, message: string, code: string | null = null, retryAfter: number | null = null) {
     super(message)
     this.status = status
     this.code = code
+    this.retryAfter = retryAfter
   }
 }
 
@@ -649,7 +668,9 @@ async function requestWithHeaders<T>(
     } else if (!quiet) {
       pushError(msg)
     }
-    throw new ApiError(res.status, msg, code)
+    const ra =
+      data && typeof data === 'object' && 'retry_after' in data ? Number((data as { retry_after: unknown }).retry_after) : NaN
+    throw new ApiError(res.status, msg, code, Number.isFinite(ra) && ra > 0 ? Math.ceil(ra) : null)
   }
   return { data: data as T, headers: res.headers }
 }
@@ -863,6 +884,13 @@ export const api = {
   setPassword: (body: { current_password?: string | null; new_password: string | null }) =>
     request<unknown>('PUT', '/users/me/password', body, true),
   deleteUser: (id: number, confirm: string) => request<unknown>('DELETE', `/users/${id}`, { confirm }, true),
+  /** Admin: set a temporary password for a member (accounts mode). */
+  setUserPassword: (id: number, newPassword: string) =>
+    request<unknown>('PUT', `/users/${id}/password`, { new_password: newPassword }, true),
+  getAuthStatus: () => request<AuthStatus>('GET', '/auth/status', undefined, true),
+  register: (body: { name: string; password: string; avatar_color?: string | null }) =>
+    request<Me>('POST', '/auth/register', body, true),
+  login: (name: string, password: string) => request<Me>('POST', '/auth/login', { name, password }, true),
   resetUserPassword: (id: number) => request<unknown>('POST', `/users/${id}/password/reset`, undefined, true),
 
   health: () => request<unknown>('GET', '/health', undefined, true),

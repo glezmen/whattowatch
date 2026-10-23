@@ -4,7 +4,8 @@ Revision ID: 0013
 Revises: 0012
 
 Data: the first user (admin) is named after the `netflix_profile_name` app setting if it
-is set, else "Profil 1"; every existing personal row, the per-user app settings and the
+is set, else "Profil 1" (only when the database already holds personal data; a fresh
+database gets no profile); every existing personal row, the per-user app settings and the
 `providers` switches/profiles (moved to `user_subscriptions`) are assigned to it.
 Global sync runs (catalog, SA changes, refresh) keep `user_id` NULL.
 
@@ -125,6 +126,23 @@ def _in_list(values: tuple[str, ...]) -> str:
     return "(" + ", ".join(f"'{v}'" for v in values) + ")"
 
 
+def _has_personal_data(bind: sa.Connection) -> bool:
+    """True on an existing single-user install (any personal row, app setting or import
+    run). A fresh database gets no default profile: the first profile is created from the
+    picker (household mode) or by the first registration (accounts mode, docs/multiuser.md)."""
+    for table in (*PERSONAL, "app_settings"):
+        if bind.execute(sa.text(f"SELECT 1 FROM {table} LIMIT 1")).scalar() is not None:
+            return True
+    return (
+        bind.execute(
+            sa.text(
+                f"SELECT 1 FROM sync_runs WHERE source NOT IN {_in_list(GLOBAL_SYNC_SOURCES)} LIMIT 1"
+            )
+        ).scalar()
+        is not None
+    )
+
+
 def _user_fk_batch(table: str, *, nullable: bool) -> None:
     with op.batch_alter_table(table, recreate="always", naming_convention=NAMING) as batch:
         if not nullable:
@@ -156,26 +174,29 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("name", name="uq_users_name"),
     )
-    bind.execute(
-        sa.text(
-            "INSERT INTO users (name, avatar_color, is_admin, created_at)"
-            " VALUES (:name, :color, 1, :now)"
-        ),
-        {"name": _first_user_name(bind), "color": FIRST_AVATAR, "now": datetime.now(UTC)},
-    )
-    uid = bind.execute(sa.text("SELECT id FROM users")).scalar_one()
+    uid: int | None = None
+    if _has_personal_data(bind):
+        bind.execute(
+            sa.text(
+                "INSERT INTO users (name, avatar_color, is_admin, created_at)"
+                " VALUES (:name, :color, 1, :now)"
+            ),
+            {"name": _first_user_name(bind), "color": FIRST_AVATAR, "now": datetime.now(UTC)},
+        )
+        uid = bind.execute(sa.text("SELECT id FROM users")).scalar_one()
 
     for table in (*PERSONAL, "sync_runs"):
         op.add_column(table, sa.Column("user_id", sa.Integer(), nullable=True))
-    for table in PERSONAL:
-        bind.execute(sa.text(f"UPDATE {table} SET user_id = :uid"), {"uid": uid})
-    bind.execute(
-        sa.text(
-            "UPDATE sync_runs SET user_id = :uid"
-            f" WHERE source NOT IN {_in_list(GLOBAL_SYNC_SOURCES)}"
-        ),
-        {"uid": uid},
-    )
+    if uid is not None:
+        for table in PERSONAL:
+            bind.execute(sa.text(f"UPDATE {table} SET user_id = :uid"), {"uid": uid})
+        bind.execute(
+            sa.text(
+                "UPDATE sync_runs SET user_id = :uid"
+                f" WHERE source NOT IN {_in_list(GLOBAL_SYNC_SOURCES)}"
+            ),
+            {"uid": uid},
+        )
     for table in PERSONAL:
         _user_fk_batch(table, nullable=False)
     _user_fk_batch("sync_runs", nullable=True)
@@ -230,15 +251,16 @@ def upgrade() -> None:
         sa.UniqueConstraint("user_id", "provider_key", name="uq_user_subscriptions_user_provider"),
     )
     op.create_index("ix_user_subscriptions_user_id", "user_subscriptions", ["user_id"])
-    bind.execute(
-        sa.text(
-            "INSERT INTO user_subscriptions"
-            " (user_id, provider_key, enabled, selected_profile, profiles)"
-            " SELECT :uid, key, enabled, selected_profile, profiles FROM providers"
-            " WHERE kind = 'streaming' ORDER BY id"
-        ),
-        {"uid": uid},
-    )
+    if uid is not None:
+        bind.execute(
+            sa.text(
+                "INSERT INTO user_subscriptions"
+                " (user_id, provider_key, enabled, selected_profile, profiles)"
+                " SELECT :uid, key, enabled, selected_profile, profiles FROM providers"
+                " WHERE kind = 'streaming' ORDER BY id"
+            ),
+            {"uid": uid},
+        )
     with op.batch_alter_table("providers", recreate="always") as batch:
         batch.drop_column("profiles")
         batch.drop_column("selected_profile")

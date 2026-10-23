@@ -1,6 +1,6 @@
 # Implementációs terv és architektúradöntések
 
-Állapot: **M0–M8 kész** (2026-10-21). Nyitott tételek a fájl végén.. A specifikáció: `docs/spec.md`.
+Állapot: **M0–M9 kész** (M9 fiókos mód önregisztrációval: 2026-10-23). Nyitott tételek a fájl végén. A specifikáció: `docs/spec.md`.
 
 ## Architektúradöntések
 
@@ -105,7 +105,7 @@ Kulcskonvenciók:
 - [x] süti alapú munkamenet, `/auth/*`, `/users/*`, opcionális profiljelszó (argon2), zárolás 5 hibás próba után, admin-jogok a kulcsokhoz/mentéshez/frissítéshez
 - [x] profilválasztó induláskor, fejléc-profilmenü, Beállítások → Profil, export-profilok hozzárendelése app-profilokhoz
 - [x] elkülönítési tesztek, route-guard teszt (minden `/api` végpont sütit kér, kivéve a felsoroltak); `v0.1-single-user` tag az előző állapotra
-- terv és M9 (hálózati fiókok): `docs/multiuser.md`
+- M8 profilok és M9 fiókos mód (regisztráció, bejelentkezés, családi admin): `docs/multiuser.md`
 
 ## Nyitott tételek
 - a feltöltési feladatok hibaszövegei és a backend `detail` üzenetei csak magyarul jönnek; i18n-kódosítás később

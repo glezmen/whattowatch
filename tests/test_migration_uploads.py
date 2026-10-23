@@ -58,6 +58,10 @@ def test_0014_backfills_stored_files(tmp_path: Path, monkeypatch: pytest.MonkeyP
     engine = create_engine(f"sqlite:///{db_file}")
     sha = hashlib.sha256(csv_bytes).hexdigest()
     with engine.begin() as conn:
+        # 0013 creates no profile on a fresh database: seed the admin and a member here.
+        conn.execute(
+            text("INSERT INTO users (name, avatar_color, is_admin) VALUES ('A', '#000', 1)")
+        )
         conn.execute(
             text("INSERT INTO users (name, avatar_color, is_admin) VALUES ('B', '#000', 0)")
         )

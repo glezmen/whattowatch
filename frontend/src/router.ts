@@ -16,6 +16,17 @@ export const router = createRouter({
       component: () => import('./views/ProfileView.vue'),
       meta: { titleKey: 'profile.pickerTitle', bare: true },
     },
+    // accounts mode: public sign-in and self-registration (no nav)
+    {
+      path: '/belepes',
+      component: () => import('./views/LoginView.vue'),
+      meta: { titleKey: 'auth.login.title', bare: true },
+    },
+    {
+      path: '/regisztracio',
+      component: () => import('./views/RegisterView.vue'),
+      meta: { titleKey: 'auth.register.title', bare: true },
+    },
     { path: '/', component: HomeView, meta: { titleKey: 'nav.home', genreList: true } },
     { path: '/cim/:id(\\d+)', component: () => import('./views/TitleView.vue'), meta: { titleKey: 'titlePage.fallbackTitle' } },
     { path: '/felfedezes', component: () => import('./views/DiscoverView.vue'), meta: { titleKey: 'nav.discover', genreList: true } },

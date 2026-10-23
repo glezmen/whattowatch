@@ -96,7 +96,14 @@
       "no_profile": "Nincs kiválasztott profil.",
       "wrong_password": "Hibás jelszó.",
       "too_many_attempts": "Túl sok próbálkozás, várj 30 mp-et.",
-      "admin_required": "Ehhez adminisztrátori profil kell."
+      "admin_required": "Ehhez adminisztrátori profil kell.",
+      "password_required": "Ehhez jelszó szükséges.",
+      "invalid_credentials": "Hibás név vagy jelszó.",
+      "registration_closed": "A regisztráció zárva van.",
+      "name_taken": "Ez a név már foglalt.",
+      "invalid_password": "A jelszó túl rövid (legalább 8 karakter).",
+      "invalid_name": "Érvénytelen név.",
+      "wrong_auth_mode": "Ez a művelet a jelenlegi belépési módban nem érhető el."
     }
   },
   "pagination": {
@@ -725,5 +732,64 @@
     "removeExcluded": "{genre} kizárásának törlése",
     "clickExclude": "Kattints a kizáráshoz",
     "clickClear": "Kattints a szűrő törléséhez"
+  },
+  "auth": {
+    "name": "Név",
+    "password": "Jelszó",
+    "signOut": "Kijelentkezés",
+    "tooMany": "Túl sok próbálkozás, várj {n} mp-et.",
+    "passwordTooShort": "Legalább {n} karakter.",
+    "wrongMode": "Az alkalmazás közben módot váltott. Töltsd újra az oldalt.",
+    "login": {
+      "title": "Bejelentkezés",
+      "submit": "Bejelentkezés",
+      "invalidCredentials": "Hibás név vagy jelszó.",
+      "noAccount": "Még nincs fiókod?",
+      "registerLink": "Regisztráció",
+      "welcome": "Üdv!",
+      "firstNote": "Még nincs egyetlen fiók sem. Az első regisztrált fiók lesz a család adminja: ő kezeli az API-kulcsokat, a mentéseket és a többi tagot.",
+      "registerFirst": "Első fiók létrehozása"
+    },
+    "register": {
+      "title": "Regisztráció",
+      "submit": "Regisztráció és belépés",
+      "firstAdmin": "Te leszel a család adminja.",
+      "adminCreates": "Adminként vagy belépve: ez új tagot hoz létre, te belépve maradsz. Az új tag ezzel a jelszóval jelentkezik be.",
+      "closed": "A regisztráció jelenleg zárva van. Kérd meg a család adminját, hogy hozzon létre neked fiókot, vagy nyissa meg a regisztrációt.",
+      "toLogin": "Vissza a bejelentkezéshez",
+      "haveAccount": "Van már fiókod?",
+      "loginLink": "Bejelentkezés",
+      "errors": {
+        "name_taken": "Ez a név már foglalt.",
+        "invalid_password": "A jelszó legalább {n} karakter legyen.",
+        "invalid_name": "Érvénytelen név.",
+        "registration_closed": "A regisztráció zárva van."
+      }
+    }
+  },
+  "family": {
+    "title": "Család",
+    "you": "(te)",
+    "lastActive": "Utoljára aktív: {when}",
+    "neverActive": "Még nem lépett be",
+    "noPassword": "Nincs jelszava",
+    "tempPassword": "Ideiglenes jelszó",
+    "tempPasswordFor": "{name} ideiglenes jelszava",
+    "tempPasswordHint": "Legalább {n} karakter. Add át neki, és kérd meg, hogy a Beállításokban cserélje le.",
+    "setTemp": "Beállítás",
+    "tempPasswordSet": "{name} ideiglenes jelszava beállítva.",
+    "newMember": "Új tag",
+    "create": "Tag létrehozása",
+    "memberCreated": "„{name}” létrehozva.",
+    "registrationOpen": "Regisztráció nyitva",
+    "registrationOpenHint": "Bekapcsolva bárki fiókot hozhat létre a bejelentkezési oldalról. Ha mindenki megvan, zárd le.",
+    "modeTitle": "Belépési mód",
+    "accountsMode": "Fiókos mód (regisztráció + bejelentkezés)",
+    "accountsModeHint": "Profilválasztó helyett névvel és kötelező jelszóval lehet belépni; új tagok regisztrálhatnak, amíg nyitva van.",
+    "modeNeedsPassword": "Fiókos módhoz előbb állíts be jelszót a saját profilodhoz (fent, Jelszó).",
+    "passwordRequired": "Fiókos módban a jelszó kötelező.",
+    "ownPasswordMissing": "Fiókos módban kötelező a jelszó, de a profilodnak még nincs. Állíts be egyet.",
+    "setPassword": "Jelszó beállítása",
+    "passwordSavedOtherSessions": "Jelszó elmentve. A többi eszközön újra be kell jelentkezni."
   }
 }

@@ -187,11 +187,13 @@ def test_0013_without_netflix_profile_names_first_user_profil_1(
         assert conn.execute(text("SELECT DISTINCT user_id FROM watch_events")).scalar() == 1
 
 
-def test_0013_fresh_database_gets_profil_1(db: tuple[Config, Engine]) -> None:
+def test_0013_fresh_database_gets_no_profile(db: tuple[Config, Engine]) -> None:
+    """A fresh install has no default profile: the first profile comes from the picker or
+    the first registration (which must become the family admin)."""
     cfg, engine = db
     command.upgrade(cfg, "head")
     with engine.begin() as conn:
-        assert _users(conn) == [(1, "Profil 1", True)]
+        assert _users(conn) == []
 
 
 def test_0013_in_a_multi_revision_run_keeps_child_rows(db: tuple[Config, Engine]) -> None:
