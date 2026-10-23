@@ -143,9 +143,45 @@ A password per profile is optional (argon2id hash; at least 4 characters); an ad
 a forgotten one. The browser keeps the choice in a signed, `HttpOnly` cookie (`wtw_session`,
 30 days); every `/api` call except health, the profile list, first-profile creation and
 `/api/auth/*` needs it. The signing key `SESSION_SECRET` is generated into `.env` on the
-first start when missing (changing it signs everyone out). `WTW_NETWORK_MODE=true` marks the
-cookie `Secure` (HTTPS only); it is meant for the later network-accounts mode, leave it off for
-local use.
+first start when missing (changing it signs everyone out). The cookie is marked `Secure`
+whenever the request arrived over HTTPS (directly, or `X-Forwarded-Proto: https` from a reverse
+proxy on the same machine). Changing a password ends every other session of that profile.
+
+### Accounts mode
+
+For a family spread over several devices, switch the sign-in mode from the household picker to
+**accounts**: people register themselves with a name and a password (at least 8 characters)
+and sign in with name + password; the profile list is no longer public.
+
+- Enable it with `WTW_AUTH_MODE=accounts` in `.env` (the old `WTW_NETWORK_MODE=true` still
+  works as an alias), or as an admin in Settings (stored in the database, wins over `.env`).
+  Switching from the UI requires that your own profile has a password.
+- **The first registered account becomes the family admin.** The admin can close
+  self-registration (Settings, or `wtw users registration closed`) and invite members with a
+  temporary password instead; members can change it themselves.
+- Existing profiles without a password cannot sign in in accounts mode until the admin sets a
+  temporary password for them (Settings → profiles, or `wtw users set-password <name>`).
+- Failed sign-ins are throttled per profile (5 failures → 30 s wait) and per client IP
+  (20 failures per 10 minutes); registrations are limited to 20 per IP per 10 minutes.
+- Anything beyond the home LAN should go through HTTPS with a reverse proxy in front of the
+  app, e.g. [Caddy](https://caddyserver.com) with an automatic certificate:
+
+  ```
+  example.com {
+      reverse_proxy 127.0.0.1:8000
+  }
+  ```
+
+  The app trusts `X-Forwarded-For` / `X-Forwarded-Proto` only from a loopback proxy. Plain
+  HTTP on the LAN works too (the cookie is then not `Secure`).
+
+Locked out of the UI? Recover from the command line on the server:
+
+```bash
+uv run wtw users set-password <name>               # prompts twice, hidden
+uv run wtw users set-mode household|accounts       # accounts needs an admin with a password
+uv run wtw users registration open|closed
+```
 
 ## Backup and restore
 

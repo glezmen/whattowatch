@@ -118,6 +118,8 @@ class User(Base):
         DateTime(timezone=True), server_default=func.current_timestamp(), default=_utcnow
     )
     last_active_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Set on every password change/reset (0015); older session cookies are rejected.
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Title(TimestampMixin, Base):

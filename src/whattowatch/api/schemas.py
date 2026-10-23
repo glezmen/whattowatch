@@ -442,11 +442,15 @@ class AppSettingsOut(BaseModel):
 
 
 class AppSettingsIn(BaseModel):
-    """Partial update: a missing key is unchanged; `netflix_profile_name: null` clears."""
+    """Partial update: a missing key is unchanged; `netflix_profile_name: null` clears.
+    `auth_mode` and `registration_open` are global and admin-only (read them back from
+    the public `GET /auth/status`)."""
 
     ui_language: Literal["hu", "en"] | None = None
     netflix_profile_name: str | None = Field(default=None, max_length=200)
     onboarding_done: bool | None = None
+    auth_mode: Literal["household", "accounts"] | None = None
+    registration_open: bool | None = None
 
 
 class RefreshScheduleOut(BaseModel):
@@ -694,6 +698,27 @@ class UsersOut(BaseModel):
 class AuthSelectIn(BaseModel):
     user_id: int
     password: str | None = None
+
+
+class AuthStatusOut(BaseModel):
+    mode: Literal["household", "accounts"]
+    registration_open: bool
+    has_users: bool
+
+
+class AuthRegisterIn(BaseModel):
+    name: str = Field(max_length=200)
+    password: str = Field(max_length=256)
+    avatar_color: str | None = None
+
+
+class AuthLoginIn(BaseModel):
+    name: str = Field(max_length=200)
+    password: str = Field(max_length=256)
+
+
+class AdminPasswordIn(BaseModel):
+    new_password: str = Field(max_length=256)
 
 
 class UserCreateIn(BaseModel):
