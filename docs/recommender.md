@@ -86,3 +86,32 @@ politika, család, túlélés, tudomány, történelmi…). Minden címke:
 Szintetikus fixture-DB: 20 cím, 6 értékelés, 3 watchlist-tétel, 2 szöveges
 visszajelzés. Elvárt rangsor rögzítve; a súlyok változtatása determinisztikusan
 változtatja. Kizárások és hidegindítás külön tesztben.
+
+## 7. Hasonló címek (címoldal)
+
+`GET /titles/{id}/similar` (`services/similar.py`), a címoldal alján „Hasonló műsorok”.
+LLM nélkül, determinisztikusan.
+
+- **Jelöltek**: ugyanaz a jelöltkészlet, mint az ajánlóé (`load_candidates`,
+  `seen="exclude"`, legfeljebb 3000 cím népszerűség szerint): a profil bekapcsolt
+  előfizetésein friss verified elérhetőségű (a csak becsült címek kimaradnak, mert itt
+  nincs TMDB-megerősítés), nem látott, nem elutasított címek; a
+  forráscím kimarad. Bekapcsolt előfizetés nélkül az eredmény üres.
+- **Komponensek** (mind 0..1) és súlyok (összesen 1):
+  - `genre` 0.55: a műfajhalmazok Jaccard-átfedése (kis-nagybetű független, pontos név);
+    0, ha bármelyik oldalon nincs műfaj;
+  - `media_type` 0.15: azonos típus = 1;
+  - `language` 0.10: azonos eredeti nyelv = 1;
+  - `year` 0.10: `1 - min(|év_a - év_b|, 30) / 30`, ismeretlen év = 0;
+  - `quality` 0.10: `external_score` (§3: TMDB-átlag / 10, csak elég szavazattal).
+  - `tmdb`: 1, ha a TMDB `/{media_type}/{id}/recommendations` első oldala (max. 20 cím)
+    tartalmazza a jelöltet; ilyenkor a pontszám +0.5 (`TMDB_BOOST`).
+- **Szűrés**: csak `genre > 0` vagy TMDB-ajánlott jelölt marad.
+- **Sorrend**: pontszám csökkenő, majd népszerűség csökkenő (ismeretlen a végén), majd
+  `title.id` növekvő; az első `limit` (alap 12, max. 24).
+- **TMDB**: forráscímenként egy hívás, az eredmény 24 órán át memóriában gyorsítótárazva
+  (monoton óra), így az oldal frissítése nem hívja újra. TMDB-kulcs nélkül vagy hibánál
+  nincs bónusz, `tmdb_used: false`; a hiba nem kerül a gyorsítótárba, és nem dob hibát.
+- **Indoklás** (`reason_codes`, ebben a sorrendben, ha érvényes): `tmdb_recommended`,
+  `shared_genres` (közös műfajok), `same_language`, `close_year` (≤ 3 év különbség),
+  `external_score` (`quality ≥ 0.6`).

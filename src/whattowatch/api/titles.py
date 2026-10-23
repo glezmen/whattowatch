@@ -37,11 +37,14 @@ from whattowatch.api.schemas import (
     LinksResult,
     Page,
     RatingIn,
+    ReasonCode,
     ReassignOut,
     ReassignResponse,
     ResolutionRef,
     SeenIn,
     Signal,
+    SimilarTitleItem,
+    SimilarTitlesOut,
     TitleCard,
     TitleDetail,
     TitleRef,
@@ -67,6 +70,7 @@ from whattowatch.services.recommend.candidates import (
     genre_clause,
     genre_names,
 )
+from whattowatch.services.similar import SIMILAR_LIMIT_DEFAULT, SIMILAR_LIMIT_MAX, similar_titles
 from whattowatch.services.sorting import SortOrder, order_ids
 from whattowatch.services.title_resolution import SameTitleError, reassign_title
 
@@ -259,6 +263,44 @@ def _import_texts(session: Session, resolution_ids: list[int], user_id: int) -> 
         counts[key] = counts.get(key, 0) + 1
     ordered = sorted(counts.items(), key=lambda kv: -kv[1])
     return [ImportText(source=s, title_text=t, rows=n) for (s, t), n in ordered]
+
+
+@router.get("/titles/{title_id}/similar", response_model=SimilarTitlesOut)
+def get_similar_titles(
+    title_id: int,
+    session: SessionDep,
+    user: CurrentUserDep,
+    cfg: RecommenderConfigDep,
+    now: NowDep,
+    tmdb: OptionalTmdbDep,
+    limit: Annotated[int, Query(ge=1, le=SIMILAR_LIMIT_MAX)] = SIMILAR_LIMIT_DEFAULT,
+) -> SimilarTitlesOut:
+    """Deterministic "similar titles" for the title page (docs/recommender.md §7): unseen
+    titles available on the user's subscriptions; works without a TMDB key."""
+    source = get_title_or_404(session, title_id)
+    items, tmdb_used = similar_titles(
+        session, source, user_id=user.id, now=now, cfg=cfg, tmdb=tmdb, limit=limit
+    )
+    cards = title_cards(
+        session,
+        [it.title for it in items],
+        user_id=user.id,
+        now=now,
+        max_age_days=cfg.verified_max_age_days,
+    )
+    return SimilarTitlesOut(
+        items=[
+            SimilarTitleItem(
+                title=card,
+                score=it.score,
+                components=it.components,
+                reason_codes=[ReasonCode(**c) for c in it.reason_codes],
+                tmdb_recommended=it.tmdb_recommended,
+            )
+            for it, card in zip(items, cards, strict=True)
+        ],
+        tmdb_used=tmdb_used,
+    )
 
 
 @router.post("/titles/{title_id}/reassign", response_model=ReassignResponse)

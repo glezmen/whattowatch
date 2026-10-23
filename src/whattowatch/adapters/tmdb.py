@@ -357,6 +357,12 @@ class TmdbClient:
         )
         return parse_details(data, media_type)
 
+    def recommendations(self, media_type: MediaType, tmdb_id: int) -> list[SearchHit]:
+        """`GET /{media_type}/{id}/recommendations`, first page only (up to 20 hits of the
+        same media type as the source)."""
+        data = self._get(f"/{media_type}/{tmdb_id}/recommendations", {"language": self.language})
+        return [_hit(r, media_type) for r in data.get("results", []) if r.get("id") is not None]
+
     def watch_providers(self, media_type: MediaType, tmdb_id: int) -> AvailabilitySnapshot:
         data = self._get(f"/{media_type}/{tmdb_id}/watch/providers")
         regional = (data.get("results") or {}).get(self.region) or {}

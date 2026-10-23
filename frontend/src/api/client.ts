@@ -90,6 +90,21 @@ export interface ReasonCode {
   params?: Record<string, unknown> | null
 }
 
+/** One row of `GET /titles/{id}/similar` (deterministic, docs/recommender.md §7). */
+export interface SimilarTitleItem {
+  title: TitleCard
+  score: number
+  components: Record<string, number>
+  reason_codes: ReasonCode[]
+  tmdb_recommended: boolean
+}
+
+export interface SimilarTitles {
+  items: SimilarTitleItem[]
+  /** False without a TMDB key or when the TMDB lookup failed (no boost applied). */
+  tmdb_used: boolean
+}
+
 export interface RecommendationItem {
   rank: number
   score: number
@@ -722,6 +737,9 @@ export const api = {
     request<unknown>('POST', `/recommendations/${enc(batchId)}/${titleId}/feedback`, { feedback }),
 
   getTitle: (id: number, quiet = false) => request<TitleDetails>('GET', `/titles/${id}`, undefined, quiet),
+  /** Quiet: the title page hides the section on failure instead of showing a toast. */
+  getSimilarTitles: (id: number, limit = 12) =>
+    request<SimilarTitles>('GET', `/titles/${id}/similar?limit=${limit}`, undefined, true),
   listTitles: (p: {
     q?: string
     media_type?: MediaType | ''

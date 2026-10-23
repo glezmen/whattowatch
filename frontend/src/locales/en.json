@@ -172,7 +172,11 @@
     "abandoned": "You stopped watching this earlier.",
     "external_score": "Well rated by TMDB users.",
     "external_score_value": "Well rated by TMDB users ({score}/10).",
-    "available": "Streaming on your services."
+    "available": "Streaming on your services.",
+    "shared_genres": "Shared genres: {genres}.",
+    "tmdb_recommended": "TMDB also recommends this for it.",
+    "same_language": "Same language.",
+    "close_year": "Similar era."
   },
   "bell": {
     "label": "Notifications",
@@ -601,7 +605,7 @@
       "anthropic": "Anthropic (cloud)",
       "openai": "OpenAI (cloud)",
       "claude_code": "Claude Code (CLI)",
-    "copilot": "GitHub Copilot (CLI)"
+      "copilot": "GitHub Copilot (CLI)"
     },
     "newChat": "New conversation",
     "backendNote": "Titles and availability come from the backend; the model only words the answer.",
@@ -712,7 +716,9 @@
       "done": "Moved to: {title}",
       "current": "current",
       "tmdbLink": "TMDB"
-    }
+    },
+    "similar": "Similar titles",
+    "similarHint": "Titles in a similar style that you can watch now and have not seen yet."
   },
   "bellSection": {
     "leaving": "Leaving",

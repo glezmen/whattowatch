@@ -172,7 +172,11 @@
     "abandoned": "Korábban félbehagytad.",
     "external_score": "Jól értékelt a TMDB közönségénél.",
     "external_score_value": "Jól értékelt a TMDB közönségénél ({score}/10).",
-    "available": "Elérhető az előfizetéseiden."
+    "available": "Elérhető az előfizetéseiden.",
+    "shared_genres": "Közös műfaj: {genres}.",
+    "tmdb_recommended": "A TMDB is ezt ajánlja ehhez.",
+    "same_language": "Azonos nyelvű.",
+    "close_year": "Hasonló korszak."
   },
   "bell": {
     "label": "Értesítések",
@@ -601,7 +605,7 @@
       "anthropic": "Anthropic (felhő)",
       "openai": "OpenAI (felhő)",
       "claude_code": "Claude Code (CLI)",
-    "copilot": "GitHub Copilot (CLI)"
+      "copilot": "GitHub Copilot (CLI)"
     },
     "newChat": "Új beszélgetés",
     "backendNote": "A címeket és az elérhetőséget a backend adja; a modell csak megfogalmazza a választ.",
@@ -712,7 +716,9 @@
       "done": "Átkerült: {title}",
       "current": "jelenlegi",
       "tmdbLink": "TMDB"
-    }
+    },
+    "similar": "Hasonló műsorok",
+    "similarHint": "Hasonló stílusú, nálad most nézhető címek, amiket még nem láttál."
   },
   "bellSection": {
     "leaving": "Távozók",

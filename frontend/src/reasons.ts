@@ -13,6 +13,8 @@ export function reasonText(rc: ReasonCode): string | null {
   switch (rc.code) {
     case 'genre_match':
       return t('reason.genre_match', { genres: list(p.genres).join(', ') })
+    case 'shared_genres':
+      return t('reason.shared_genres', { genres: list(p.genres).join(', ') })
     case 'preference': {
       const labels = [...list(p.label), ...list(p.labels)]
       return t('reason.preference', { label: labels.map(preferenceLabel).join(', ') })

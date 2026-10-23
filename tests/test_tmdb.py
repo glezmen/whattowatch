@@ -321,3 +321,44 @@ def test_validate_writes_report(
     assert len(files) == 1
     data = json.loads(files[0].read_text(encoding="utf-8"))
     assert [p["chosen"]["tmdb_id"] for p in data["probes"]] == [157336, 1396]
+
+
+@respx.mock
+def test_recommendations_parses_first_page(client: TmdbClient) -> None:
+    route = respx.get(f"{BASE_URL}/tv/1396/recommendations").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "page": 1,
+                "results": [
+                    {
+                        "id": 60059,
+                        "name": "Better Call Saul",
+                        "original_name": "Better Call Saul",
+                        "media_type": "tv",
+                        "first_air_date": "2015-02-08",
+                        "popularity": 120.5,
+                        "vote_count": 5000,
+                        "vote_average": 8.7,
+                        "genre_ids": [80, 18],
+                    },
+                    {"name": "No id"},
+                ],
+            },
+        )
+    )
+    hits = client.recommendations("tv", 1396)
+    assert query_of(route.calls.last.request)["language"] == ["hu-HU"]
+    assert [(h.media_type, h.tmdb_id, h.title, h.year) for h in hits] == [
+        ("tv", 60059, "Better Call Saul", 2015)
+    ]
+    assert hits[0].vote_average == 8.7 and hits[0].genre_ids == [80, 18]
+
+
+@respx.mock
+def test_recommendations_error_raises(client: TmdbClient) -> None:
+    respx.get(f"{BASE_URL}/movie/1/recommendations").mock(
+        return_value=httpx.Response(404, json={"status_message": "not found"})
+    )
+    with pytest.raises(TmdbError):
+        client.recommendations("movie", 1)

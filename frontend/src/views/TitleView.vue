@@ -2,11 +2,21 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import { api, ApiError, type ImportText, type MediaType, type SearchHit, type TitleDetails, type UserState } from '../api/client'
+import {
+  api,
+  ApiError,
+  type ImportText,
+  type MediaType,
+  type SearchHit,
+  type SimilarTitleItem,
+  type TitleDetails,
+  type UserState,
+} from '../api/client'
 import DescriptionToggle from '../components/DescriptionToggle.vue'
 import FeedbackPanel from '../components/FeedbackPanel.vue'
 import PosterWithOverview from '../components/PosterWithOverview.vue'
 import ProviderLink from '../components/ProviderLink.vue'
+import TitleCard from '../components/TitleCard.vue'
 import { pushToast } from '../toast'
 import { confidenceLabel, fmtDate, fmtDateTime, fmtInt, fmtRaw, mediaTypeLabel, sourceLabel } from '../format'
 import { chipHintKey, chipState, selectGenre } from '../genreFilter'
@@ -28,21 +38,46 @@ const mainTitle = computed(() => (title.value ? displayTitle(title.value) : ''))
 const secondary = computed(() => (title.value ? secondaryTitle(title.value) : null))
 const c = computed(() => title.value?.community)
 
+const similar = ref<SimilarTitleItem[]>([])
+const similarLoading = ref(false)
+
+/** Separate, quiet request so the page is not delayed; failures just hide the section. */
+async function loadSimilar(id: number) {
+  similarLoading.value = true
+  try {
+    const res = await api.getSimilarTitles(id)
+    if (Number(route.params.id) === id) similar.value = res.items
+  } catch {
+    if (Number(route.params.id) === id) similar.value = []
+  } finally {
+    if (Number(route.params.id) === id) similarLoading.value = false
+  }
+}
+
+function onSimilarUser(item: SimilarTitleItem, u: UserState) {
+  item.title.user = u
+}
+
 async function load() {
   const id = Number(route.params.id)
   loading.value = true
   notFound.value = false
   failed.value = false
   title.value = null
+  similar.value = []
+  similarLoading.value = false
   try {
     const d = await api.getTitle(id, true)
+    if (Number(route.params.id) !== id) return
     title.value = d
     user.value = d.user
+    void loadSimilar(id)
   } catch (e) {
+    if (Number(route.params.id) !== id) return
     if (e instanceof ApiError && e.status === 404) notFound.value = true
     else failed.value = true
   } finally {
-    loading.value = false
+    if (Number(route.params.id) === id) loading.value = false
   }
 }
 
@@ -274,10 +309,34 @@ function back() {
         <FeedbackPanel :title-id="title.id" :imdb-id="title.imdb_id" :user="user" start-open @update:user="(u) => (user = u)" />
       </div>
     </article>
+
+    <section v-if="title && !notFound && !failed && (similarLoading || similar.length)" class="similar">
+      <h2>{{ tr('titlePage.similar') }}</h2>
+      <p class="small muted hint">{{ tr('titlePage.similarHint') }}</p>
+      <p v-if="similarLoading" class="muted"><span class="spinner"></span> {{ tr('common.loading') }}</p>
+      <div v-else class="grid">
+        <TitleCard
+          v-for="it in similar"
+          :key="it.title.id"
+          :title="it.title"
+          :reason-codes="it.reason_codes"
+          @user-change="(u) => onSimilarUser(it, u)"
+        />
+      </div>
+    </section>
   </div>
 </template>
 
 <style scoped>
+.similar {
+  margin-top: 12px;
+}
+.similar h2 {
+  margin-bottom: 4px;
+}
+.similar .hint {
+  margin: 0 0 12px;
+}
 .title-page {
   display: flex;
   flex-direction: column;

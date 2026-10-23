@@ -150,6 +150,20 @@ class RecommendationItem(BaseModel):
     stored: bool = True
 
 
+class SimilarTitleItem(BaseModel):
+    title: TitleCard
+    score: float
+    components: dict[str, float]
+    reason_codes: list[ReasonCode] = Field(default_factory=list)
+    tmdb_recommended: bool
+
+
+class SimilarTitlesOut(BaseModel):
+    items: list[SimilarTitleItem]
+    # False when no TMDB key is configured or the TMDB lookup failed (no boost applied).
+    tmdb_used: bool
+
+
 class Page[T](BaseModel):
     items: list[T]
     total: int
