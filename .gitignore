@@ -58,3 +58,4 @@ __pycache__/
 # Frontend
 frontend/node_modules/
 frontend/dist/
+.claude/worktrees/
