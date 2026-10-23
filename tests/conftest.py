@@ -233,6 +233,18 @@ def build_recommend_db(session: Session) -> dict[int, int]:
 
 
 @pytest.fixture(autouse=True)
+def _no_copilot_status_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`GET /settings/llm` must never start a real Copilot CLI during tests."""
+    from whattowatch.llm import copilot_provider
+
+    monkeypatch.setattr(
+        copilot_provider,
+        "cli_status",
+        lambda *_a, **_k: copilot_provider.CopilotStatus(logged_in=None, login=None, models=[]),
+    )
+
+
+@pytest.fixture(autouse=True)
 def _isolated_imports_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Migration 0014 backfills from `IMPORTS_DIR`: never let tests scan the real one."""
     monkeypatch.setenv("IMPORTS_DIR", str(tmp_path / "imports-isolated"))

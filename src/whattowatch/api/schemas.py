@@ -377,7 +377,7 @@ class SecretsIn(BaseModel):
     lm_studio_base_url: str | None = Field(default=None, max_length=500)
 
 
-LlmProviderName = Literal["lmstudio", "anthropic", "openai", "claude_code"]
+LlmProviderName = Literal["lmstudio", "anthropic", "openai", "claude_code", "copilot"]
 
 
 class LmStudioOption(BaseModel):
@@ -397,11 +397,20 @@ class ClaudeCodeOption(BaseModel):
     models: list[str] = Field(default_factory=list)
 
 
+class CopilotOption(BaseModel):
+    available: bool  # `copilot` found on PATH
+    version: str | None = None  # `copilot --version`
+    logged_in: bool | None = None  # None: unknown (the status check failed)
+    login: str | None = None
+    models: list[str] = Field(default_factory=list)
+
+
 class LlmOptions(BaseModel):
     lmstudio: LmStudioOption
     anthropic: CloudLlmOption
     openai: CloudLlmOption
     claude_code: ClaudeCodeOption
+    copilot: CopilotOption
 
 
 class LlmSettingsOut(BaseModel):

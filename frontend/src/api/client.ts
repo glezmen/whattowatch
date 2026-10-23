@@ -282,7 +282,7 @@ export interface ReassignResponse {
   title: TitleCard
 }
 
-export type LlmProviderName = 'lmstudio' | 'anthropic' | 'openai' | 'claude_code'
+export type LlmProviderName = 'lmstudio' | 'anthropic' | 'openai' | 'claude_code' | 'copilot'
 
 export interface ChatMessage {
   role: 'user' | 'assistant'
@@ -405,6 +405,13 @@ export interface LlmSettings {
     anthropic: { key_set: boolean; models: string[] }
     openai: { key_set: boolean; models: string[] }
     claude_code: { available: boolean; version: string | null; models: string[] }
+    copilot: {
+      available: boolean
+      version: string | null
+      logged_in: boolean | null
+      login: string | null
+      models: string[]
+    }
   }
   cloud_send_feedback_text: boolean
   fallback_allowed: boolean

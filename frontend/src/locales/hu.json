@@ -500,13 +500,19 @@
         "lmstudio": "LM Studio (helyi)",
         "anthropic": "Anthropic (felhő)",
         "openai": "OpenAI (felhő)",
-        "claude_code": "Claude Code (CLI)"
+        "claude_code": "Claude Code (CLI)",
+        "copilot": "GitHub Copilot (CLI)"
       },
       "model": "Modell",
       "modelCliDefault": "(CLI alapértelmezett)",
       "ccInstalled": "Telepítve: v{version}",
       "ccUnavailable": "A Claude Code CLI nincs telepítve vagy nincs bejelentkezve (claude login).",
       "ccPrivacy": "A Claude-előfizetésedet használja a helyi CLI-n keresztül; a szöveges értékeléseid csak akkor kerülnek ki, ha a felhős szöveg-kapcsoló be van kapcsolva.",
+      "cpInstalled": "Telepítve: v{version}",
+      "cpUnavailable": "A GitHub Copilot CLI nincs telepítve (copilot login után használható).",
+      "cpNotLoggedIn": "A Copilot CLI nincs bejelentkezve: futtasd a copilot login parancsot.",
+      "cpLoggedIn": "Bejelentkezve: {login}",
+      "cpPrivacy": "A GitHub Copilot-előfizetésedet használja a helyi CLI-n keresztül; az adatok a GitHubhoz és a választott modell szolgáltatójához kerülnek. A szöveges értékeléseid csak akkor mennek ki, ha a felhős szöveg-kapcsoló be van kapcsolva.",
       "modelDefault": "– alapértelmezett –",
       "modelCustom": "Egyéni modellnév…",
       "modelPlaceholder": "Modellazonosító",
@@ -594,7 +600,8 @@
       "lmstudio": "LM Studio (helyi)",
       "anthropic": "Anthropic (felhő)",
       "openai": "OpenAI (felhő)",
-      "claude_code": "Claude Code (CLI)"
+      "claude_code": "Claude Code (CLI)",
+    "copilot": "GitHub Copilot (CLI)"
     },
     "newChat": "Új beszélgetés",
     "backendNote": "A címeket és az elérhetőséget a backend adja; a modell csak megfogalmazza a választ.",

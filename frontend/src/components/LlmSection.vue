@@ -10,7 +10,7 @@ const props = defineProps<{ reloadToken?: number }>()
 const { t } = useI18n()
 
 const CUSTOM = '__custom__'
-const PROVIDERS: LlmProviderName[] = ['lmstudio', 'anthropic', 'openai', 'claude_code']
+const PROVIDERS: LlmProviderName[] = ['lmstudio', 'anthropic', 'openai', 'claude_code', 'copilot']
 
 const s = ref<LlmSettings | null>(null)
 const loaded = ref(false)
@@ -65,7 +65,12 @@ const keyMissing = computed(() => {
   return false
 })
 
-const isCloud = computed(() => s.value !== null && s.value.provider !== 'lmstudio' && s.value.provider !== 'claude_code')
+/** CLI providers (Claude Code, Copilot) get their own privacy note instead of the generic cloud note. */
+const CLI_PROVIDERS: LlmProviderName[] = ['claude_code', 'copilot']
+
+const isCloud = computed(
+  () => s.value !== null && s.value.provider !== 'lmstudio' && !CLI_PROVIDERS.includes(s.value.provider),
+)
 
 async function save(patch: LlmSettingsPatch) {
   if (!s.value) return
@@ -91,7 +96,7 @@ function onProvider(e: Event) {
   const list = s.value.options[provider]?.models ?? []
   testResult.value = null
   customMode.value = false
-  void save({ provider, model: provider === 'claude_code' ? null : (list[0] ?? null) })
+  void save({ provider, model: CLI_PROVIDERS.includes(provider) ? null : (list[0] ?? null) })
 }
 
 function onModelSelect(e: Event) {
@@ -147,7 +152,7 @@ function usageText(u: Record<string, number> | null | undefined): string {
       <label :for="usesSelect ? 'llm-model' : 'llm-model-text'">{{ t('settings.llm.model') }}</label>
       <div class="model">
         <select v-if="usesSelect" id="llm-model" :value="selectValue" :disabled="saving" @change="onModelSelect">
-          <option v-if="s.provider === 'claude_code'" value="">{{ t('settings.llm.modelCliDefault') }}</option>
+          <option v-if="CLI_PROVIDERS.includes(s.provider)" value="">{{ t('settings.llm.modelCliDefault') }}</option>
           <option v-else-if="!s.model" value="">{{ t('settings.llm.modelDefault') }}</option>
           <option v-for="m in models" :key="m" :value="m">{{ m }}</option>
           <option :value="CUSTOM">{{ t('settings.llm.modelCustom') }}</option>
@@ -178,6 +183,21 @@ function usageText(u: Record<string, number> | null | undefined): string {
       </p>
       <p v-else class="small banner warn" role="status">{{ t('settings.llm.ccUnavailable') }}</p>
       <p class="small muted">{{ t('settings.llm.ccPrivacy') }}</p>
+    </template>
+    <template v-if="s.provider === 'copilot'">
+      <template v-if="s.options.copilot.available">
+        <p class="small muted">
+          {{ t('settings.llm.cpInstalled', { version: s.options.copilot.version ?? '?' }) }}
+        </p>
+        <p v-if="s.options.copilot.logged_in === false" class="small banner warn" role="status">
+          {{ t('settings.llm.cpNotLoggedIn') }}
+        </p>
+        <p v-else-if="s.options.copilot.login" class="small muted">
+          {{ t('settings.llm.cpLoggedIn', { login: s.options.copilot.login }) }}
+        </p>
+      </template>
+      <p v-else class="small banner warn" role="status">{{ t('settings.llm.cpUnavailable') }}</p>
+      <p class="small muted">{{ t('settings.llm.cpPrivacy') }}</p>
     </template>
     <p v-if="keyMissing" class="small banner warn" role="status">
       {{ t('settings.llm.keyMissing', { provider: t(`settings.llm.providers.${s.provider}`) }) }}

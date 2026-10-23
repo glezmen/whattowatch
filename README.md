@@ -43,8 +43,9 @@ The image (`Dockerfile`) builds the web UI with Node 22, installs the backend wi
   `docker-compose.yml`; edit it there, since the compose value takes precedence over the
   Settings page). LM Studio must listen on all interfaces ("Serve on local network"),
   otherwise the container cannot connect.
-- The **Claude Code (CLI)** provider is **not** available in the container (no `claude`
-  CLI or login there); use LM Studio, Anthropic or OpenAI.
+- The **Claude Code (CLI)** and **GitHub Copilot (CLI)** providers are **not** available
+  in the container (no `claude` / `copilot` CLI or login there); use LM Studio, Anthropic
+  or OpenAI.
 - **Daily refresh**: `docker compose exec whattowatch uv run wtw refresh run`, or from the
   host crontab:
 
@@ -300,7 +301,7 @@ Or with crontab (`crontab -e`), run from the repository directory:
 
 The chat recommender and the LLM analysis of free-text feedback share one provider layer
 (`src/whattowatch/llm/`, design: `docs/llm.md`). Provider: `LLM_PROVIDER` (`lmstudio` -
-default, local; `anthropic`; `openai`; `claude_code`), model: `LLM_MODEL` (if empty: the first loaded model
+default, local; `anthropic`; `openai`; `claude_code`; `copilot`), model: `LLM_MODEL` (if empty: the first loaded model
 for LM Studio, `claude-opus-5-5` for Anthropic, and the placeholder `gpt-4o-mini` for
 OpenAI, whose availability on your account is not verified). Embeddings:
 `LLM_EMBEDDING_MODEL` (OpenAI-compatible servers only).
@@ -327,6 +328,17 @@ OpenAI, whose availability on your account is not verified). Embeddings:
   `CLAUDE.md`), with all built-in tools disabled; in chat only the backend's typed tools are
   exposed (as an in-process MCP server) and the CLI runs the tool loop. It is a cloud
   provider: data goes to Anthropic, so feedback text is only sent when
+  `LLM_CLOUD_SEND_FEEDBACK_TEXT=true`.
+- **GitHub Copilot (CLI)** (`LLM_PROVIDER=copilot`): uses the local GitHub Copilot CLI
+  login (your Copilot subscription) through the official `github-copilot-sdk`, no API key.
+  It requires `copilot` on `PATH` and a prior `copilot login`. Model: `LLM_MODEL`, else
+  `COPILOT_CLI_MODEL` (e.g. `auto`, or a model id from the CLI's `/model` list), else the
+  CLI default. Every call runs isolated: in an empty temporary directory, with Copilot's
+  own system prompt replaced, custom instructions, skills and the session store turned
+  off, and every built-in and MCP tool hidden; in chat only the backend's typed tools are
+  exposed and the CLI runs the tool loop. The SDK always drives the installed CLI and
+  never downloads a runtime of its own. It is a cloud provider: data goes to GitHub and the
+  selected model's vendor, so feedback text is only sent when
   `LLM_CLOUD_SEND_FEEDBACK_TEXT=true`.
 
 ## Tests and quality checks

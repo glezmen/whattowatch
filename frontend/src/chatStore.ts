@@ -12,7 +12,7 @@ export interface Turn {
   cardsLoading?: boolean
 }
 
-export const CHAT_PROVIDERS: LlmProviderName[] = ['lmstudio', 'anthropic', 'openai', 'claude_code']
+export const CHAT_PROVIDERS: LlmProviderName[] = ['lmstudio', 'anthropic', 'openai', 'claude_code', 'copilot']
 const MAX_CARDS = 8
 
 export const chat = reactive<{

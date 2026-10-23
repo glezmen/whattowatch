@@ -7,7 +7,7 @@ katalógus-, elérhetőségi vagy értékelési adathoz, és nem rangsorol.
 
 ```python
 class LLMProvider(Protocol):
-    name: str                      # "lmstudio" | "anthropic" | "openai"
+    name: str                      # "lmstudio" | "anthropic" | "openai" | "claude_code" | "copilot"
     is_local: bool
     def complete(self, messages: list[Message], *, tools: list[ToolSpec] | None = None,
                  json_schema: dict | None = None, max_tokens: int = 1024,
@@ -18,7 +18,14 @@ class LLMProvider(Protocol):
 Adapterek (`src/whattowatch/llm/`): `openai_compat.py` (közös OpenAI-kompatibilis
 kliens httpx-szel; `LMStudioProvider` kulcs nélkül, `OpenAIProvider` kulccsal),
 `anthropic_provider.py` (Messages API a hivatalos `anthropic` SDK-val; eltérés a
-korábbi tervtől: SDK a nyers httpx helyett, a típusos hibák és újrapróbálás miatt).
+korábbi tervtől: SDK a nyers httpx helyett, a típusos hibák és újrapróbálás miatt),
+`claude_code_provider.py` (a helyi, bejelentkezett `claude` CLI a hivatalos Claude Agent
+SDK-n keresztül), `copilot_provider.py` (a helyi, bejelentkezett `copilot` CLI a hivatalos
+`github-copilot-sdk`-n keresztül; mindig a telepített CLI-t indítja, saját runtime-ot nem
+tölt le). A két CLI-provider felhős (`is_local = False`), minden hívás üres ideiglenes
+könyvtárban, a CLI saját rendszerpromptja, projektbeállításai és beépített eszközei
+nélkül fut; az eszközhurkot a CLI futtatja (`AgentCapable.run_agent`), és csak a backend
+típusos eszközeit látja. A közös prompt-összeállítás: `cli_prompt.py`.
 `registry.py`: `get_provider(settings, override: str | None) -> LLMProvider`, és
 `get_provider_with_fallback(settings, preferred)`, amely csak
 `LLM_FALLBACK_ALLOWED=true` mellett próbál másik providert.
@@ -27,7 +34,9 @@ Konfig (`.env.example`-ben is): `LLM_PROVIDER` (alap `lmstudio`), `LLM_MODEL`,
 `LLM_EMBEDDING_MODEL`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
 `LLM_FALLBACK_ALLOWED=false` (csak explicit engedéllyel vált másik providerre),
 `LLM_CLOUD_SEND_FEEDBACK_TEXT=false` (felhős providernek alapból nem megy a
-nyers vélemény, csak a lokálisnak).
+nyers vélemény, csak a lokálisnak), `CLAUDE_CODE_MODEL` és `COPILOT_CLI_MODEL` (a CLI-
+providerek modellje, ha `LLM_MODEL` üres; a `COPILOT_MODEL` nevet szándékosan kerüljük,
+mert azt maga a Copilot CLI olvassa).
 
 Dokumentálni: a ChatGPT-előfizetés nem OpenAI API-hozzáférés; az Anthropic és
 OpenAI API külön számlázású.

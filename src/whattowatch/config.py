@@ -72,7 +72,7 @@ class Settings(BaseSettings):
     scheduler_enabled: bool = True
 
     # LLM layer (docs/llm.md). Keys come only from the environment and are never exposed.
-    llm_provider: str = "lmstudio"  # lmstudio | anthropic | openai | claude_code
+    llm_provider: str = "lmstudio"  # lmstudio | anthropic | openai | claude_code | copilot
     llm_model: str | None = None  # None -> per-provider default
     llm_embedding_model: str | None = None
     anthropic_api_key: str | None = None
@@ -82,6 +82,9 @@ class Settings(BaseSettings):
     anthropic_server_fallback: bool = True
     # Claude Code CLI model alias (sonnet | opus | haiku) when LLM_MODEL is empty.
     claude_code_model: str | None = None
+    # GitHub Copilot CLI model id (e.g. `auto`) when LLM_MODEL is empty. Not COPILOT_MODEL,
+    # which the Copilot CLI itself reads.
+    copilot_cli_model: str | None = None
 
     # Profiles (docs/api.md "Profilok és munkamenet"): signs the `wtw_session` cookie;
     # generated into `.env` on the first start when missing. Secret.

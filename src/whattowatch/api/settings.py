@@ -31,6 +31,7 @@ from whattowatch.api.schemas import (
     AppSettingsOut,
     ClaudeCodeOption,
     CloudLlmOption,
+    CopilotOption,
     LlmOptions,
     LlmSettingsIn,
     LlmSettingsOut,
@@ -56,6 +57,7 @@ from whattowatch.api.schemas import (
     TmdbResyncOut,
 )
 from whattowatch.config import Settings, env_file_path
+from whattowatch.llm import copilot_provider
 from whattowatch.llm import registry as llm_registry
 from whattowatch.services import app_settings as app_cfg
 from whattowatch.services import env_file, scheduler, subscriptions, tmdb_account
@@ -75,6 +77,8 @@ ANTHROPIC_MODELS = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-4-5", 
 LM_STUDIO_TIMEOUT = 3.0
 CLAUDE_CODE_MODELS = ["sonnet", "opus", "haiku"]
 CLAUDE_VERSION_TIMEOUT = 3.0
+# The Copilot login/model check starts the CLI, so it is cached per process this long.
+COPILOT_STATUS_TTL = 300.0
 LLM_TEST_PROMPT = "Válaszolj egy szóval: működik?"
 # A failed or incomplete logo refresh is retried at most this often (seconds).
 LOGO_RETRY_SECONDS = 3600.0
@@ -406,6 +410,54 @@ def _claude_code_option() -> ClaudeCodeOption:
     )
 
 
+@lru_cache(maxsize=4)
+def _copilot_version(cli: str) -> str | None:
+    """`copilot --version` (cached per process and path), e.g. `1.0.100`; any failure ->
+    None. The first line reads `GitHub Copilot CLI 1.0.100.`; later lines are hints."""
+    try:
+        out = subprocess.run(
+            [cli, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=CLAUDE_VERSION_TIMEOUT,
+            check=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    first = (out.stdout.strip().splitlines() or [""])[0].strip().rstrip(".")
+    return first.removeprefix("GitHub Copilot CLI").strip() or None
+
+
+_copilot_status_cache: dict[str, tuple[float, tuple[bool | None, str | None, list[str]]]] = {}
+
+
+def _copilot_status(cli: str) -> tuple[bool | None, str | None, list[str]]:
+    """(logged_in, login, model ids) through the SDK, cached for `COPILOT_STATUS_TTL`;
+    any failure -> (None, None, [])."""
+    now = time.monotonic()
+    hit = _copilot_status_cache.get(cli)
+    if hit is not None and now - hit[0] < COPILOT_STATUS_TTL:
+        return hit[1]
+    st = copilot_provider.cli_status(cli)
+    value = (st.logged_in, st.login, list(st.models))
+    _copilot_status_cache[cli] = (now, value)
+    return value
+
+
+def _copilot_option() -> CopilotOption:
+    cli = shutil.which("copilot")
+    if cli is None:
+        return CopilotOption(available=False)
+    logged_in, login, models = _copilot_status(cli)
+    return CopilotOption(
+        available=True,
+        version=_copilot_version(cli),
+        logged_in=logged_in,
+        login=login,
+        models=models,
+    )
+
+
 def _llm_settings(session: Session, settings: Settings, user_id: int) -> LlmSettingsOut:
     config = llm_registry.effective_llm_config(session, settings, user_id)
     available, models = _lm_studio_models(settings.lm_studio_base_url)
@@ -422,6 +474,7 @@ def _llm_settings(session: Session, settings: Settings, user_id: int) -> LlmSett
             ),
             openai=CloudLlmOption(key_set=bool(settings.openai_api_key), models=[]),
             claude_code=_claude_code_option(),
+            copilot=_copilot_option(),
         ),
         cloud_send_feedback_text=config.cloud_send_feedback_text,
         fallback_allowed=config.fallback_allowed,

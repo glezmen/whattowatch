@@ -500,13 +500,19 @@
         "lmstudio": "LM Studio (local)",
         "anthropic": "Anthropic (cloud)",
         "openai": "OpenAI (cloud)",
-        "claude_code": "Claude Code (CLI)"
+        "claude_code": "Claude Code (CLI)",
+        "copilot": "GitHub Copilot (CLI)"
       },
       "model": "Model",
       "modelCliDefault": "(CLI default)",
       "ccInstalled": "Installed: v{version}",
       "ccUnavailable": "The Claude Code CLI is not installed or not signed in (claude login).",
       "ccPrivacy": "Uses your Claude subscription via the local CLI; written reviews are sent only if the cloud-text switch is on.",
+      "cpInstalled": "Installed: v{version}",
+      "cpUnavailable": "The GitHub Copilot CLI is not installed (sign in with copilot login).",
+      "cpNotLoggedIn": "The Copilot CLI is not signed in: run copilot login.",
+      "cpLoggedIn": "Signed in as {login}",
+      "cpPrivacy": "Uses your GitHub Copilot subscription via the local CLI; data goes to GitHub and the selected model's vendor. Written reviews are sent only if the cloud-text switch is on.",
       "modelDefault": "– default –",
       "modelCustom": "Custom model name…",
       "modelPlaceholder": "Model ID",
@@ -594,7 +600,8 @@
       "lmstudio": "LM Studio (local)",
       "anthropic": "Anthropic (cloud)",
       "openai": "OpenAI (cloud)",
-      "claude_code": "Claude Code (CLI)"
+      "claude_code": "Claude Code (CLI)",
+    "copilot": "GitHub Copilot (CLI)"
     },
     "newChat": "New conversation",
     "backendNote": "Titles and availability come from the backend; the model only words the answer.",

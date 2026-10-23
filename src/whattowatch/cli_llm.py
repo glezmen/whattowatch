@@ -18,7 +18,7 @@ def llm_test(
     provider: Annotated[
         str | None,
         typer.Option(
-            help="lmstudio | anthropic | openai | claude_code "
+            help="lmstudio | anthropic | openai | claude_code | copilot "
             "(default: the UI choice, else LLM_PROVIDER)"
         ),
     ] = None,
