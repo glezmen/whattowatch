@@ -155,3 +155,34 @@ def onboarding_done(session: Session, *, user_id: int) -> bool:
 
 def set_onboarding_done(session: Session, value: bool, *, user_id: int) -> None:
     set_setting(session, ONBOARDING_DONE, bool(value), user_id=user_id)
+
+
+# --- Sign-in mode (global keys, docs/multiuser.md B) ---------------------------------------
+
+AuthMode = Literal["household", "accounts"]
+AUTH_MODES: tuple[str, ...] = get_args(AuthMode)
+AUTH_MODE = "auth_mode"
+REGISTRATION_OPEN = "registration_open"
+
+
+def effective_auth_mode(session: Session, settings: Settings) -> AuthMode:
+    """The `auth_mode` app setting, else `WTW_AUTH_MODE` (or the `WTW_NETWORK_MODE` alias)."""
+    value = get_setting(session, AUTH_MODE)
+    if value in AUTH_MODES:
+        return cast(AuthMode, value)
+    return settings.default_auth_mode
+
+
+def set_auth_mode(session: Session, value: str) -> None:
+    if value not in AUTH_MODES:
+        raise ValueError(f"unknown auth_mode: {value!r} (allowed: {', '.join(AUTH_MODES)})")
+    set_setting(session, AUTH_MODE, value)
+
+
+def registration_open(session: Session) -> bool:
+    """Whether self-registration is allowed in accounts mode (default: open)."""
+    return bool(get_setting(session, REGISTRATION_OPEN, True))
+
+
+def set_registration_open(session: Session, value: bool) -> None:
+    set_setting(session, REGISTRATION_OPEN, bool(value))

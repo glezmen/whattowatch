@@ -59,6 +59,7 @@ from whattowatch.config import Settings, env_file_path
 from whattowatch.llm import registry as llm_registry
 from whattowatch.services import app_settings as app_cfg
 from whattowatch.services import env_file, scheduler, subscriptions, tmdb_account
+from whattowatch.services import users as users_svc
 
 router = APIRouter(tags=["settings"])
 log = logging.getLogger(__name__)
@@ -309,6 +310,20 @@ def put_app_settings(
     body: AppSettingsIn, session: SessionDep, user: CurrentUserDep, settings: SettingsDep
 ) -> AppSettingsOut:
     given = body.model_fields_set
+    sign_in_keys = {"auth_mode", "registration_open"} & given
+    if sign_in_keys and not user.is_admin:
+        raise CodedHTTPException(403, "Ehhez adminisztrátori profil kell.", "admin_required")
+    if (
+        "auth_mode" in given
+        and body.auth_mode == "accounts"
+        and app_cfg.effective_auth_mode(session, settings) != "accounts"
+        and not users_svc.has_password(user)
+    ):
+        raise CodedHTTPException(
+            422,
+            "Fiókos módhoz előbb állíts be jelszót a saját profilodhoz.",
+            "password_required",
+        )
     if "ui_language" in given and body.ui_language is not None:
         app_cfg.set_ui_language(session, body.ui_language, user_id=user.id)
     if "netflix_profile_name" in given:
@@ -323,6 +338,10 @@ def put_app_settings(
         )
     if "onboarding_done" in given and body.onboarding_done is not None:
         app_cfg.set_onboarding_done(session, body.onboarding_done, user_id=user.id)
+    if "auth_mode" in given and body.auth_mode is not None:
+        app_cfg.set_auth_mode(session, body.auth_mode)
+    if "registration_open" in given and body.registration_open is not None:
+        app_cfg.set_registration_open(session, body.registration_open)
     session.commit()
     return _app_settings(session, settings, user.id)
 

@@ -5,13 +5,13 @@ from __future__ import annotations
 import logging
 import secrets
 import threading
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from sqlalchemy import Engine
 
 from whattowatch.adapters.tmdb import TmdbError
@@ -44,8 +44,9 @@ def _health() -> dict[str, str]:
 
 
 def _api_router() -> APIRouter:
-    """Public routes (health, profile list and first-profile creation, `/auth/*`), then
-    every other route behind `current_user_dep` (401 `no_profile` without a cookie)."""
+    """Public routes (health, profile list and first-profile creation, `/auth/*`:
+    status, register, login, select, logout), then every other route behind
+    `current_user_dep` (401 `no_profile` without a cookie)."""
     api = APIRouter(prefix="/api")
     api.add_api_route("/health", _health, methods=["GET"], tags=["health"])
     api.include_router(auth.router)
@@ -68,6 +69,26 @@ def _api_router() -> APIRouter:
     protected.include_router(search.router)
     api.include_router(protected)
     return api
+
+
+SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "same-origin",
+    "X-Frame-Options": "DENY",
+}
+
+
+def _install_security_headers(app: FastAPI) -> None:
+    """Cheap hardening on every response (no CSP: the built SPA is not audited for it)."""
+
+    @app.middleware("http")
+    async def _headers(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        response = await call_next(request)
+        for name, value in SECURITY_HEADERS.items():
+            response.headers.setdefault(name, value)
+        return response
 
 
 def _install_error_handlers(app: FastAPI) -> None:
@@ -157,7 +178,7 @@ def create_app(settings_override: Settings | None = None) -> FastAPI:
     # so keys saved from the UI into `.env` (cache cleared) take effect without a restart.
     app.state.settings = settings_override
     app.state.session_secret = _session_secret(settings_override)
-    app.state.network_mode = app_settings.network_mode
+    _install_security_headers(app)
     _install_error_handlers(app)
     app.add_api_route("/health", _health, methods=["GET"], include_in_schema=False)
     app.include_router(_api_router())

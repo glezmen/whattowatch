@@ -2,7 +2,7 @@ import os
 import re
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -86,7 +86,12 @@ class Settings(BaseSettings):
     # Profiles (docs/api.md "Profilok és munkamenet"): signs the `wtw_session` cookie;
     # generated into `.env` on the first start when missing. Secret.
     session_secret: str | None = None
-    # Future network accounts (docs/multiuser.md B): marks the session cookie `Secure`.
+    # Sign-in mode (docs/multiuser.md B): `household` (profile picker) or `accounts`
+    # (registration, name + password). The `auth_mode` app setting (Settings page) wins.
+    auth_mode: Literal["household", "accounts"] | None = Field(
+        default=None, validation_alias=AliasChoices("WTW_AUTH_MODE", "auth_mode")
+    )
+    # Deprecated alias: `WTW_NETWORK_MODE=true` means `WTW_AUTH_MODE=accounts`.
     network_mode: bool = Field(
         default=False, validation_alias=AliasChoices("WTW_NETWORK_MODE", "network_mode")
     )
@@ -96,6 +101,13 @@ class Settings(BaseSettings):
     def _check_notice_days(cls, value: str) -> str:
         parse_notice_days(value)
         return value
+
+    @property
+    def default_auth_mode(self) -> Literal["household", "accounts"]:
+        """`WTW_AUTH_MODE`, else `accounts` when `WTW_NETWORK_MODE=true`, else household."""
+        if self.auth_mode is not None:
+            return self.auth_mode
+        return "accounts" if self.network_mode else "household"
 
     @property
     def leaving_notice_thresholds(self) -> tuple[int, ...]:

@@ -28,6 +28,9 @@ PUBLIC = {
     ("POST", "/api/users"),  # first profile only; checked inside (optional_user_dep)
     ("POST", "/api/auth/select"),
     ("POST", "/api/auth/logout"),
+    ("GET", "/api/auth/status"),
+    ("POST", "/api/auth/register"),  # accounts mode; checked inside
+    ("POST", "/api/auth/login"),
 }
 
 
@@ -218,15 +221,18 @@ def test_first_profile_without_cookie(migrated_session: Session) -> None:
 
 
 def test_network_mode_restricts_profile_creation(migrated_session: Session) -> None:
+    # `WTW_NETWORK_MODE=true` is the deprecated alias of accounts mode (M9/B).
     for user in list_users(migrated_session):
         migrated_session.delete(user)
     migrated_session.commit()
     client = make_api_client(migrated_session, login=False, network_mode=True)
-    r = client.post("/api/users", json={"name": "Anna"})  # first profile is always allowed
-    assert r.status_code == 201 and r.json()["is_admin"] is True
+    no_pw = client.post("/api/users", json={"name": "Anna"})
+    assert no_pw.status_code == 422 and no_pw.json()["detail_code"] == "password_required"
+    r = client.post("/api/users", json={"name": "Anna", "password": "hosszu-jelszo"})
+    assert r.status_code == 201 and r.json()["is_admin"] is True  # first profile allowed
     logout(client)
-    assert client.get("/api/users").json()["can_create"] is False
-    refused = client.post("/api/users", json={"name": "Betolakodó"})
+    assert client.get("/api/users").status_code == 401  # the list needs a session
+    refused = client.post("/api/users", json={"name": "Betolakodó", "password": "x" * 8})
     assert refused.status_code == 401 and refused.json()["detail_code"] == "no_profile"
     assert [u.name for u in list_users(migrated_session)] == ["Anna"]
 
@@ -301,11 +307,14 @@ def test_delete_rules(api: ApiEnv) -> None:
     assert [u.name for u in list_users(api.session)] == [admin.name]
 
 
-def test_network_mode_sets_secure_cookie(migrated_session: Session) -> None:
+def test_https_sets_secure_cookie(migrated_session: Session) -> None:
+    # `Secure` follows the request scheme (not the mode), so plain-http LAN use works.
     client = make_api_client(migrated_session)
-    client.app.state.network_mode = True  # type: ignore[attr-defined]
     uid = default_user_id(migrated_session)
-    r = client.post("/api/auth/select", json={"user_id": uid})
+    plain = client.post("/api/auth/select", json={"user_id": uid})
+    assert "secure" not in plain.headers["set-cookie"].lower()
+    secure = TestClient(client.app, base_url="https://testserver")
+    r = secure.post("/api/auth/select", json={"user_id": uid})
     assert "secure" in r.headers["set-cookie"].lower()
 
 

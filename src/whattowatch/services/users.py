@@ -103,8 +103,20 @@ def get_user(session: Session, user_id: int) -> User | None:
     return session.get(User, user_id)
 
 
+def _name_key(name: str) -> str:
+    """Comparison key of a profile name: whitespace collapsed, case-folded (Unicode-aware,
+    so "Ádám" and "ÁDÁM" match; SQLite's `lower()` only folds ASCII)."""
+    return " ".join((name or "").split()).casefold()
+
+
 def find_user(session: Session, name: str) -> User | None:
-    return session.scalar(select(User).where(User.name == name.strip()))
+    """The profile with this name: an exact match first, else case-insensitively."""
+    clean = " ".join((name or "").split())
+    exact = session.scalar(select(User).where(User.name == clean))
+    if exact is not None:
+        return exact
+    key = _name_key(clean)
+    return next((u for u in list_users(session) if _name_key(u.name) == key), None)
 
 
 def _clean_name(session: Session, name: str, *, exclude_id: int | None = None) -> str:
@@ -113,9 +125,10 @@ def _clean_name(session: Session, name: str, *, exclude_id: int | None = None) -
         raise UserError("invalid_name", "A profil neve nem lehet üres.")
     if len(clean) > MAX_NAME_LENGTH:
         raise UserError("invalid_name", f"A profil neve legfeljebb {MAX_NAME_LENGTH} karakter.")
-    other = session.scalar(select(User.id).where(User.name == clean))
-    if other is not None and other != exclude_id:
-        raise UserError("name_taken", f"Már van ilyen nevű profil: {clean}")
+    key = _name_key(clean)
+    for other_id, other_name in session.execute(select(User.id, User.name)):
+        if other_id != exclude_id and _name_key(other_name) == key:
+            raise UserError("name_taken", f"Már van ilyen nevű profil: {clean}")
     return clean
 
 
@@ -154,14 +167,35 @@ def _hash(password: str) -> str:
     return _hasher.hash(password)
 
 
-def set_password(session: Session, user: User, password: str) -> None:
+def password_change_time() -> datetime:
+    """Wall-clock stamp for `password_changed_at` (the cookie's `iat` is wall-clock too)."""
+    return datetime.now(UTC)
+
+
+def set_password(
+    session: Session, user: User, password: str, *, changed_at: datetime | None = None
+) -> None:
+    """Set the password and stamp `password_changed_at` (older session cookies die)."""
     user.password_hash = _hash(password)
+    user.password_changed_at = changed_at or password_change_time()
     session.flush()
 
 
-def clear_password(session: Session, user: User) -> None:
+def clear_password(session: Session, user: User, *, changed_at: datetime | None = None) -> None:
     user.password_hash = None
+    user.password_changed_at = changed_at or password_change_time()
     session.flush()
+
+
+def password_changed_timestamp(user: User) -> float | None:
+    """`password_changed_at` as a POSIX timestamp (naive values read back from SQLite are
+    UTC), or None when the password never changed since 0015."""
+    stamp = user.password_changed_at
+    if stamp is None:
+        return None
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=UTC)
+    return stamp.timestamp()
 
 
 def has_password(user: User) -> bool:
@@ -177,6 +211,26 @@ def verify_password(session: Session, user: User, password: str | None) -> bool:
         return True
     if not password:
         return False
+    return _verify_hash(session, user, password)
+
+
+_DUMMY_HASH: str | None = None
+
+
+def dummy_verify(password: str | None) -> None:
+    """Spend the time of one argon2 verification (unknown name at sign-in), so the
+    response time does not tell whether a name exists."""
+    global _DUMMY_HASH
+    if _DUMMY_HASH is None:
+        _DUMMY_HASH = _hasher.hash("wtw-dummy-password")
+    try:
+        _hasher.verify(_DUMMY_HASH, password or "-")
+    except (VerificationError, InvalidHashError):
+        pass
+
+
+def _verify_hash(session: Session, user: User, password: str) -> bool:
+    assert user.password_hash is not None
     try:
         _hasher.verify(user.password_hash, password)
     except (VerificationError, InvalidHashError):

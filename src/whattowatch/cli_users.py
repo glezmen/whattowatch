@@ -127,3 +127,80 @@ def delete_cmd(
             raise _fail(exc.message) from exc
         session.commit()
         typer.echo(f"Törölve: {name}")
+
+
+@app.command("set-password")
+def set_password_cmd(
+    name: str,
+    password: Annotated[
+        str | None,
+        typer.Option(
+            "--password",
+            help="The new password (default: prompted, hidden); avoid it in shell history",
+        ),
+    ] = None,
+) -> None:
+    """Set a profile's password (prompted twice, hidden); its sessions end."""
+    from whattowatch.api.auth import min_password_length
+    from whattowatch.config import get_settings
+    from whattowatch.services.app_settings import effective_auth_mode
+    from whattowatch.services.users import UserError, find_user, set_password
+
+    with _session() as session:
+        user = find_user(session, name)
+        if user is None:
+            raise _fail(f"nincs ilyen profil: {name}")
+        minimum = min_password_length(effective_auth_mode(session, get_settings()))
+        secret = password
+        if secret is None:
+            secret = typer.prompt("Új jelszó", hide_input=True, confirmation_prompt=True)
+        if len(secret) < minimum:
+            raise _fail(f"a jelszó legalább {minimum} karakter legyen.")
+        try:
+            set_password(session, user, secret)
+        except UserError as exc:
+            raise _fail(exc.message) from exc
+        session.commit()
+        typer.echo(f"Jelszó beállítva: {user.name}")
+
+
+@app.command("set-mode")
+def set_mode_cmd(
+    mode: Annotated[str, typer.Argument(help="household | accounts")],
+) -> None:
+    """Switch the sign-in mode (household profile picker or accounts with passwords)."""
+    from sqlalchemy import select
+
+    from whattowatch.db.models import User
+    from whattowatch.services.app_settings import AUTH_MODES, set_auth_mode
+
+    if mode not in AUTH_MODES:
+        raise _fail(f"ismeretlen mód: {mode} (household | accounts)")
+    with _session() as session:
+        if mode == "accounts":
+            admin_with_password = session.scalar(
+                select(User.id).where(User.is_admin, User.password_hash.is_not(None)).limit(1)
+            )
+            if admin_with_password is None:
+                raise _fail(
+                    "fiókos módhoz legalább egy adminnak jelszó kell "
+                    "(wtw users set-password <név>)."
+                )
+        set_auth_mode(session, mode)
+        session.commit()
+        typer.echo(f"Bejelentkezési mód: {mode}")
+
+
+@app.command("registration")
+def registration_cmd(
+    state: Annotated[str, typer.Argument(help="open | closed")],
+) -> None:
+    """Open or close self-registration (accounts mode)."""
+    from whattowatch.services.app_settings import set_registration_open
+
+    if state not in ("open", "closed"):
+        raise _fail(f"ismeretlen állapot: {state} (open | closed)")
+    with _session() as session:
+        set_registration_open(session, state == "open")
+        session.commit()
+        typer.echo(f"Regisztráció: {'nyitva' if state == 'open' else 'zárva'}")

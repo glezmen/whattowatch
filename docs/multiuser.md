@@ -1,6 +1,6 @@
 # Többfelhasználós működés — terv (M8/A és M9/B)
 
-Állapot: **A (M8) kész, 2026-10-21** — profilválasztó, opcionális jelszó, admin-jogok, elkülönítési és route-guard tesztek (433 teszt). B (M9) nincs elkezdve.
+Állapot: **A (M8) kész, 2026-10-21** — profilválasztó, opcionális jelszó, admin-jogok, elkülönítési és route-guard tesztek (433 teszt). **B (M9) backendje részben kész, 2026-10-23** — fiókos mód önregisztrációval (az első fiók a családi admin), név + jelszó bejelentkezés, IP- és profilonkénti korlát, munkamenet-érvénytelenítés jelszócserekor, admin- és CLI-eszközök (561 teszt); a felület, az OAuth, a CSRF-token és a profilonkénti export még hátravan.
 (profilválasztó induláskor, opcionális jelszó), majd **B) valódi fiókok
 hálózaton**. Az A szakasz úgy épül, hogy a B ne igényeljen újabb sémamódosítást.
 
@@ -193,6 +193,66 @@ Az A szakasz után marad: hálózati kitétel és annak biztonsága.
   export (saját adatok JSON/CSV) a GDPR-elvnek megfelelően.
 - **Biztonsági felülvizsgálat**: a `security-review` lefuttatása, függőség-
   ellenőrzés (`pip-audit`), fejlécek (CSP, HSTS).
+
+### B — elkészült (2026-10-23), döntések
+
+- **Két mód**, globális app-beállítás `auth_mode` ∈ {`household`, `accounts`}
+  (`app_settings`, `user_id` NULL). Alapértelmezés: `WTW_AUTH_MODE` (`household`); a régi
+  `WTW_NETWORK_MODE=true` alias, `accounts`-ot jelent (az explicit `WTW_AUTH_MODE` nyer).
+  `effective_auth_mode(session, settings)`: az app-beállítás nyer a `.env` felett (mint az
+  `effective_llm_config`). A háztartási mód viselkedése változatlan.
+- **Mód publikusan**: `GET /auth/status` → `{mode, registration_open, has_users}` süti nélkül;
+  a `registration_open` a tárolt érték (háztartási módban is), a kliens dönt.
+- **Önregisztráció** (`POST /auth/register`, csak fiókos módban, különben `409
+  wrong_auth_mode`): név (szóközök összevonva, 2–40 karakter, kis-/nagybetűtől függetlenül
+  egyedi → `409 name_taken`) + jelszó (fiókos módban legalább 8, háztartásiban továbbra is 4
+  karakter). **Az első regisztráló a családi admin** (`create_user` eddig is így működött).
+  A regisztráció bejelentkeztet; ha bejelentkezett admin regisztrál valakit, ő bejelentkezve
+  marad. `registration_open` (alapból igaz) hamis → `403 registration_closed`, kivéve az első
+  fiókot és a bejelentkezett admint; ilyenkor az admin meghív (`POST /users` ideiglenes
+  jelszóval).
+- **Kis-/nagybetű**: a `create_user`/`rename_user` mindkét módban elutasítja a csak
+  kis-/nagybetűben eltérő nevet (Pythonban `casefold`, mert az SQLite `lower()` csak ASCII-t
+  kezel); a `find_user` pontos egyezés után kis-/nagybetűtől függetlenül keres.
+- **Bejelentkezés** (`POST /auth/login {name, password}`, mindkét módban): ismeretlen név és
+  hibás jelszó ugyanaz a `401 invalid_credentials` (fiókos módban a jelszó nélküli profil is);
+  ismeretlen névnél egy próba-argon2 ellenőrzés fut, hogy a válaszidő se áruljon el semmit.
+- **Korlátok** (memóriabeli, újraindításkor törlődnek): profilonként a régi `LoginThrottle`
+  (10 percen belül 5 hiba → 30 mp); IP-nként 20 sikertelen név+jelszó bejelentkezés és 20
+  regisztrációs kísérlet 10 percenként (`WindowLimiter`), túllépéskor `429 too_many_attempts`,
+  `Retry-After` = amíg a legrégebbi esemény kiesik az ablakból. Kliens-IP: az
+  `X-Forwarded-For` első címe csak loopback forrásból (helyi reverse proxy), különben a socket
+  túloldala — kívülről nem hamisítható.
+- **Fiókos mód szabályai**: `POST /auth/select` jelszó nélküli profilra `401
+  password_required`; `GET /users` munkamenetet kér (`401 no_profile`), `can_create` csak
+  adminnak igaz; `POST /users` (az első fiók után) csak admin, jelszó kötelező (`422
+  password_required`); a saját jelszó nem törölhető (`422 password_required`); az admin
+  jelszótörlése (`POST /users/{id}/password/reset`) `422 password_required`, helyette `PUT
+  /users/{id}/password` ideiglenes jelszóval (mindkét módban működik, minimumhossz a mód
+  szerint).
+- **Átkapcsolás**: `PUT /settings/app {auth_mode?, registration_open?}` — ez a két kulcs csak
+  adminnak (`403 admin_required`); fiókos módra csak akkor, ha a hívó adminnak van jelszava
+  (`422 password_required`), különben kizárná magát. A jelszó nélküli tagok fiókos módban nem
+  lépnek be, amíg az admin nem ad nekik ideiglenes jelszót. Visszaolvasás: `GET /auth/status`
+  (az `AppSettingsOut` nem bővült, hogy a meglévő szerződés változatlan maradjon).
+- **Munkamenet-érvénytelenítés** (migráció 0015, `users.password_changed_at`): minden
+  jelszóbeállítás/-törlés (saját, admin, CLI) faliórával bélyegzi; a süti `iat`-ja (mostantól
+  másodperc törtrészével) ennél korábbi → `401 no_profile` és sütitörlés. A jelszót cserélő
+  kérés válasza friss sütit ad (`iat` = a bélyeg), így a cserélő bejelentkezve marad; ha az
+  admin a saját jelszavát állítja, szintén. Más profilok munkamenetét nem érinti.
+- **Süti `Secure`**: a kérés sémájából (`https`, vagy loopback proxytól `X-Forwarded-Proto:
+  https`), nem a módból — így a fiókos mód sima HTTP-n, a LAN-on is működik. Továbbra is
+  `HttpOnly`, `SameSite=Lax`, 30 nap.
+- **Biztonsági fejlécek** minden válaszon: `X-Content-Type-Options: nosniff`,
+  `Referrer-Policy: same-origin`, `X-Frame-Options: DENY`. CSP egyelőre nincs (a lefordított
+  SPA nincs rá felülvizsgálva); CSRF ellen most a `SameSite=Lax` véd.
+- **CLI-mentőöv**: `wtw users set-password <név>` (rejtett, kétszeri bekérés; a mód szerinti
+  minimum), `wtw users set-mode household|accounts` (fiókos módhoz kell jelszavas admin),
+  `wtw users registration open|closed`.
+- Teszt: `tests/test_auth_accounts.py` (regisztráció, admin-szerep, név-ütközés, lezárt
+  regisztráció, bejelentkezés, IP- és profilkorlát, select, lista, mód-váltás jogai,
+  süti-érvénytelenítés, admin-jelszó, proxyfejlécek, biztonsági fejlécek, CLI); az OpenAPI
+  401-teszt kivétellistája bővült (`/auth/status`, `/auth/register`, `/auth/login`).
 
 ### Becsült effort (B)
 

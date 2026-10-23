@@ -188,7 +188,7 @@ oszlop az előfizetések kapcsolója.
 | `GET /settings/subscriptions` | `{items: [{key, display_name, enabled, tmdb_provider_ids}]}` a hat szolgáltatóra |
 | `PUT /settings/subscriptions` `{enabled: ["netflix","hbo_max",…]}` | beállítja; üres lista megengedett (ilyenkor az ajánló üres és a felület erre figyelmeztet) |
 | `GET /settings/app` | `{ui_language: "hu"|"en", netflix_profile_name?: string, netflix_profiles: string[] (az utolsó feltöltött exportból), onboarding_done: bool}` |
-| `PUT /settings/app` `{ui_language?, netflix_profile_name?, onboarding_done?}` | részleges frissítés |
+| `PUT /settings/app` `{ui_language?, netflix_profile_name?, onboarding_done?, auth_mode?: "household"\|"accounts", registration_open?: bool}` | részleges frissítés; az `auth_mode` és a `registration_open` globális, csak adminnak (`403 admin_required`), visszaolvasás: `GET /auth/status`; fiókos módra váltás jelszó nélküli adminként → `422 password_required` |
 | `POST /import/upload` multipart: `source` (`imdb_ratings`, `imdb_watchlist`, `netflix_export`, `prime_video_export`) + `file` [+ `profile_name`; Prime-nál `profile_type` is] | elmenti `data/imports/<source>/<utc>_<eredeti név>` alá, elindít egy háttérfeladatot; válasz `ImportJob` |
 | `POST /import/netflix/profiles` multipart `file` **vagy** `{job_id}` | az exportban talált profilnevek: `{profiles: [{name, primary_lang, viewing_rows}]}` (nem indít importot) |
 | `POST /import/prime/profiles` multipart `file` **vagy** `{job_id}` | Prime Video-export: a két profiltípus sorszámmal, `{profiles: [{name: "ADULT"|"CHILD", primary_lang: null, viewing_rows}]}`; eltárolja (`prime_profiles` app-beállítás, `prime_video` szolgáltatósor); nem indít importot |
@@ -391,34 +391,51 @@ LinksResult {
 
 ## Profilok és munkamenet (M8/A)
 
-Minden `/api/*` végpont — kivéve `/health`, `GET /users` (lista), az első profil
-`POST /users`-e, `POST /auth/select` és `POST /auth/logout` — aláírt sütit vár
+Minden `/api/*` végpont — kivéve `/health`, `GET /users` (lista; fiókos módban sütit
+kér), az első profil `POST /users`-e, `GET /auth/status`, `POST /auth/register`,
+`POST /auth/login`, `POST /auth/select` és `POST /auth/logout` — aláírt sütit vár
 (`wtw_session`: `itsdangerous`-szal aláírt `{uid, iat}`, `HttpOnly`, `SameSite=Lax`,
-`Path=/`, 30 nap; `Secure` csak `WTW_NETWORK_MODE=true` esetén; titok: `SESSION_SECRET`
-a `.env`-ben, első induláskor generálva). Süti nélkül, érvénytelen vagy lejárt sütivel
-`401 {detail, detail_code: "no_profile"}`; ha a süti már nem létező profilra mutat, a
-válasz a sütit is törli. A frontend ilyenkor a profilválasztóra irányít. A
+`Path=/`, 30 nap; `Secure`, ha a kérés HTTPS-en jött — közvetlenül, vagy loopback
+reverse proxytól `X-Forwarded-Proto: https`; titok: `SESSION_SECRET` a `.env`-ben, első
+induláskor generálva). Süti nélkül, érvénytelen vagy lejárt sütivel
+`401 {detail, detail_code: "no_profile"}`; ha a süti már nem létező profilra mutat, vagy a
+profil jelszava a süti kiadása óta megváltozott (`users.password_changed_at`), a válasz a
+sütit is törli. Minden válaszon: `X-Content-Type-Options: nosniff`,
+`Referrer-Policy: same-origin`, `X-Frame-Options: DENY`.
+
+**Bejelentkezési mód** (docs/multiuser.md B): `household` (profilválasztó, opcionális
+jelszó) vagy `accounts` (önregisztráció, név + jelszó, az első fiók a családi admin).
+Globális app-beállítás `auth_mode`, alapértelmezés `WTW_AUTH_MODE` (`household`; a
+`WTW_NETWORK_MODE=true` alias `accounts`-ot jelent). `registration_open` (alapból igaz) csak
+fiókos módban számít. Mindkettőt admin állítja a `PUT /settings/app`-pal, vagy a CLI
+(`wtw users set-mode`, `wtw users registration`). A frontend ilyenkor a profilválasztóra irányít. A
 `last_active_at` legfeljebb 10 percenként frissül. Egy teszt (`tests/test_auth.py`)
 végigmegy az összes `/api` úton, és ellenőrzi, hogy a fenti kivételeken kívül mind a
 `current_user_dep`-től függ.
 
 `Me` = `{id, name, avatar_color, has_password, is_admin}`; `User` = `Me` +
 `last_active_at`. `password_hash` sosem kerül a válaszba. Profilnév: szóközök
-összevonva, 1–40 karakter (`422 invalid_name`), egyedi (`422 name_taken`). Szín:
-`#rrggbb` (`422 invalid_avatar_color`, kisbetűsítve tárolva). Jelszó: legalább 4
-karakter (`422 invalid_password`).
+összevonva, 1–40 karakter (regisztrációnál 2–40) (`422 invalid_name`), kis-/nagybetűtől
+függetlenül egyedi (`422 name_taken`, regisztrációnál `409`). Szín: `#rrggbb` (`422
+invalid_avatar_color`, kisbetűsítve tárolva). Jelszó: legalább 4, fiókos módban 8 karakter
+(`422 invalid_password`). Fiókos módban jelszó nélküli profil nem jöhet létre, és a jelszó
+nem törölhető (`422 password_required`).
 
 | Metódus, út | Leírás |
 |---|---|
-| `GET /users` | `{items: [User]}` — süti nélkül is elérhető (a választóhoz) |
-| `POST /auth/select` `{user_id, password?}` | beállítja a sütit, válasz: `Me`; ismeretlen profil → `404 user_not_found`; jelszavas profilnál hibás/hiányzó jelszó → `401 wrong_password`; 10 percen belül 5 hibás próba után profilonként 30 mp várakozás: `429 too_many_attempts`, `Retry-After` fejléc és `retry_after` mező a törzsben (a hátralévő másodpercek, az 5. hiba után 30); siker nullázza a számlálót (memóriabeli, újraindításkor törlődik) |
+| `GET /auth/status` | süti nélkül: `{mode: "household"\|"accounts", registration_open: bool, has_users: bool}` (`registration_open` a tárolt érték, háztartási módban is) |
+| `POST /auth/register` `{name, password, avatar_color?}` | csak fiókos módban (különben `409 wrong_auth_mode`); `201`, válasz: `Me`, sütit állít — kivéve ha bejelentkezett admin hívja (ő bejelentkezve marad); az első fiók admin; lezárt regisztrációnál (ha nem az első fiók és nem admin hívja) `403 registration_closed`; `409 name_taken`, `422 invalid_name`, `422 invalid_password`; IP-nként 10 percenként 20 kísérlet, utána `429 too_many_attempts` + `Retry-After` |
+| `POST /auth/login` `{name, password}` | mindkét módban; a név kis-/nagybetűtől független; válasz: `Me`, sütit állít; ismeretlen név, hibás jelszó (és fiókos módban jelszó nélküli profil) → egyaránt `401 invalid_credentials`; profilonként ugyanaz a korlát, mint a választásnál, IP-nként 10 percen belül 20 hiba után `429 too_many_attempts` (`Retry-After`, `retry_after`); kliens-IP: loopback forrásnál az `X-Forwarded-For` első címe, különben a socket |
+| `GET /users` | `{items: [User], can_create}` — háztartási módban süti nélkül is (a választóhoz), `can_create` mindig igaz; fiókos módban süti kell (`401 no_profile`), `can_create` csak adminnak igaz |
+| `POST /auth/select` `{user_id, password?}` | beállítja a sütit, válasz: `Me`; ismeretlen profil → `404 user_not_found`; fiókos módban jelszó nélküli profil → `401 password_required`; jelszavas profilnál hibás/hiányzó jelszó → `401 wrong_password`; 10 percen belül 5 hibás próba után profilonként 30 mp várakozás: `429 too_many_attempts`, `Retry-After` fejléc és `retry_after` mező a törzsben (a hátralévő másodpercek, az 5. hiba után 30); siker nullázza a számlálót (memóriabeli, újraindításkor törlődik) |
 | `POST /auth/logout` | törli a sütit; `{status: "ok"}` |
 | `GET /auth/me` | `Me` (süti kell) |
-| `POST /users` `{name, avatar_color?, password?}` | új profil, `201`, válasz: `User` (`Me` + `last_active_at`); süti nélkül csak akkor engedett, ha még nincs egyetlen profil sem (első indítás: a profil admin lesz, és a válasz be is jelentkezteti, sütit állít), egyébként bármely bejelentkezett profil hozhat létre újat (háztartás; a létrehozó bejelentkezve marad); süti nélkül, meglévő profilok mellett → `401 no_profile` |
+| `POST /users` `{name, avatar_color?, password?}` | új profil, `201`, válasz: `User` (`Me` + `last_active_at`); süti nélkül csak akkor engedett, ha még nincs egyetlen profil sem (első indítás: a profil admin lesz, és a válasz be is jelentkezteti, sütit állít), egyébként bármely bejelentkezett profil hozhat létre újat (háztartás; a létrehozó bejelentkezve marad); süti nélkül, meglévő profilok mellett → `401 no_profile`; fiókos módban (az első fiók után) csak admin (`403 admin_required`), a `password` kötelező (`422 password_required`; meghívás ideiglenes jelszóval) |
 | `PUT /users/me` `{name?, avatar_color?}` | saját profil; válasz: `Me` |
-| `PUT /users/me/password` `{current_password?, new_password: string\|null}` | jelszó beállítása (null = törlés); válasz: `Me`; meglévő jelszónál a `current_password` kötelező, hiányzó/hibás → `401 wrong_password` (ugyanaz a 429-es korlát, mint a választásnál) |
+| `PUT /users/me/password` `{current_password?, new_password: string\|null}` | jelszó beállítása (null = törlés); válasz: `Me`; meglévő jelszónál a `current_password` kötelező, hiányzó/hibás → `401 wrong_password` (ugyanaz a 429-es korlát, mint a választásnál); fiókos módban a törlés (null) → `422 password_required`; siker után a profil minden korábbi sütije érvénytelen, a válasz friss sütit állít (a hívó bejelentkezve marad) |
 | `DELETE /users/{id}` `{confirm: "DELETE"}` | saját profil törlése, vagy adminként bármelyiké; más nem-adminként → `403 admin_required`; rossz megerősítés → `422 confirm_required`; az utolsó admin → `409 last_admin`; nincs ilyen → `404 user_not_found`; minden személyes adat törlődik; a saját profil törlése a sütit is törli; `{status: "ok"}` |
-| `POST /users/{id}/password/reset` | csak admin (`403 admin_required`): törli a profil jelszavát (elfelejtett jelszó; a saját profilra is működik), nullázza a hibás-próba számlálót; válasz: `User` |
+| `PUT /users/{id}/password` `{new_password}` | csak admin (`403 admin_required`): (ideiglenes) jelszót állít a profilnak, mindkét módban (minimum a mód szerint, `422 invalid_password`); a profil korábbi sütijei érvénytelenek, a hibás-próba számláló nullázódik; ha a saját profilját állítja, friss sütit kap; nincs ilyen → `404 user_not_found`; válasz: `User` |
+| `POST /users/{id}/password/reset` | csak admin (`403 admin_required`): törli a profil jelszavát (elfelejtett jelszó; a saját profilra is működik), nullázza a hibás-próba számlálót, a korábbi sütik érvénytelenek; fiókos módban `422 password_required` (helyette `PUT /users/{id}/password`); válasz: `User` |
 | `GET /settings/secrets`, `PUT /settings/secrets`, `POST /backup/*`, `POST /refresh` | csak admin (`403 admin_required`) |
 
 Személyes adatot adó végpontok (`/recommendations`, `/titles/*` felhasználói

@@ -16,6 +16,7 @@ from whattowatch.adapters.tmdb import TmdbClient
 from whattowatch.config import Settings, get_settings
 from whattowatch.db.engine import create_engine_from_settings, session_factory
 from whattowatch.db.models import Title, User
+from whattowatch.services.app_settings import AuthMode, effective_auth_mode
 from whattowatch.services.recommend.config import RecommenderConfig, load_config
 
 NO_TMDB_KEY = "Ehhez a művelethez TMDB API-kulcs kell (TMDB_API_KEY a .env-ben)."
@@ -149,16 +150,30 @@ def no_profile(request: Request | None = None) -> CodedHTTPException:
     return exc
 
 
-def optional_user_dep(request: Request, session: SessionDep, now: NowDep) -> User | None:
-    """The profile of a valid session cookie, else None (an unknown profile -> 401 that
-    clears the cookie). `last_active_at` is touched at most every 10 minutes."""
-    from whattowatch.api.auth import read_session
+def auth_mode_dep(session: SessionDep, settings: SettingsDep) -> AuthMode:
+    """`household` or `accounts` (app setting, else `WTW_AUTH_MODE`)."""
+    return effective_auth_mode(session, settings)
 
-    uid = read_session(request)
-    if uid is None:
+
+AuthModeDep = Annotated[AuthMode, Depends(auth_mode_dep)]
+
+
+def optional_user_dep(request: Request, session: SessionDep, now: NowDep) -> User | None:
+    """The profile of a valid session cookie, else None (an unknown profile, or a cookie
+    issued before the profile's last password change -> 401 that clears the cookie).
+    `last_active_at` is touched at most every 10 minutes."""
+    from whattowatch.api.auth import read_session_payload
+    from whattowatch.services.users import password_changed_timestamp
+
+    payload = read_session_payload(request)
+    if payload is None:
         return None
+    uid, issued_at = payload
     user = session.get(User, uid)
     if user is None:
+        raise no_profile(request)
+    changed = password_changed_timestamp(user)
+    if changed is not None and (issued_at is None or issued_at < changed):
         raise no_profile(request)
     last = user.last_active_at
     if last is not None and last.tzinfo is None:
